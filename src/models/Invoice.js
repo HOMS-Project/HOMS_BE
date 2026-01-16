@@ -246,22 +246,6 @@ const invoiceSchema = new mongoose.Schema({
     notes: String
   }],
 
-  // Đánh giá
-  feedback: {
-    rating: {
-      type: Number,
-      min: 1,
-      max: 5
-    },
-    driverRating: {
-      type: Number,
-      min: 1,
-      max: 5
-    },
-    comment: String,
-    ratedAt: Date
-  },
-
   // Ghi chú
   notes: String,
 

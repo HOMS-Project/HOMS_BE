@@ -11,7 +11,7 @@ const notificationSchema = new mongoose.Schema({
 
   type: {
     type: String,
-    enum: ['Order', 'System', 'Promotion']
+    enum: ['Payment', 'System', 'Assignment']
   },
 
   isRead: { type: Boolean, default: false }

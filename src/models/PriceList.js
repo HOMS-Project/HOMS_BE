@@ -1,95 +1,133 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const priceListSchema = new mongoose.Schema({
   code: { type: String, unique: true },
-  
   name: String,
   description: String,
 
-  // Giá cơ bản theo loại chuyển nhà
+  // Áp dụng cho loại dịch vụ
+  serviceScope: {
+    type: String,
+    enum: ["FULL_HOUSE", "SPECIFIC_ITEMS"]
+  },
+
+  /* ------------------------------
+     1. Giá cơ bản
+  ------------------------------ */
   basePrice: {
-    fullHouse: Number, // Trọn gói nguyên căn nhà
-    specificItems: Number // Item cụ thể
+    minimumCharge: Number, // giá tối thiểu
+    fullHouseBase: Number, // trọn gói
+    smallRoomBase: Number  // phòng trọ
   },
 
-  // Giá theo khoảng cách
-  distancePricing: [{
-    minDistance: Number, // km
-    maxDistance: Number,
-    pricePerKm: Number
-  }],
+  /* ------------------------------
+     2. Giá theo KM xe chạy
+  ------------------------------ */
+  distancePricing: {
+    pricePerKm: Number,
+    freeKm: Number
+  },
 
-  // Giá theo trọng lượng
-  weightPricing: [{
-    minWeight: Number, // kg
-    maxWeight: Number,
-    pricePerKg: Number
-  }],
-
-  // Giá theo thể tích
-  volumePricing: [{
-    minVolume: Number, // m³
-    maxVolume: Number,
+  /* ------------------------------
+     3. Giá theo thể tích / khối lượng
+  ------------------------------ */
+  volumePricing: {
     pricePerCubicMeter: Number
-  }],
-
-  // Giá dịch vụ bổ sung
-  services: {
-    packing: Number, // Đóng gói
-    assembling: Number, // Tháo lắp
-    insurance: Number, // Bảo hiểm
-    photography: Number, // Chụp ảnh tài liệu
-    professionalSurvey: Number // Khảo sát chuyên nghiệp
   },
 
-  // Phí theo nhân công
-  staffPricing: [{
-    staffCount: Number,
-    pricePerPerson: Number,
-    pricePerHour: Number
-  }],
+  weightPricing: {
+    pricePerKg: Number
+  },
 
-  // Phí theo loại xe
-  vehiclePricing: [{
-    vehicleType: String, // xe tải 500kg, 1 tấn, 2 tấn, 3 tấn
-    pricePerDay: Number,
-    pricePerHour: Number
-  }],
+  /* ------------------------------
+     4. Giá NHÂN CÔNG
+  ------------------------------ */
+  laborPricing: {
+    baseStaffCount: Number,
+    pricePerStaff: Number,
+    pricePerHour: Number,
 
-  // Phí khảo sát
+    overtimeMultiplier: Number // >8h
+  },
+
+  /* ------------------------------
+     5. Khoảng cách BƯNG ĐỒ (RẤT QUAN TRỌNG)
+  ------------------------------ */
+  carryPricing: {
+    freeDistanceMeter: Number,   // VD: 20m
+    pricePerExtraMeter: Number,  // 5.000đ/m
+
+    stairSurchargePerFloor: Number, // +50k/tầng
+    noElevatorMultiplier: Number    // x1.3
+  },
+
+  /* ------------------------------
+     6. Phí theo TẦNG LẦU
+  ------------------------------ */
+  floorPricing: {
+    freeFloor: Number,
+    pricePerExtraFloor: Number
+  },
+
+  /* ------------------------------
+     7. Phí theo LOẠI XE
+  ------------------------------ */
+  vehiclePricing: [
+    {
+      vehicleType: String, // 500kg, 1T
+      pricePerHour: Number,
+      pricePerDay: Number
+    }
+  ],
+
+  /* ------------------------------
+     8. DỊCH VỤ BỔ SUNG
+  ------------------------------ */
+  additionalServices: {
+    packing: Number,
+    assembling: Number,
+    insuranceRate: Number, // %
+    professionalSurvey: Number
+  },
+
+  /* ------------------------------
+     9. KHẢO SÁT
+  ------------------------------ */
   surveyFee: {
-    offline: Number, // Khảo sát tại nhà
-    online: Number // Khảo sát online (chat, video call)
+    online: Number,
+    offline: Number
   },
 
-  // Item mẫu (đối chiếu và tư vấn cho khách)
-  sampleItems: [{
-    category: String, // sofa, tủ lạnh, tủ quần áo, giường, bàn làm việc, etc.
-    name: String,
-    dimensions: {
-      length: Number,
-      width: Number,
-      height: Number
-    },
-    weight: Number,
-    material: String,
-    packingSize: {
-      length: Number,
-      width: Number,
-      height: Number
-    },
-    packingWeight: Number, // Bao gồm bao bì
-    image: String,
-    basePrice: Number // Giá chuyên vận cho item này
-  }],
+  /* ------------------------------
+     10. ITEM THAM KHẢO (KHÔNG PHẢI BẮT BUỘC)
+  ------------------------------ */
+  referenceItems: [
+    {
+      name: String,
+      category: String,
+      estimatedVolume: Number,
+      estimatedWeight: Number,
+      suggestedPrice: Number
+    }
+  ],
 
-  // Tính áp dụng
-  isActive: { type: Boolean, default: true },
+  /* ------------------------------
+     11. Hiệu lực
+  ------------------------------ */
   effectiveFrom: Date,
   effectiveTo: Date,
+  isActive: { type: Boolean, default: true }
 
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
 }, { timestamps: true });
 
-module.exports = mongoose.model('PriceList', priceListSchema);
+module.exports = mongoose.model("PriceList", priceListSchema);
+
+
+//TotalPrice =
+// BasePrice
+// + DistanceCost
+// + LaborCost
+// + CarryCost
+// + FloorCost
+// + VehicleCost
+// + AdditionalServices
