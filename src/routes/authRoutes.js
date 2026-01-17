@@ -1,11 +1,9 @@
 const express = require('express');
-const { registerValidator, loginValidator } = require('../middlewares/authValidator');
 const router = express.Router();
 const authController = require('../controllers/authController');
+const { validate, schemas } = require('../middlewares/validationMiddleware'); 
 
-// Đăng ký người dùng mới
-router.post('/register', registerValidator, authController.register);
-// Đăng nhập người dùng
-router.post('/login', loginValidator, authController.login);
+router.post('/register', validate(schemas.register), authController.register);
+router.post('/login', validate(schemas.login), authController.login);
 
 module.exports = router;
