@@ -1,7 +1,10 @@
 const mongoose = require('mongoose');
 
 const requestTicketSchema = new mongoose.Schema({
-  code: { type: String, unique: true },
+  code: {
+    type: String,
+    unique: true
+  },
 
   customerId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -9,22 +12,18 @@ const requestTicketSchema = new mongoose.Schema({
     required: true
   },
 
-  // Loại yêu cầu: trọn gói (full house - khảo sát offline) hoặc item cụ thể (specific items - khảo sát online)
-  type: {
+  dispatcherId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+
+  moveType: {
     type: String,
     enum: ['FULL_HOUSE', 'SPECIFIC_ITEMS'],
     required: true
   },
 
-  // Loại khảo sát
-  surveyType: {
-    type: String,
-    enum: ['OFFLINE', 'ONLINE'],
-    required: true
-  },
-
-  // Địa chỉ pickup
-  pickupAddress: {
+  pickup: {
     address: String,
     coordinates: {
       lat: Number,
@@ -32,8 +31,7 @@ const requestTicketSchema = new mongoose.Schema({
     }
   },
 
-  // Địa chỉ delivery
-  deliveryAddress: {
+  delivery: {
     address: String,
     coordinates: {
       lat: Number,
@@ -41,75 +39,72 @@ const requestTicketSchema = new mongoose.Schema({
     }
   },
 
-  // Mô tả căn phòng/nhà
-  roomInfo: {
-    width: Number, // chiều rộng (m)
-    length: Number, // chiều dài (m)
-    height: Number, // chiều cao (m)
-    totalSquareMeters: Number
-  },
-
-  // Items - chỉ dùng khi SPECIFIC_ITEMS
+  /* ================= ITEMS ================= */
+  // FULL_HOUSE: items có thể rỗng hoặc chỉ mô tả đại diện
+  // SPECIFIC_ITEMS: items là nguồn tính giá chính
   items: [{
     name: String,
     quantity: Number,
+
     dimensions: {
       length: Number, // cm
       width: Number,  // cm
-      height: Number // cm
+      height: Number  // cm
     },
-    weight: Number, // kg
+
+    weight: Number,   // kg (ước lượng)
+    volume: Number,   // m3 (optional – có thể auto calc)
+
     material: String,
-    images: [String], // ảnh từng item
-    note: String,
-    createdAt: { type: Date, default: Date.now }
+    images: [String],
+    notes: String
   }],
 
-  // Ảnh tổng thể căn phòng (cho TH chụp tình trạng ban đầu)
-  overallPhotos: [String],
+  /* ============== ESTIMATION ============== */
+  estimatedVolume: Number,     // m3
+  estimatedWeight: Number,     // kg
+  estimatedDistance: Number,   // km
+  carryDistance: Number,       // mét (từ nhà → xe)
 
-  // Khảo sát chi tiết
+  /* ================ SURVEY ================ */
   survey: {
-    dispatcherId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    surveyDate: Date,
-    notes: String,
-    estimatedPrice: Number,
-    estimatedWeight: Number,
-    estimatedVolume: Number,
-    recommendedVehicles: [String],
-    staffCount: Number // số người cần thiết
+    type: {
+      type: String,
+      enum: ['ONLINE', 'OFFLINE']
+    },
+    date: Date,
+    status: {
+      type: String,
+      enum: ['WAITING', 'COMPLETED'],
+      default: 'WAITING'
+    },
+    notes: String
   },
 
-  // Trạng thái
+  /* =============== PRICING =============== */
+  pricing: {
+    quotedPrice: Number,
+    customerAccepted: Boolean,
+    acceptedAt: Date
+  },
+
+  /* ================ STATUS ================ */
   status: {
     type: String,
     enum: [
-      'CREATED',           // Khách tạo ticket
-      'WAITING_SURVEY',    // Chờ khảo sát
-      'SURVEYED',          // Đã khảo sát, đang chờ duyệt giá
-      'PRICE_QUOTED',      // Đã báo giá
-      'CUSTOMER_ACCEPTED', // Khách đồng ý
-      'CUSTOMER_REJECTED', // Khách từ chối
-      'INVOICE_CREATED',   // Tạo Invoice (hợp đồng)
+      'CREATED',
+      'WAITING_SURVEY',
+      'SURVEYED',
+      'PRICE_QUOTED',
+      'ACCEPTED',
+      'REJECTED',
       'CANCELLED'
     ],
     default: 'CREATED'
   },
 
-  // Thông tin hợp đồng
-  contract: {
-    invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice' },
-    createdAt: Date
-  },
+  notes: String
 
-  timeline: {
-    createdAt: { type: Date, default: Date.now },
-    surveyStartedAt: Date,
-    surveyCompletedAt: Date,
-    priceQuotedAt: Date,
-    customerAcceptedAt: Date,
-    invoiceCreatedAt: Date
-  }
 }, { timestamps: true });
 
 module.exports = mongoose.model('RequestTicket', requestTicketSchema);

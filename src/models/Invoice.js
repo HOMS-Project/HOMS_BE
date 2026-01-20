@@ -3,7 +3,6 @@ const mongoose = require('mongoose');
 const invoiceSchema = new mongoose.Schema({
   code: { type: String, unique: true },
 
-  // Liên kết với RequestTicket (hợp đồng được tạo từ ticket đã được duyệt)
   requestTicketId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'RequestTicket',
@@ -21,7 +20,6 @@ const invoiceSchema = new mongoose.Schema({
     ref: 'User'
   },
 
-  // Địa chỉ lấy hàng
   pickup: {
     address: String,
     coordinates: {
@@ -30,7 +28,6 @@ const invoiceSchema = new mongoose.Schema({
     }
   },
 
-  // Địa chỉ giao hàng
   delivery: {
     address: String,
     coordinates: {
@@ -39,101 +36,50 @@ const invoiceSchema = new mongoose.Schema({
     }
   },
 
-  // Tuyến đường được chọn
   routeId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Route'
   },
 
-  // Thời gian theo khung giờ phù hợp
   scheduledTime: Date,
+
   scheduledTimeWindow: {
-    startTime: String, // HH:mm
-    endTime: String    // HH:mm
+    startTime: String,
+    endTime: String
   },
 
-  // Deadline giao hàng (yêu cầu từ khách)
   deliveryDeadline: Date,
 
-  // Tính toán tài nguyên & thời gian
-  resourcePlanning: {
-    // Thời gian ước tính (phút)
-    estimatedPickupTime: { type: Number, default: 30 }, // Thời gian lấy hàng
-    estimatedDeliveryTime: { type: Number, default: 30 }, // Thời gian giao hàng
-    travelTime: Number, // Thời gian vận chuyển (tính từ Route)
-    totalTimeRequired: Number, // Tổng thời gian cần thiết (pickup + travel + delivery)
-
-    // Thời gian khả dụng
-    timeAvailable: Number, // Phút từ hiện tại đến deadline
-    currentTime: Date, // Thời điểm tính toán
-
-    // Phân bổ tài nguyên
-    vehiclesNeeded: { type: Number, default: 1 }, // Số xe cần thiết
-    strategyUsed: {
-      type: String,
-      enum: ['SINGLE_VEHICLE', 'PARALLEL_PICKUP_DELIVERY', 'STAGGERED'],
-      default: 'SINGLE_VEHICLE'
-    },
-    notes: String // Ghi chú lý do phân bổ (vd: "Thời gian hạn chế, cần 2 xe để pickup+delivery song song")
-  },
-
-  // Loại chuyển nhà
   moveType: {
     type: String,
     enum: ['FULL_HOUSE', 'SPECIFIC_ITEMS'],
     required: true
   },
 
-  // Loại khảo sát
   surveyType: {
     type: String,
     enum: ['OFFLINE', 'ONLINE']
   },
 
-  // Dịch vụ được chọn
-  // Có thể là dạng boolean (áp dụng cho toàn bộ) hoặc list items cụ thể
   services: {
     packing: {
-      isAppliedAll: { type: Boolean, default: false }, // Áp dụng cho toàn bộ
-      itemIds: [mongoose.Schema.Types.ObjectId] // Hoặc chỉ những item cụ thể
+      isAppliedAll: { type: Boolean, default: false },
+      itemIds: [{ type: mongoose.Schema.Types.ObjectId }]
     },
     assembling: {
       isAppliedAll: { type: Boolean, default: false },
-      itemIds: [mongoose.Schema.Types.ObjectId]
+      itemIds: [{ type: mongoose.Schema.Types.ObjectId }]
     },
     insurance: {
       isAppliedAll: { type: Boolean, default: false },
-      itemIds: [mongoose.Schema.Types.ObjectId]
+      itemIds: [{ type: mongoose.Schema.Types.ObjectId }]
     },
     photography: {
       isAppliedAll: { type: Boolean, default: false },
-      itemIds: [mongoose.Schema.Types.ObjectId] // Item cần kiểm tra kĩ
+      itemIds: [{ type: mongoose.Schema.Types.ObjectId }]
     }
   },
 
-  // Items từ RequestTicket
-  items: [{
-    _id: mongoose.Schema.Types.ObjectId,
-    name: String,
-    quantity: Number,
-    dimensions: {
-      length: Number,
-      width: Number,
-      height: Number
-    },
-    weight: Number,
-    material: String,
-    
-    // Ảnh của item này (nếu cần kiểm tra kĩ)
-    photos: {
-      before: [String], // Ảnh trước
-      after: [String]   // Ảnh sau
-    },
-    
-    note: String
-  }],
-
-  // Định giá chi tiết
   pricing: {
     priceListId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -143,10 +89,8 @@ const invoiceSchema = new mongoose.Schema({
     totalWeight: Number,
     totalVolume: Number,
 
-    // Chi phí cơ bản
     basePrice: Number,
-    
-    // Chi phí dịch vụ
+
     servicesFee: {
       packing: Number,
       assembling: Number,
@@ -154,14 +98,12 @@ const invoiceSchema = new mongoose.Schema({
       photography: Number
     },
 
-    // Chi phí nhân công
     staffFee: {
       count: Number,
       pricePerPerson: Number,
       totalStaffFee: Number
     },
 
-    // Chi phí xe
     vehicleFee: {
       vehicleType: String,
       pricePerDay: Number,
@@ -169,10 +111,8 @@ const invoiceSchema = new mongoose.Schema({
       totalVehicleFee: Number
     },
 
-    // Phụ phí (tuyến đường đặc biệt, etc.)
     surcharge: Number,
 
-    // Khuyến mãi
     promotionId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Promotion'
@@ -180,31 +120,34 @@ const invoiceSchema = new mongoose.Schema({
     discountCode: String,
     discountAmount: Number,
 
-    // Tổng cộng
     subtotal: Number,
     tax: Number,
     totalPrice: Number
   },
 
-  // Trạng thái hợp đồng
+  paymentStatus: {
+    type: String,
+    enum: ['UNPAID', 'PARTIAL', 'PAID'],
+    default: 'UNPAID'
+  },
+
   status: {
     type: String,
     enum: [
-      'DRAFT',           // Nháp
-      'PENDING',         // Chờ xác nhận
-      'CONFIRMED',       // Đã xác nhận
-      'ASSIGNED',        // Đã phân công
-      'IN_PROGRESS',     // Đang thực hiện
-      'PICKUP',          // Đã lấy hàng
-      'IN_TRANSIT',      // Đang vận chuyển
-      'DELIVERY',        // Đang giao hàng
-      'COMPLETED',       // Hoàn thành
-      'CANCELLED'        // Hủy
+      'DRAFT',
+      'PENDING',
+      'CONFIRMED',
+      'ASSIGNED',
+      'IN_PROGRESS',
+      'PICKUP',
+      'IN_TRANSIT',
+      'DELIVERY',
+      'COMPLETED',
+      'CANCELLED'
     ],
     default: 'PENDING'
   },
 
-  // Phân công - hỗ trợ nhiều xe
   assignment: {
     vehicles: [{
       vehicleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Vehicle' },
@@ -215,30 +158,6 @@ const invoiceSchema = new mongoose.Schema({
     assignmentDate: Date
   },
 
-  // Hình ảnh - chỉ cho các item cần kiểm tra kĩ (đã chuyển vào items[].photos)
-  // Giữ lại cho backup hoặc ảnh tổng thể
-  overallPhotos: {
-    pickupBefore: [String],
-    deliveryAfter: [String]
-  },
-
-  // Thanh toán
-  payment: {
-    method: {
-      type: String,
-      enum: ['COD', 'Card', 'Wallet', 'Bank Transfer'],
-      default: 'COD'
-    },
-    status: {
-      type: String,
-      enum: ['Pending', 'Paid', 'Failed', 'Refunded'],
-      default: 'Pending'
-    },
-    paidAt: Date,
-    transactionId: String
-  },
-
-  // Timeline theo dõi
   timeline: [{
     status: String,
     updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -246,11 +165,7 @@ const invoiceSchema = new mongoose.Schema({
     notes: String
   }],
 
-  // Ghi chú
-  notes: String,
-
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  notes: String
 }, { timestamps: true });
 
 module.exports = mongoose.model('Invoice', invoiceSchema);

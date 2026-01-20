@@ -11,22 +11,15 @@ const vehicleSchema = new mongoose.Schema({
 
   loadCapacity: Number, // kg
 
-  cargoSpace: {
-    length: Number,
-    width: Number,
-    height: Number
-  },
-
   status: {
     type: String,
     enum: ['Available', 'InTransit', 'Maintenance'],
     default: 'Available'
   },
 
-  currentLocation: {
-    lat: Number,
-    lng: Number
-  }
+  isActive: { type: Boolean, default: true }
+
 }, { timestamps: true });
+
 
 module.exports = mongoose.model('Vehicle', vehicleSchema);
