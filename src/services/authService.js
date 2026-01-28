@@ -6,6 +6,7 @@ const { OAuth2Client } = require("google-auth-library");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 const client = new OAuth2Client(process.env.CLIENT_ID);
+const jwt = require('jsonwebtoken');
 // Hàm đăng ký
 exports.registerUser = async ({ fullName, email, password, phone }) => {
     // Check trùng cả Email lẫn Phone
@@ -40,6 +41,12 @@ exports.loginUser = async ({ email, password }) => {
     if (!user) {
         throw new AppError('Email hoặc mật khẩu không đúng', 401);
     }
+if (!user.password) {
+  throw new AppError(
+    'Tài khoản này đăng nhập bằng Google. Vui lòng sử dụng Google Login.',
+    400
+  );
+}
 
     // 2. So khớp mật khẩu
     const isMatch = await bcrypt.compare(password, user.password);
@@ -52,9 +59,91 @@ exports.loginUser = async ({ email, password }) => {
     // 3. Sinh token
     const accessToken = generateToken(user);
     const refreshToken = generateRefreshToken(user);
+const hashedRefreshToken = crypto
+  .createHash('sha256')
+  .update(refreshToken)
+  .digest('hex');
 
-    return { user, accessToken, refreshToken };
+user.refreshTokens.push({
+  token: hashedRefreshToken,
+  createdAt: new Date(),
+  expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+});
+await user.save();
+    return { user, accessToken };
 };
+
+exports.refreshAccessToken = async (refreshToken) => {
+  if (!refreshToken) {
+    throw new AppError('No refresh token provided', 401);
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(
+      refreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+  } catch (err) {
+    throw new AppError('Refresh token invalid or expired', 401);
+  }
+
+  const user = await User.findById(decoded.userId);
+  if (!user) {
+    throw new AppError('User not found', 401);
+  }
+const hashedRefreshToken = crypto
+  .createHash('sha256')
+  .update(refreshToken)
+  .digest('hex');
+  // Tìm refresh token trong DB
+  const tokenIndex = user.refreshTokens.findIndex(
+    (t) => t.token === hashedRefreshToken
+  );
+
+ if (tokenIndex === -1) {
+  
+  user.refreshTokens = []; // revoke all sessions
+  await user.save();
+  throw new AppError('Refresh token reuse detected', 401);
+}
+
+
+  const tokenInDb = user.refreshTokens[tokenIndex];
+
+  if (tokenInDb.expiresAt < new Date()) {
+    // Xóa token hết hạn
+    user.refreshTokens.splice(tokenIndex, 1);
+    await user.save();
+    throw new AppError('Refresh token expired', 401);
+  }
+
+ 
+  const newAccessToken = generateToken(user);
+  const newRefreshToken = generateRefreshToken(user);
+
+  // Xóa refresh token cũ
+  user.refreshTokens.splice(tokenIndex, 1);
+const hashedNewRefreshToken = crypto
+  .createHash('sha256')
+  .update(newRefreshToken)
+  .digest('hex');
+
+  // Lưu refresh token mới
+  user.refreshTokens.push({
+    token: hashedNewRefreshToken,
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  });
+
+  await user.save();
+
+  return {
+    accessToken: newAccessToken,
+    refreshToken: newRefreshToken,
+  };
+};
+
 
 
 exports.googleLogin = async ({ token }) => {
