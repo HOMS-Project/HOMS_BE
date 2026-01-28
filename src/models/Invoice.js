@@ -134,19 +134,18 @@ const invoiceSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: [
-      'DRAFT',
-      'PENDING',
-      'CONFIRMED',
-      'ASSIGNED',
-      'IN_PROGRESS',
-      'PICKUP',
-      'IN_TRANSIT',
-      'DELIVERY',
-      'COMPLETED',
+      'DRAFT',        // Invoice mới tạo từ Ticket
+      'CONFIRMED',    // Đã xác nhận (sau khi cọc OK)
+      'ASSIGNED',     // Đã điều phối xe & nhân sự
+      'PICKUP',       // Đang bốc hàng
+      'IN_TRANSIT',   // Đang vận chuyển
+      'DELIVERY',     // Đang giao
+      'COMPLETED',    // Hoàn tất
       'CANCELLED'
     ],
-    default: 'PENDING'
-  },
+    default: 'DRAFT'
+  }
+  ,
 
   assignment: {
     vehicles: [{

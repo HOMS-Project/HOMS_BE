@@ -97,7 +97,6 @@ const requestTicketSchema = new mongoose.Schema({
       'SURVEYED',
       'PRICE_QUOTED',
       'ACCEPTED',
-      'REJECTED',
       'CANCELLED'
     ],
     default: 'CREATED'
