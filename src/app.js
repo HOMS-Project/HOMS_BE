@@ -2,9 +2,13 @@ require("dotenv").config();
 const express = require("express");
 const connectDB = require("./config/database");
 const errorMiddleware = require("./middlewares/errorMiddleware"); 
+const cors = require('cors');
 const app = express();
 connectDB();
-
+app.use(cors({
+    origin: 'http://localhost:3000',
+    credentials: true
+}));
 app.use(express.json());
 
 app.get("/", (req, res) => {
