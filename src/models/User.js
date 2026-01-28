@@ -47,7 +47,8 @@ const userSchema = new mongoose.Schema({
     isAvailable: { type: Boolean, default: true }
   },
   otpResetPassword: String,
-otpResetExpires: Date,
+  otpResetExpires: Date,
+  otpVerified: Boolean,
 }, { timestamps: true });
 
 
