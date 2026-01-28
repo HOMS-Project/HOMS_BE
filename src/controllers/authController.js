@@ -2,11 +2,20 @@ const authService = require('../services/authService');
 
 exports.register = async (req, res, next) => {
   try {
-    await authService.registerUser(req.body);
+    const newUser = await authService.registerUser(req.body);
 
     res.status(201).json({
       success: true,
-      message: 'Đăng ký thành công'
+      message: 'Đăng ký thành công',
+      data: {
+        user: {
+          id: newUser._id,
+          fullName: newUser.fullName,
+          email: newUser.email,
+          phone: newUser.phone,
+          role: newUser.role
+        }
+      }
     });
   } catch (error) {
     next(error);

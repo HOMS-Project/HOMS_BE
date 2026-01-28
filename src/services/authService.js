@@ -28,7 +28,6 @@ exports.registerUser = async ({ fullName, email, password, phone }) => {
 
     // 4. Lưu vào DB
     await newUser.save();
-
     return  newUser ;
 };
 
