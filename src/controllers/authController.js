@@ -59,15 +59,21 @@ exports.register = async (req, res, next) => {
 
 exports.login = async (req, res, next) => {
     try {
-        const { user, accessToken, refreshToken } = await authService.loginUser(req.body);
-        
+        const { user, accessToken, refreshToken,expiresInMs } = await authService.loginUser(req.body);
+           res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+secure: process.env.NODE_ENV === 'production',
+
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
         res.status(200).json({ 
             success: true,
             message: 'Đăng nhập thành công',
             data: {
                 user: { id: user._id, fullName: user.fullName, role: user.role }, // Trả về role để FE biết đường điều hướng
-                accessToken, 
-                refreshToken 
+                accessToken,
+                expiresInMs
             }
         });
     } catch (error) {
@@ -77,13 +83,30 @@ exports.login = async (req, res, next) => {
 
 exports.googleLogin = async (req, res, next) => {
   try {
-    const result = await authService.googleLogin(req.body);
-    return res.json({
-      message: "Đăng nhập google thành công",
-      ...result,
+    const { user, accessToken, refreshToken,expiresInMs } =
+      await authService.googleLogin(req.body);
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000
     });
-  } catch (error) {
-    next(error); 
+
+    res.json({
+      success: true,
+      message: 'Đăng nhập Google thành công',
+      data: {
+        user: {
+          id: user._id,
+          fullName: user.fullName,
+          role: user.role
+        },
+        accessToken,expiresInMs
+      }
+    });
+  } catch (err) {
+    next(err);
   }
 };
 exports.forgotPassword = async (req, res, next) => {
@@ -117,6 +140,26 @@ exports.resetPassword = async (req, res, next) => {
     res.json({ 
       success: true,
       message: "Đặt lại mật khẩu thành công" 
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+exports.refreshToken = async (req, res, next) => {
+  try {
+    const oldRefreshToken = req.cookies.refreshToken;
+    const { accessToken, refreshToken, expiresInMs } = await authService.refreshAccessToken(oldRefreshToken);
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    res.json({
+      success: true,
+      accessToken,
+      expiresInMs 
     });
   } catch (err) {
     next(err);

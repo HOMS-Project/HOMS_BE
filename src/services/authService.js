@@ -4,6 +4,7 @@ const { generateToken, generateRefreshToken } = require('../utils/token');
 const AppError = require('../utils/appErrors'); 
 const { OAuth2Client } = require("google-auth-library");
 const crypto = require("crypto");
+const jwt = require ("jsonwebtoken")
 const nodemailer = require("nodemailer");
 const client = new OAuth2Client(process.env.CLIENT_ID);
 
@@ -151,13 +152,15 @@ exports.registerUser = async ({ fullName, email, password, phone }) => {
 // Hàm đăng nhập
 exports.loginUser = async ({ email, password }) => {
     // 1. Tìm user
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).select('+password');
     
     // --- SỬA LỖI Ở ĐÂY ---
     if (!user) {
         throw new AppError('Email hoặc mật khẩu không đúng', 401);
     }
-
+   if (!password || !user.password) {
+        throw new AppError('Dữ liệu xác thực không hợp lệ', 401);
+    }
     // 2. So khớp mật khẩu
     const isMatch = await bcrypt.compare(password, user.password);
         
@@ -169,10 +172,71 @@ exports.loginUser = async ({ email, password }) => {
     // 3. Sinh token
     const accessToken = generateToken(user);
     const refreshToken = generateRefreshToken(user);
+ const decoded = jwt.decode(accessToken);
+    const expiresInMs = (decoded.exp - decoded.iat) * 1000;
+await storeRefreshToken(user, refreshToken);
 
-    return { user, accessToken, refreshToken };
+    return { user, accessToken,refreshToken,expiresInMs };
 };
 
+exports.refreshAccessToken = async (refreshToken) => {
+  if (!refreshToken) {
+    throw new AppError('No refresh token provided', 401);
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(
+      refreshToken,
+      process.env.REFRESH_TOKEN_SECRET
+    );
+  } catch {
+    throw new AppError('Refresh token invalid or expired', 401);
+  }
+
+  const user = await User.findById(decoded.userId);
+  if (!user) {
+    throw new AppError('User not found', 401);
+  }
+
+  const hashedRefreshToken = crypto
+    .createHash('sha256')
+    .update(refreshToken)
+    .digest('hex');
+
+  const tokenIndex = user.refreshTokens.findIndex(
+    (t) => t.token === hashedRefreshToken
+  );
+
+  if (tokenIndex === -1) {
+    user.refreshTokens = [];
+    await user.save();
+    throw new AppError('Refresh token reuse detected', 401);
+  }
+
+  const tokenInDb = user.refreshTokens[tokenIndex];
+  if (tokenInDb.expiresAt < new Date()) {
+    user.refreshTokens.splice(tokenIndex, 1);
+    await user.save();
+    throw new AppError('Refresh token expired', 401);
+  }
+
+  // rotate token
+  const newAccessToken = generateToken(user);
+  const newRefreshToken = generateRefreshToken(user);
+
+  user.refreshTokens.splice(tokenIndex, 1);
+
+await storeRefreshToken(user, newRefreshToken);
+
+const newDecoded = jwt.decode(newAccessToken); 
+const expiresInMs = (newDecoded.exp - newDecoded.iat) * 1000;
+  return {
+    accessToken: newAccessToken,
+    refreshToken: newRefreshToken,
+    expiresInMs
+  };
+};
 
 exports.googleLogin = async ({ token }) => {
   if (!token) {
@@ -219,9 +283,13 @@ exports.googleLogin = async ({ token }) => {
   }
   const accessToken = generateToken(user);
   const refreshToken = generateRefreshToken(user);
+  const decoded = jwt.decode(accessToken);
+const expiresInMs = (decoded.exp - decoded.iat) * 1000;
+await storeRefreshToken(user, refreshToken);
   return {
     accessToken,
     refreshToken,
+      expiresInMs,
     user: {
       id: user._id,
       fullName: user.fullName,
@@ -355,4 +423,20 @@ exports.resetPasswordWithEmail = async ({ email, newPassword }) => {
   await user.save();
 
   return true;
+};
+
+
+const storeRefreshToken = async (user, refreshToken) => {
+  const hashed = crypto
+    .createHash('sha256')
+    .update(refreshToken)
+    .digest('hex');
+
+  user.refreshTokens.push({
+    token: hashed,
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  });
+
+  await user.save();
 };

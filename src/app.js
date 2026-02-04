@@ -4,13 +4,14 @@ const connectDB = require("./config/database");
 const errorMiddleware = require("./middlewares/errorMiddleware"); 
 const cors = require('cors');
 const app = express();
+const cookieParser = require('cookie-parser');
 connectDB();
 app.use(cors({
     origin: 'http://localhost:3000',
     credentials: true
 }));
 app.use(express.json());
-
+app.use(cookieParser());
 app.get("/", (req, res) => {
   res.send("HOMS Backend is running 🚚");
 });

@@ -1,4 +1,12 @@
 const mongoose = require('mongoose');
+const refreshTokenSchema = new mongoose.Schema(
+  {
+    token: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now },
+    expiresAt: { type: Date, required: true }
+  },
+  { _id: false }
+);
 
 const userSchema = new mongoose.Schema({
   fullName: {
@@ -49,6 +57,7 @@ const userSchema = new mongoose.Schema({
   otpResetPassword: String,
   otpResetExpires: Date,
   otpVerified: Boolean,
+   refreshTokens: [refreshTokenSchema]
 }, { timestamps: true });
 
 
