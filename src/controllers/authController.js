@@ -25,7 +25,7 @@ exports.register = async (req, res, next) => {
 
 exports.login = async (req, res, next) => {
     try {
-        const { user, accessToken, refreshToken } = await authService.loginUser(req.body);
+        const { user, accessToken, refreshToken,expiresInMs } = await authService.loginUser(req.body);
            res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
 sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
@@ -38,7 +38,8 @@ secure: process.env.NODE_ENV === 'production',
             message: 'Đăng nhập thành công',
             data: {
                 user: { id: user._id, fullName: user.fullName, role: user.role }, // Trả về role để FE biết đường điều hướng
-                accessToken
+                accessToken,
+                expiresInMs
             }
         });
     } catch (error) {

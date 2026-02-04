@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
+const {verifyToken} = require('../middlewares/authMiddleware')
 const { validate, schemas } = require('../middlewares/validationMiddleware'); 
 const {
   loginLimiter,
@@ -14,4 +15,11 @@ router.post('/google-login',googleLoginLimiter,authController.googleLogin)
 router.post('/send-otp', authController.resetPassword);
 router.post('/forgot-password',authController.forgotPassword);
 router.post('/refresh', authController.refreshToken);
+router.get('/auth/ping', verifyToken, (req, res) => {
+  res.json({
+    ok: true,
+    user: req.user
+  });
+});
+
 module.exports = router;

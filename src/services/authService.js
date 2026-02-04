@@ -35,19 +35,14 @@ exports.registerUser = async ({ fullName, email, password, phone }) => {
 // Hàm đăng nhập
 exports.loginUser = async ({ email, password }) => {
     // 1. Tìm user
-    const user = await User.findOne({ email });
+const user = await User.findOne({ email }).select('+password');
     
-    // --- SỬA LỖI Ở ĐÂY ---
     if (!user) {
         throw new AppError('Email hoặc mật khẩu không đúng', 401);
     }
-if (!user.password) {
-  throw new AppError(
-    'Tài khoản này đăng nhập bằng Google. Vui lòng sử dụng Google Login.',
-    400
-  );
-}
-
+    if (!password || !user.password) {
+        throw new AppError('Dữ liệu xác thực không hợp lệ', 401);
+    }
     // 2. So khớp mật khẩu
     const isMatch = await bcrypt.compare(password, user.password);
         
@@ -59,6 +54,8 @@ if (!user.password) {
     // 3. Sinh token
     const accessToken = generateToken(user);
     const refreshToken = generateRefreshToken(user);
+    const decoded = jwt.decode(accessToken);
+    const expiresInMs = (decoded.exp - decoded.iat) * 1000;
 const hashedRefreshToken = crypto
   .createHash('sha256')
   .update(refreshToken)
@@ -70,7 +67,7 @@ user.refreshTokens.push({
   expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 });
 await user.save();
-    return { user, accessToken };
+    return { user, accessToken,refreshToken,expiresInMs };
 };
 
 exports.refreshAccessToken = async (refreshToken) => {
@@ -84,7 +81,7 @@ exports.refreshAccessToken = async (refreshToken) => {
       refreshToken,
       process.env.REFRESH_TOKEN_SECRET
     );
-  } catch (err) {
+  } catch {
     throw new AppError('Refresh token invalid or expired', 401);
   }
 
@@ -92,44 +89,40 @@ exports.refreshAccessToken = async (refreshToken) => {
   if (!user) {
     throw new AppError('User not found', 401);
   }
-const hashedRefreshToken = crypto
-  .createHash('sha256')
-  .update(refreshToken)
-  .digest('hex');
-  // Tìm refresh token trong DB
+
+  const hashedRefreshToken = crypto
+    .createHash('sha256')
+    .update(refreshToken)
+    .digest('hex');
+
   const tokenIndex = user.refreshTokens.findIndex(
     (t) => t.token === hashedRefreshToken
   );
 
- if (tokenIndex === -1) {
-  
-  user.refreshTokens = []; // revoke all sessions
-  await user.save();
-  throw new AppError('Refresh token reuse detected', 401);
-}
-
+  if (tokenIndex === -1) {
+    user.refreshTokens = [];
+    await user.save();
+    throw new AppError('Refresh token reuse detected', 401);
+  }
 
   const tokenInDb = user.refreshTokens[tokenIndex];
-
   if (tokenInDb.expiresAt < new Date()) {
-    // Xóa token hết hạn
     user.refreshTokens.splice(tokenIndex, 1);
     await user.save();
     throw new AppError('Refresh token expired', 401);
   }
 
- 
+  // 🔄 rotate token
   const newAccessToken = generateToken(user);
   const newRefreshToken = generateRefreshToken(user);
 
-  // Xóa refresh token cũ
   user.refreshTokens.splice(tokenIndex, 1);
-const hashedNewRefreshToken = crypto
-  .createHash('sha256')
-  .update(newRefreshToken)
-  .digest('hex');
 
-  // Lưu refresh token mới
+  const hashedNewRefreshToken = crypto
+    .createHash('sha256')
+    .update(newRefreshToken)
+    .digest('hex');
+
   user.refreshTokens.push({
     token: hashedNewRefreshToken,
     createdAt: new Date(),
@@ -143,6 +136,7 @@ const hashedNewRefreshToken = crypto
     refreshToken: newRefreshToken,
   };
 };
+
 
 
 
