@@ -1,28 +1,25 @@
 const mongoose = require('mongoose');
 
 const incidentSchema = new mongoose.Schema({
-  orderId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Order'
+  // [FIX]: Trỏ về Invoice nơi xảy ra sự cố
+  invoiceId: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Invoice', 
+    required: true 
   },
 
-  reporterId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-
-  type: {
-    type: String,
-    enum: ['Damage', 'Delay', 'Accident']
-  },
-
+  reporterId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  type: { type: String, enum: ['Damage', 'Delay', 'Accident', 'Loss', 'Other'] },
+  
   description: String,
-  images: [String],
+  images: [String], // Ảnh bằng chứng sự cố
 
-  status: {
-    type: String,
-    enum: ['Open', 'Resolved'],
-    default: 'Open'
+  status: { type: String, enum: ['Open', 'Investigating', 'Resolved', 'Dismissed'], default: 'Open' },
+  
+  resolution: {
+    action: String, // 'Refund', 'Compensation', 'Apology'
+    compensationAmount: Number,
+    resolvedAt: Date
   }
 }, { timestamps: true });
 
