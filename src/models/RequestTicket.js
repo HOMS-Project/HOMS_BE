@@ -104,6 +104,9 @@ const requestTicketSchema = new mongoose.Schema({
 
   notes: String
 
-}, { timestamps: true });
+}, { 
+  timestamps: true,
+  collection: 'RequestTicket'  // Force exact collection name instead of auto-pluralized 'requesttickets'
+});
 
 module.exports = mongoose.model('RequestTicket', requestTicketSchema);
