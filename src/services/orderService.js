@@ -136,6 +136,19 @@ const mapOrderDataToTicket = (orderData, customerId) => {
     // Calculate estimated distance
     ticketData.estimatedDistance = calculateDistance(ticketData.pickup, ticketData.delivery);
     
+    // Add survey information if provided
+    if (orderData.survey) {
+        ticketData.survey = {
+            type: orderData.survey.type, // 'ONLINE' or 'OFFLINE'
+            date: new Date(orderData.survey.date),
+            status: 'WAITING',
+            notes: orderData.survey.timeSlot ? `Khung giờ: ${orderData.survey.timeSlot}` : ''
+        };
+        
+        // Update status to WAITING_SURVEY if survey is scheduled
+        ticketData.status = 'WAITING_SURVEY';
+    }
+    
     return ticketData;
 };
 
@@ -167,7 +180,11 @@ exports.createRequestTicket = async (orderData, customerId) => {
         // Map frontend data to backend schema
         const ticketData = mapOrderDataToTicket(orderData, customerId);
         ticketData.code = code;
-        ticketData.status = 'CREATED';
+        
+        // Set initial status if not already set by survey data
+        if (!ticketData.status) {
+            ticketData.status = 'CREATED';
+        }
         
         console.log('📝 Creating ticket with data:', JSON.stringify(ticketData, null, 2));
         
