@@ -30,12 +30,19 @@ const generateTicketCode = async () => {
 // Calculate distance between two coordinates (Haversine formula)
 const calculateDistance = (pickup, delivery) => {
     const R = 6371; // Earth's radius in km
-    const dLat = (delivery.coordinates.lat - pickup.coordinates.lat) * Math.PI / 180;
-    const dLon = (delivery.coordinates.lng - pickup.coordinates.lng) * Math.PI / 180;
+    
+    // Handle different coordinate formats
+    const pickupLat = pickup.coordinates?.lat || pickup.lat;
+    const pickupLng = pickup.coordinates?.lng || pickup.lng;
+    const deliveryLat = delivery.coordinates?.lat || delivery.lat;
+    const deliveryLng = delivery.coordinates?.lng || delivery.lng;
+    
+    const dLat = (deliveryLat - pickupLat) * Math.PI / 180;
+    const dLon = (deliveryLng - pickupLng) * Math.PI / 180;
     
     const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(pickup.coordinates.lat * Math.PI / 180) * 
-              Math.cos(delivery.coordinates.lat * Math.PI / 180) *
+              Math.cos(pickupLat * Math.PI / 180) * 
+              Math.cos(deliveryLat * Math.PI / 180) *
               Math.sin(dLon/2) * Math.sin(dLon/2);
     
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
@@ -287,5 +294,8 @@ exports.updateTicketStatus = async (ticketId, status, userId) => {
 exports.cancelTicket = async (ticketId, userId) => {
     return exports.updateTicketStatus(ticketId, 'CANCELLED', userId);
 };
+
+// Export helper functions
+exports.calculateDistance = calculateDistance;
 
 module.exports = exports;

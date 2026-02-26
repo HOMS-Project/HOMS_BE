@@ -3,11 +3,14 @@ const router = express.Router();
 const orderController = require('../controllers/orderController');
 const { verifyToken } = require('../middlewares/authMiddleware');
 
-// All routes require authentication
-router.use(verifyToken);
+// Public endpoint - validate order data (no auth required)
+router.post('/validate', orderController.validateOrderData);
 
-// Create new order
-router.post('/create', orderController.createOrder);
+// Create new order - REQUIRES AUTHENTICATION
+router.post('/create', verifyToken, orderController.createOrder);
+
+// Protected routes - require authentication
+router.use(verifyToken);
 
 // Get all orders for current user
 router.get('/my-orders', orderController.getMyOrders);

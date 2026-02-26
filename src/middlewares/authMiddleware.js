@@ -22,6 +22,28 @@ const verifyToken = (req, res, next) => {
     }
 }
 
+// Optional token verification - doesn't fail if no token
+const optionalVerifyToken = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        req.user = null; // No user authenticated
+        return next();
+    }
+
+    const token = authHeader.split(' ')[1];
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded; 
+        next();
+    } catch (error) {
+        // Invalid token, but we don't reject - just continue without user
+        req.user = null;
+        next();
+    }
+}
+
 // 2. Phân quyền (Authorization) 
 const authorize = (roles = []) => {
     return (req, res, next) => {
@@ -36,4 +58,4 @@ const authorize = (roles = []) => {
     };
 };
 
-module.exports = { verifyToken, authorize };
+module.exports = { verifyToken, optionalVerifyToken, authorize };
