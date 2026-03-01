@@ -1,80 +1,57 @@
 const mongoose = require('mongoose');
 
 const pricingDataSchema = new mongoose.Schema({
-  invoiceId: {
+  requestTicketId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Invoice',
+    ref: 'RequestTicket',
+    required: true,
+    index: true
+  },
+
+  surveyDataId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'SurveyData',
     required: true
   },
 
-  // Dữ liệu cơ bản
-  estimatedDistance: Number,      // km
-  totalWeight: Number,            // kg
-  totalVolume: Number,            // m3
-
-  // Giá cơ bản
-  basePrice: Number,              // Giá theo distance/weight/volume
-
-  // Dịch vụ bổ sung
-  services: {
-    packing: {
-      isAppliedAll: { type: Boolean, default: false },
-      itemIds: [{ type: mongoose.Schema.Types.ObjectId }],
-      price: Number
-    },
-    assembling: {
-      isAppliedAll: { type: Boolean, default: false },
-      itemIds: [{ type: mongoose.Schema.Types.ObjectId }],
-      price: Number
-    },
-    insurance: {
-      isAppliedAll: { type: Boolean, default: false },
-      itemIds: [{ type: mongoose.Schema.Types.ObjectId }],
-      price: Number
-    },
-    photography: {
-      isAppliedAll: { type: Boolean, default: false },
-      itemIds: [{ type: mongoose.Schema.Types.ObjectId }],
-      price: Number
-    }
-  },
-
-  // Nhân sự
-  staffFee: {
-    count: Number,
-    pricePerPerson: Number,
-    totalStaffFee: Number
-  },
-
-  // Phương tiện
-  vehicleFee: {
-    vehicleType: String,
-    pricePerDay: Number,
-    pricePerHour: Number,
-    totalVehicleFee: Number
-  },
-
-  // Phụ phí & khuyến mãi
-  surcharge: Number,              // Phụ phí (hẻm hẹp, tầng cao, etc.)
-  
-  promotionId: {
+  priceListId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Promotion'
+    ref: 'PriceList',
+    required: true
   },
-  discountCode: String,
-  discountAmount: Number,
-  discountPercent: Number,
 
-  // Tính toán cuối cùng
-  subtotal: Number,               // Tổng trước thuế
-  tax: Number,                    // Thuế VAT
-  totalPrice: Number,             // Tổng giá tiền
+  version: { type: Number, default: 1 },
 
-  // Lịch sử tính giá
-  calculatedAt: Date,
-  calculatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  breakdown: {
+    vehicleFee: { type: Number, default: 0 },
+    laborFee: { type: Number, default: 0 },
+    distanceFee: { type: Number, default: 0 },
+    floorFee: { type: Number, default: 0 },
+    carryFee: { type: Number, default: 0 },
+    assemblingFee: { type: Number, default: 0 },
+    packingFee: { type: Number, default: 0 },
+    insuranceFee: { type: Number, default: 0 },
+    managementFee: { type: Number, default: 0 }
+  },
 
-  // Ghi chú
+  subtotal: { type: Number, required: true },
+  tax: { type: Number, required: true },
+  totalPrice: { type: Number, required: true },
+
+  minimumChargeApplied: {
+    type: Boolean,
+    default: false
+  },
+
+  discountAmount: { type: Number, default: 0 },
+
+  calculatedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+
+  isApproved: { type: Boolean, default: false },
+
   notes: String
 
 }, { timestamps: true });

@@ -4,11 +4,33 @@
  */
 
 const Invoice = require('../models/Invoice');
+const InvoiceService = require('../services/invoiceService');
 const SurveyService = require('../services/surveyService');
 const PricingService = require('../services/pricingService');
 const RouteValidationService = require('../services/routeValidationService');
 const VehicleDispatchService = require('../services/vehicleDispatchService');
 const AppError = require('../utils/appErrors');
+
+/**
+ * POST /api/invoices/from-ticket/:requestTicketId
+ * Tạo Invoice từ RequestTicket ACCEPTED
+ * Snapshot giá từ RequestTicket.pricing
+ */
+exports.createInvoiceFromTicket = async (req, res, next) => {
+  try {
+    const { requestTicketId } = req.params;
+
+    const invoice = await InvoiceService.createInvoiceFromTicket(requestTicketId);
+
+    res.status(201).json({
+      success: true,
+      message: 'Invoice created from accepted request ticket',
+      data: invoice
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 /**
  * 1. TẠO INVOICE TỪ REQUEST TICKET
@@ -348,5 +370,100 @@ exports.updateInvoiceStatus = async (req, res) => {
       success: false,
       message: error.message
     });
+  }
+};
+/**
+ * GET /api/invoices
+ * Lấy danh sách invoices
+ */
+exports.listInvoices = async (req, res, next) => {
+  try {
+    const { status, customerId, dispatcherId, limit, skip } = req.query;
+    const userId = req.user?._id || req.user?.id;
+
+    const invoices = await InvoiceService.listInvoices({
+      status,
+      customerId,
+      dispatcherId,
+      limit: parseInt(limit) || 20,
+      skip: parseInt(skip) || 0
+    });
+
+    res.json({
+      success: true,
+      data: invoices
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/invoices/:id/confirm
+ * Xác nhận invoice (DRAFT → CONFIRMED)
+ */
+exports.confirmInvoice = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const dispatcherId = req.user?._id || req.user?.id;
+
+    if (!dispatcherId) {
+      throw new AppError('User ID không tồn tại', 401);
+    }
+
+    const invoice = await InvoiceService.confirmInvoice(id, dispatcherId);
+
+    res.json({
+      success: true,
+      message: 'Invoice confirmed successfully',
+      data: invoice
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/invoices/:id/timeline
+ * Lấy timeline của invoice
+ */
+exports.getTimeline = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const timeline = await InvoiceService.getTimeline(id);
+
+    res.json({
+      success: true,
+      data: timeline
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PUT /api/invoices/:id/cancel
+ * Hủy invoice
+ */
+exports.cancelInvoice = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    const userId = req.user?._id || req.user?.id;
+
+    if (!userId) {
+      throw new AppError('User ID không tồn tại', 401);
+    }
+
+    const invoice = await InvoiceService.cancelInvoice(id, userId, reason);
+
+    res.json({
+      success: true,
+      message: 'Invoice cancelled',
+      data: invoice
+    });
+  } catch (error) {
+    next(error);
   }
 };

@@ -7,34 +7,58 @@ const router = express.Router();
 const invoiceController = require('../controllers/invoiceController');
 const { authenticate, authorize } = require('../middlewares/authMiddleware');
 
-// 1. Tạo invoice
-router.post('/', authenticate, invoiceController.createInvoice);
+/**
+ * INVOICE ENDPOINTS
+ */
 
-// 2. Lên lịch khảo sát
-router.post('/:invoiceId/survey/schedule', authenticate, invoiceController.scheduleSurvey);
+// GET /api/invoices - Lấy danh sách
+router.get(
+  '/',
+  authenticate,
+  invoiceController.listInvoices
+);
 
-// 3. Hoàn tất khảo sát
-router.put('/:invoiceId/survey/complete', authenticate, invoiceController.completeSurvey);
+// GET /api/invoices/:id - Lấy chi tiết
+router.get(
+  '/:id',
+  authenticate,
+  invoiceController.getInvoice
+);
 
-// 4. Tính giá
-router.post('/:invoiceId/pricing/calculate', authenticate, invoiceController.calculatePrice);
+// POST /api/invoices/from-ticket/:requestTicketId - Tạo invoice từ request ticket
+router.post(
+  '/from-ticket/:requestTicketId',
+  authenticate,
+  invoiceController.createInvoiceFromTicket,
+  invoiceController.confirmInvoice
+);
 
-// 5. Kiểm tra tuyến đường
-router.post('/route/:routeId/validate', authenticate, invoiceController.validateRoute);
+// POST /api/invoices/:id/dispatch - Phân công vehicles
+router.post(
+  '/:id/dispatch',
+  authenticate,
+  invoiceController.dispatchVehicles
+);
 
-// 6. Tìm tuyến đường tối ưu
-router.get('/:invoiceId/route/optimal', authenticate, invoiceController.findOptimalRoute);
+// PUT /api/invoices/:id/status/:newStatus - Cập nhật status
+router.put(
+  '/:id/status/:newStatus',
+  authenticate,
+  invoiceController.updateInvoiceStatus
+);
 
-// 7. Điều phối xe & nhân sự
-router.post('/:invoiceId/dispatch/vehicles', authenticate, invoiceController.dispatchVehicles);
+// GET /api/invoices/:id/timeline - Lấy timeline
+router.get(
+  '/:id/timeline',
+  authenticate,
+  invoiceController.getTimeline
+);
 
-// 8. Xác nhận điều phối
-router.put('/:invoiceId/dispatch/confirm', authenticate, invoiceController.confirmDispatch);
-
-// 9. Lấy thông tin invoice
-router.get('/:invoiceId', authenticate, invoiceController.getInvoice);
-
-// 10. Cập nhật trạng thái invoice
-router.put('/:invoiceId/status', authenticate, invoiceController.updateInvoiceStatus);
+// PUT /api/invoices/:id/cancel - Hủy invoice
+router.put(
+  '/:id/cancel',
+  authenticate,
+  invoiceController.cancelInvoice
+);
 
 module.exports = router;

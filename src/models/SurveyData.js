@@ -1,9 +1,9 @@
 const mongoose = require('mongoose');
 
 const surveyDataSchema = new mongoose.Schema({
-  invoiceId: {
+  requestTicketId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Invoice',
+    ref: 'RequestTicket',
     required: true
   },
 
@@ -19,49 +19,58 @@ const surveyDataSchema = new mongoose.Schema({
     default: 'SCHEDULED'
   },
 
-  // Lịch khảo sát
   scheduledDate: Date,
   completedDate: Date,
 
-  // Chi tiết khảo sát
   items: [{
-    itemId: { type: mongoose.Schema.Types.ObjectId }, // từ RequestTicket
-    actualWeight: Number,   // kg (thực tế sau khảo sát)
+    name: String,
+    actualWeight: Number,
     actualDimensions: {
       length: Number,
       width: Number,
       height: Number
     },
-    actualVolume: Number,   // m3 (tính từ dimensions)
-    condition: String,      // 'GOOD', 'DAMAGED', 'FRAGILE'
+    actualVolume: Number,
+    condition: {
+      type: String,
+      enum: ['GOOD', 'DAMAGED', 'FRAGILE']
+    },
     notes: String
   }],
 
-  // Kết quả khảo sát tổng hợp
-  totalActualWeight: Number,   // kg
-  totalActualVolume: Number,   // m3
+  totalActualWeight: Number,
+  totalActualVolume: Number,
   totalActualItems: Number,
 
-  // Quang cảnh & môi trường
-  accessibility: {
-    floorLevel: Number,        // tầng
-    elevatorAvailable: Boolean,
-    stairsNarrow: Boolean,     // cần xem xét số nhân sự
-    narrow: Boolean,           // hẻm hẹp
-    notes: String
+  /* ===== ƯỚC TÍNH TÀI NGUYÊN ===== */
+  suggestedVehicle: {
+    type: String,
+    enum: ['500KG', '1TON', '1.5TON', '2TON']
   },
 
-  // Người khảo sát
+  suggestedStaffCount: {
+    type: Number,
+    min: 1
+  },
+
+  distanceKm: Number,
+  carryMeter: { type: Number, default: 0 },
+
+  floors: { type: Number, default: 0 },
+  hasElevator: { type: Boolean, default: false },
+
+  needsAssembling: { type: Boolean, default: false },
+  needsPacking: { type: Boolean, default: false },
+  insuranceRequired: { type: Boolean, default: false },
+  declaredValue: Number,
+
   surveyorId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
 
   notes: String,
-  images: [String],
-
-  // Dùng để cập nhật giá sau khảo sát
-  needsRepricing: { type: Boolean, default: false },
+  images: [String]
 
 }, { timestamps: true });
 

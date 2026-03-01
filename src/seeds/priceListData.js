@@ -1,130 +1,141 @@
 /**
- * Seed data cho PriceList
+ * Seed PriceList V3 - Time Based + Full Config
+ * Usage: node src/seeds/priceListData.js
  */
 
-const priceListData = [
-  {
-    code: 'PRICELIST_DEFAULT_2026',
-    name: 'Bảng giá mặc định 2026',
-    description: 'Bảng giá tiêu chuẩn cho dịch vụ chuyển nhà',
+require('dotenv').config();
+const mongoose = require('mongoose');
+const PriceList = require('../models/PriceList');
 
-    basePrice: {
-      fullHouse: 2000000, // 2M - trọn gói
-      specificItems: 500000 // 500K - item cụ thể
-    },
+async function seedPriceList() {
+  try {
+    const mongoUri =
+      process.env.MONGO_URI || 'mongodb://localhost:27017/homs';
 
-    distancePricing: [
-      { minDistance: 0, maxDistance: 5, pricePerKm: 50000 },
-      { minDistance: 5, maxDistance: 10, pricePerKm: 40000 },
-      { minDistance: 10, maxDistance: 20, pricePerKm: 30000 },
-      { minDistance: 20, maxDistance: 9999, pricePerKm: 25000 }
-    ],
+    await mongoose.connect(mongoUri);
+    console.log('✅ MongoDB connected');
 
-    weightPricing: [
-      { minWeight: 0, maxWeight: 500, pricePerKg: 5000 },
-      { minWeight: 500, maxWeight: 1000, pricePerKg: 4000 },
-      { minWeight: 1000, maxWeight: 2000, pricePerKg: 3000 },
-      { minWeight: 2000, maxWeight: 9999, pricePerKg: 2500 }
-    ],
+    await PriceList.deleteMany({});
+    console.log('🗑 Old price lists removed');
 
-    volumePricing: [
-      { minVolume: 0, maxVolume: 5, pricePerCubicMeter: 100000 },
-      { minVolume: 5, maxVolume: 10, pricePerCubicMeter: 80000 },
-      { minVolume: 10, maxVolume: 20, pricePerCubicMeter: 60000 },
-      { minVolume: 20, maxVolume: 9999, pricePerCubicMeter: 50000 }
-    ],
+    const priceListData = {
+      code: 'HOMS-TIME-BASED-2026',
+      name: 'Bảng giá Time-Based 2026',
+      description: 'Tính theo giờ + nhân công + phụ phí đầy đủ',
+      isActive: true,
+      taxRate: 0.1,
 
-    services: {
-      packing: 300000, // 300K - đóng gói
-      assembling: 500000, // 500K - tháo lắp
-      insurance: 200000, // 200K - bảo hiểm
-      photography: 100000, // 100K - chụp ảnh
-      professionalSurvey: 150000 // 150K - khảo sát chuyên nghiệp
-    },
-
-    staffPricing: [
-      { staffCount: 1, pricePerPerson: 200000, pricePerHour: 50000 },
-      { staffCount: 2, pricePerPerson: 180000, pricePerHour: 45000 },
-      { staffCount: 3, pricePerPerson: 150000, pricePerHour: 40000 },
-      { staffCount: 4, pricePerPerson: 120000, pricePerHour: 35000 },
-      { staffCount: 5, pricePerPerson: 100000, pricePerHour: 30000 }
-    ],
-
-    vehiclePricing: [
-      { vehicleType: '500kg', pricePerDay: 500000, pricePerHour: 150000 },
-      { vehicleType: '1T', pricePerDay: 800000, pricePerHour: 200000 },
-      { vehicleType: '2T', pricePerDay: 1200000, pricePerHour: 300000 },
-      { vehicleType: '3T', pricePerDay: 1500000, pricePerHour: 400000 }
-    ],
-
-    surveyFee: {
-      offline: 300000, // 300K - khảo sát offline
-      online: 100000 // 100K - khảo sát online
-    },
-
-    sampleItems: [
-      {
-        category: 'Furniture',
-        name: 'Sofa 3 chỗ',
-        dimensions: { length: 200, width: 90, height: 80 },
-        weight: 80,
-        material: 'Vải',
-        packingSize: { length: 210, width: 100, height: 90 },
-        packingWeight: 95,
-        image: 'https://example.com/sofa.jpg',
-        basePrice: 500000
+      /* =========================
+         1️⃣ BASE PRICE
+      ========================== */
+      basePrice: {
+        minimumCharge: 800000,
+        fullHouseBase: 500000,
+        specificItemsBase: 300000
       },
-      {
-        category: 'Appliances',
-        name: 'Tủ lạnh 2 cánh',
-        dimensions: { length: 70, width: 65, height: 170 },
-        weight: 100,
-        material: 'Kim loại',
-        packingSize: { length: 80, width: 75, height: 180 },
-        packingWeight: 120,
-        image: 'https://example.com/fridge.jpg',
-        basePrice: 300000
-      },
-      {
-        category: 'Furniture',
-        name: 'Tủ quần áo 4 cánh',
-        dimensions: { length: 200, width: 50, height: 220 },
-        weight: 120,
-        material: 'Gỗ',
-        packingSize: { length: 210, width: 60, height: 230 },
-        packingWeight: 140,
-        image: 'https://example.com/wardrobe.jpg',
-        basePrice: 600000
-      },
-      {
-        category: 'Furniture',
-        name: 'Giường đôi',
-        dimensions: { length: 200, width: 160, height: 50 },
-        weight: 100,
-        material: 'Gỗ',
-        packingSize: { length: 210, width: 170, height: 60 },
-        packingWeight: 120,
-        image: 'https://example.com/bed.jpg',
-        basePrice: 400000
-      },
-      {
-        category: 'Furniture',
-        name: 'Bàn làm việc',
-        dimensions: { length: 120, width: 60, height: 75 },
-        weight: 40,
-        material: 'Gỗ',
-        packingSize: { length: 130, width: 70, height: 85 },
-        packingWeight: 50,
-        image: 'https://example.com/desk.jpg',
-        basePrice: 300000
-      }
-    ],
 
-    isActive: true,
-    effectiveFrom: new Date('2026-01-01'),
-    effectiveTo: new Date('2026-12-31'),
-    createdAt: new Date('2026-01-01')
+      /* =========================
+         2️⃣ VEHICLE PRICING
+      ========================== */
+      vehiclePricing: [
+        {
+          vehicleType: '500KG',
+          basePriceForFirstXKm: 400000,
+          limitKm: 5,
+          pricePerNextKm: 20000,
+          pricePerHour: 150000,
+          pricePerDay: 1000000
+        },
+        {
+          vehicleType: '1TON',
+          basePriceForFirstXKm: 600000,
+          limitKm: 5,
+          pricePerNextKm: 25000,
+          pricePerHour: 200000,
+          pricePerDay: 1400000
+        },
+        {
+          vehicleType: '1.5TON',
+          basePriceForFirstXKm: 900000,
+          limitKm: 5,
+          pricePerNextKm: 30000,
+          pricePerHour: 300000,
+          pricePerDay: 2000000
+        },
+        {
+          vehicleType: '2TON',
+          basePriceForFirstXKm: 1200000,
+          limitKm: 5,
+          pricePerNextKm: 35000,
+          pricePerHour: 400000,
+          pricePerDay: 2600000
+        }
+      ],
+
+      /* =========================
+         3️⃣ STAFF PRICING
+      ========================== */
+      staffPricing: [
+        { staffCount: 1, pricePerPerson: 250000, pricePerHour: 60000 },
+        { staffCount: 2, pricePerPerson: 220000, pricePerHour: 55000 },
+        { staffCount: 3, pricePerPerson: 180000, pricePerHour: 50000 },
+        { staffCount: 4, pricePerPerson: 150000, pricePerHour: 45000 },
+        { staffCount: 5, pricePerPerson: 130000, pricePerHour: 40000 }
+      ],
+
+      /* =========================
+         4️⃣ MOVING SURCHARGE
+      ========================== */
+      movingSurcharge: {
+        freeCarryDistance: 15,
+        pricePerExtraMeter: 20000,
+        distanceSurchargePerKm: 30000,
+        stairSurchargePerFloor: 100000,
+        elevatorSurcharge: 50000,
+        peakHourMultiplier: 1.2,
+        weekendMultiplier: 1.15
+      },
+
+      /* =========================
+         5️⃣ ADDITIONAL SERVICES
+      ========================== */
+      additionalServices: {
+        packingMaterial: 200000,
+        packingFee: 300000,
+        assemblingFee: 500000,
+        insuranceRate: 0.01,        // 1%
+        managementFeeRate: 0.05     // 5%
+      },
+
+      /* =========================
+         6️⃣ SURVEY FEE
+      ========================== */
+      surveyFee: {
+        offline: 300000,
+        online: 100000
+      },
+
+      effectiveFrom: new Date('2026-01-01'),
+      effectiveTo: new Date('2026-12-31')
+    };
+
+    const priceList = await PriceList.create(priceListData);
+
+    console.log('\n✅ PriceList created successfully!');
+    console.log('📌 ID:', priceList._id);
+
+    await mongoose.connection.close();
+    console.log('\n🔒 Connection closed');
+    process.exit(0);
+
+  } catch (error) {
+    console.error('❌ Error seeding price list:', error);
+    process.exit(1);
   }
-];
+}
 
-module.exports = priceListData;
+if (require.main === module) {
+  seedPriceList();
+}
+
+module.exports = seedPriceList;
