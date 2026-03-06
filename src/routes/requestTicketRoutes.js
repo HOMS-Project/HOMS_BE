@@ -6,7 +6,12 @@ const { authenticate, authorize } = require('../middlewares/authMiddleware');
 /**
  * REQUEST TICKET ENDPOINTS
  */
-
+router.post(
+  "/:id/create-payment-link",
+  authenticate,
+  authorize('CUSTOMER'),
+  requestTicketController.createPaymentLink
+);
 // GET list
 router.get(
   '/',
@@ -43,5 +48,7 @@ router.put(
   authorize('CUSTOMER'),
   requestTicketController.acceptQuote
 );
+
+
 
 module.exports = router;

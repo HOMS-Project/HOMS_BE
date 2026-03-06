@@ -4,7 +4,8 @@
 
 const RequestTicket = require('../models/RequestTicket');
 const AppError = require('../utils/appErrors');
-
+const PaymentService = require('../services/paymentService')
+const payos = require("../config/payos");
 // State transitions
 const STATE_TRANSITIONS = {
   CREATED: ['WAITING_SURVEY', 'CANCELLED'],
@@ -181,6 +182,63 @@ class RequestTicketService {
 
     return ticket;
   }
+
+    async findByPaymentOrderCode(orderCode) {
+    return await RequestTicket.findOne({ paymentOrderCode: orderCode });
+  }
+   async createPaymentLink(ticketId, amount) {
+
+    const ticket = await RequestTicket.findById(ticketId);
+
+    if (!ticket) throw new Error("Ticket not found");
+    if (ticket.status !== "CREATED") throw new Error("Invalid ticket status");
+
+    const orderCode = Number(`${Date.now()}${Math.floor(Math.random()*100)}`);
+
+    ticket.paymentOrderCode = orderCode;
+    await ticket.save();
+
+    const checkoutUrl = await PaymentService.createPayosPayment({
+      orderCode,
+      amount,
+      ticket
+    });
+
+    return { checkoutUrl };
+  }
+  async handlePayosWebhook (payload) {
+
+  const webhookData = PaymentService.verifyWebhook(payload);
+console.log("Verified webhook:", webhookData);
+  if (!webhookData) return;
+
+   const { orderCode, code } = webhookData;
+
+    if (code !== "00") return;
+
+ const ticket = await RequestTicket.findOne({
+    paymentOrderCode: orderCode
+  });
+
+
+  if (!ticket) return;
+
+  if (ticket.isDepositPaid) {
+    console.log("Duplicate webhook ignored");
+    return;
+  }
+
+ const paymentInfo = await payos.paymentRequests.get(orderCode);
+  if (paymentInfo.status !== "PAID") return;
+
+  ticket.status = "WAITING_SURVEY";
+  ticket.isDepositPaid = true;
+
+  await ticket.save();
+};
+
 }
 
-module.exports = new RequestTicketService();
+
+
+module.exports = new RequestTicketService();  

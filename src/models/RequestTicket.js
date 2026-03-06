@@ -67,6 +67,15 @@ const requestTicketSchema = new mongoose.Schema({
     ],
     default: 'CREATED'
   },
+  paymentOrderCode: {
+  type: Number, 
+  unique: true,
+  sparse: true
+},
+isDepositPaid: {
+  type: Boolean,
+  default: false
+},
 
   notes: String
 
