@@ -50,3 +50,11 @@ exports.changePassword = async (userId, { currentPassword, newPassword }) => {
 
     return { message: 'Đổi mật khẩu thành công' };
 };
+exports.getActiveDispatchers = async () => {
+  const dispatchers = await User.find({
+    role: 'dispatcher',
+    status: 'Active'
+  }).select('_id fullName phone email');
+
+  return dispatchers;
+};

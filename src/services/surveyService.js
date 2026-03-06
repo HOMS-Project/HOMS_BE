@@ -47,13 +47,34 @@ class SurveyService {
     await survey.save();
 
     // Cập nhật trạng thái ticket: CREATED -> WAITING_SURVEY
-    ticket.status = 'WAITING_SURVEY';
+    ticket.status = 'SCHEDULED';
     ticket.dispatcherId = surveyorId;
     await ticket.save();
 
     return survey;
   }
+async confirmSurvey(requestTicketId, userId) {
+  const ticket = await RequestTicket.findById(requestTicketId);
+  if (!ticket) throw new AppError('Ticket không tồn tại', 404);
 
+  if (ticket.status !== 'SCHEDULED') {
+    throw new AppError('Ticket chưa ở trạng thái SCHEDULED', 400);
+  }
+
+  const survey = await SurveyData.findOne({
+    requestTicketId,
+    status: 'SCHEDULED'
+  });
+
+  if (!survey) {
+    throw new AppError('Không tìm thấy lịch khảo sát', 404);
+  }
+
+  ticket.status = 'WAITING_SURVEY';
+  await ticket.save();
+
+  return ticket;
+}
   /**
    * Hoàn tất khảo sát & tính giá
    */

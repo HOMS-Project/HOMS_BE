@@ -58,6 +58,7 @@ const requestTicketSchema = new mongoose.Schema({
     type: String,
     enum: [
       'CREATED',
+      'SCHEDULED',
       'WAITING_SURVEY',
       'SURVEYED',
       'QUOTED',

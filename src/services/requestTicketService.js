@@ -7,7 +7,8 @@ const AppError = require('../utils/appErrors');
 
 // State transitions
 const STATE_TRANSITIONS = {
-  CREATED: ['WAITING_SURVEY', 'CANCELLED'],
+ CREATED: ['SCHEDULED', 'CANCELLED'],
+  SCHEDULED: ['WAITING_SURVEY', 'CREATED', 'CANCELLED'],
   WAITING_SURVEY: ['SURVEYED', 'CANCELLED'],
   SURVEYED: ['QUOTED', 'CANCELLED'],
   QUOTED: ['ACCEPTED', 'CANCELLED'],
@@ -124,7 +125,13 @@ class RequestTicketService {
 
     if (filters.customerId) query.customerId = filters.customerId;
     if (filters.dispatcherId) query.dispatcherId = filters.dispatcherId;
-    if (filters.status) query.status = filters.status;
+     if (filters.status) {
+      if (filters.status.includes(',')) {
+        query.status = { $in: filters.status.split(',') };
+      } else {
+        query.status = filters.status;
+      }
+    }
     if (filters.moveType) query.moveType = filters.moveType;
 
     const tickets = await RequestTicket.find(query)

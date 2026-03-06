@@ -9,9 +9,17 @@ exports.loginLimiter = rateLimit({
   ...baseConfig,
   windowMs: 15 * 60 * 1000,
   max: 5,
-  message: {
-    status: 'fail',
-    message: 'Bạn thử đăng nhập quá nhiều lần, vui lòng thử lại sau'
+
+  handler: (req, res, next, options) => {
+    const retryAfter = Math.ceil(
+      (req.rateLimit.resetTime - Date.now()) / 1000
+    );
+
+    res.status(options.statusCode).json({
+      status: 'fail',
+      message: 'Bạn thử đăng nhập quá nhiều lần, vui lòng thử lại sau',
+      retryAfter // số giây còn lại
+    });
   }
 });
 

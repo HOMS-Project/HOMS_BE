@@ -9,7 +9,7 @@ router.use(verifyToken);
 
 // Lấy thông tin user
 router.get('/personal-info', userController.getUserInfo);
-
+router.get('/dispatchers',userController.getDispatchers);
 // Cập nhật thông tin user
 router.put('/personal-info', userController.updateUserInfo);
 

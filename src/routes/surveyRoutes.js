@@ -17,7 +17,7 @@ router.post(
   authenticate,
   surveyController.scheduleSurvey
 );
-
+router.put('/surveys/:ticketId/confirm'.authenticate,surveyController.scheduleSurvey) 
 // PUT /api/surveys/:ticketId/complete - Hoàn tất khảo sát
 router.put(
   '/:ticketId/complete',

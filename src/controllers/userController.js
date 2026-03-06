@@ -52,3 +52,15 @@ exports.changePassword = async (req, res, next) => {
         next(error);
     }
 };
+exports.getDispatchers = async (req, res, next) => {
+  try {
+    const dispatchers = await userService.getActiveDispatchers();
+
+    res.json({
+      success: true,
+      data: dispatchers
+    });
+  } catch (error) {
+    next(error);
+  }
+};
