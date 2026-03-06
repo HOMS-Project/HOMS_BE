@@ -54,10 +54,14 @@ const userSchema = new mongoose.Schema({
     skills: [String],
     isAvailable: { type: Boolean, default: true }
   },
+  dispatcherProfile: {
+    workingAreas: [String], // Ví dụ: ['Hải Châu', 'Sơn Trà'] để phân công tự động
+    isAvailable: { type: Boolean, default: true }
+  },
   otpResetPassword: String,
   otpResetExpires: Date,
   otpVerified: Boolean,
-   refreshTokens: [refreshTokenSchema]
+  refreshTokens: [refreshTokenSchema]
 }, { timestamps: true });
 
 

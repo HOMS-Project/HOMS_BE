@@ -10,6 +10,15 @@ router.use(verifyToken);
 // Lấy thông tin user
 router.get('/personal-info', userController.getUserInfo);
 
+// Lấy danh sách nhân viên khảo sát
+router.get('/dispatchers', userController.getDispatchers);
+
+// Lấy danh sách tài xế
+router.get('/drivers', userController.getDrivers);
+
+// Lấy danh sách nhân viên bốc xếp
+router.get('/staff', userController.getStaff);
+
 // Cập nhật thông tin user
 router.put('/personal-info', userController.updateUserInfo);
 

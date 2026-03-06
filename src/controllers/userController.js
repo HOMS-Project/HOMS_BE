@@ -52,3 +52,42 @@ exports.changePassword = async (req, res, next) => {
         next(error);
     }
 };
+
+// Lấy danh sách nhân viên khảo sát
+exports.getDispatchers = async (req, res, next) => {
+    try {
+        const dispatchers = await userService.getDispatchers();
+        res.status(200).json({
+            success: true,
+            data: dispatchers
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Lấy danh sách tài xế
+exports.getDrivers = async (req, res, next) => {
+    try {
+        const drivers = await userService.getDrivers();
+        res.status(200).json({
+            success: true,
+            data: drivers
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// Lấy danh sách nhân viên bốc xếp
+exports.getStaff = async (req, res, next) => {
+    try {
+        const staff = await userService.getStaff();
+        res.status(200).json({
+            success: true,
+            data: staff
+        });
+    } catch (error) {
+        next(error);
+    }
+};

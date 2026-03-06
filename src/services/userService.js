@@ -50,3 +50,22 @@ exports.changePassword = async (userId, { currentPassword, newPassword }) => {
 
     return { message: 'Đổi mật khẩu thành công' };
 };
+
+// Lấy danh sách nhân viên khảo sát
+exports.getDispatchers = async () => {
+    const dispatchers = await User.find({ role: 'dispatcher', status: 'Active' })
+        .select('-password -otpResetPassword -otpResetExpires');
+    return dispatchers;
+};
+
+// Lấy danh sách tài xế
+exports.getDrivers = async () => {
+    return await User.find({ role: 'driver', status: 'Active' })
+        .select('-password -otpResetPassword -otpResetExpires');
+};
+
+// Lấy danh sách nhân viên bốc xếp (staff). Hệ thống hiện tại có thể chỉ dùng 'driver' cho bốc xếp, nhưng ta cứ map vào 'driver' tạm.
+exports.getStaff = async () => {
+    return await User.find({ role: 'driver', status: 'Active' })
+        .select('-password -otpResetPassword -otpResetExpires');
+};

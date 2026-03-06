@@ -202,7 +202,6 @@ class InvoiceService {
   async getInvoice(invoiceId) {
     const invoice = await Invoice.findById(invoiceId)
       .populate('customerId', 'fullName email phone')
-      .populate('dispatcherId', 'fullName email phone')
       .populate('requestTicketId')
       .populate('dispatchAssignmentId');
 
@@ -225,7 +224,6 @@ class InvoiceService {
 
     const invoices = await Invoice.find(query)
       .populate('customerId', 'fullName email phone')
-      .populate('dispatcherId', 'fullName email phone')
       .sort({ createdAt: -1 })
       .limit(filters.limit || 20)
       .skip(filters.skip || 0);

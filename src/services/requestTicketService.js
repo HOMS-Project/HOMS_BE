@@ -124,7 +124,13 @@ class RequestTicketService {
 
     if (filters.customerId) query.customerId = filters.customerId;
     if (filters.dispatcherId) query.dispatcherId = filters.dispatcherId;
-    if (filters.status) query.status = filters.status;
+    if (filters.status) {
+      if (filters.status.includes(',')) {
+        query.status = { $in: filters.status.split(',').map(s => s.trim()) };
+      } else {
+        query.status = filters.status;
+      }
+    }
     if (filters.moveType) query.moveType = filters.moveType;
 
     const tickets = await RequestTicket.find(query)
@@ -142,7 +148,7 @@ class RequestTicketService {
    * Chuyển status từ QUOTED -> ACCEPTED
    */
   async acceptQuote(ticketId) {
-    const ticket = await RequestTicket.findById(ticketId);
+    const ticket = await RequestTicket.findById(ticketId).populate('customerId');
     if (!ticket) {
       throw new AppError('Request ticket không tồn tại', 404);
     }
@@ -158,6 +164,49 @@ class RequestTicketService {
     ticket.pricing.acceptedAt = new Date();
     ticket.status = 'ACCEPTED';
     await ticket.save();
+
+    // Sinh hợp đồng tự động
+    const ContractTemplate = require('../models/ContractTemplate');
+    const Contract = require('../models/Contract');
+    const crypto = require('crypto');
+
+    let template = await ContractTemplate.findOne({ isActive: true });
+    
+    if (!template) {
+        template = await ContractTemplate.create({
+            name: 'Hợp Đồng Dịch Vụ Chuyển Nhà (Mặc Định)',
+            content: `<h2>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</h2>
+                      <h3>Độc lập - Tự do - Hạnh phúc</h3>
+                      <h2 style="text-align:center">HỢP ĐỒNG DỊCH VỤ CHUYỂN NHÀ</h2>
+                      <p>Khách hàng: \${customerName}</p>
+                      <p>Số điện thoại: \${customerPhone}</p>
+                      <p>Tổng chi phí: \${totalPrice} VNĐ</p>
+                      <p>Hai bên cam kết thực hiện đúng các điều khoản vận chuyển an toàn, đền bù 100% nếu xảy ra đổ vỡ do lỗi vận chuyển.</p>`,
+            isActive: true
+        });
+    }
+
+    let finalContent = template.content;
+    const customerName = ticket.customerId ? (ticket.customerId.fullName || '') : 'Khách Hàng';
+    const customerPhone = ticket.customerId ? (ticket.customerId.phone || '') : '';
+    const totalPrice = ticket.pricing?.totalPrice ? ticket.pricing.totalPrice.toLocaleString() : '0';
+
+    finalContent = finalContent.replace(/\$\{customerName\}/g, customerName)
+                               .replace(/\$\{customerPhone\}/g, customerPhone)
+                               .replace(/\$\{totalPrice\}/g, totalPrice);
+
+    const contractNumber = `HĐ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+
+    const newContract = new Contract({
+        contractNumber,
+        templateId: template._id,
+        requestTicketId: ticket._id,
+        customerId: ticket.customerId ? ticket.customerId._id : null,
+        content: finalContent,
+        status: 'DRAFT'
+    });
+
+    await newContract.save();
 
     return ticket;
   }
