@@ -10,6 +10,14 @@ app.use(cors({
   origin: 'http://localhost:3000',
   credentials: true
 }));
+
+const requestTicketController = require("./controllers/requestTicketController");
+
+app.post(
+  "/api/request-tickets/payos-webhook",
+  express.raw({ type: "application/json" }),
+  requestTicketController.payosWebhook
+);
 app.use(express.json());
 app.use(cookieParser());
 app.get("/", (req, res) => {
