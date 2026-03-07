@@ -139,6 +139,37 @@
       next(error);
     }
   };
+
+  /**
+   * PUT /api/request-tickets/:id/propose-time
+   * Dispatcher từ chối lịch khảo sát và đề xuất lịch mới
+   */
+  exports.proposeSurveyTime = async (req, res, next) => {
+    try {
+      const { id } = req.params;
+      const { proposedTimes, reason } = req.body;
+      const userId = req.user?._id || req.user?.id;
+
+      if (!userId) {
+        throw new AppError('User ID không tồn tại', 401);
+      }
+
+      if (!proposedTimes || !Array.isArray(proposedTimes) || proposedTimes.length === 0) {
+        throw new AppError('Phải cung cấp ít nhất một giờ đề xuất mới', 400);
+      }
+
+      const ticket = await RequestTicketService.proposeNewTime(id, userId, proposedTimes, reason);
+
+      res.json({
+        success: true,
+        message: 'Đã cập nhật giờ đề xuất mới cho quá trình khảo sát',
+        data: ticket
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
   /**
    * PUT /api/request-tickets/:id/accept-quote
    * Customer chấp nhận báo giá

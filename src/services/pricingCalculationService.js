@@ -123,7 +123,10 @@ class PricingCalculationService {
     // ================= TAX =================
     const taxRate = priceList.taxRate || 0.1;
     const tax = Math.round(subtotal * taxRate);
-    const totalPrice = subtotal + tax;
+    let totalPrice = subtotal + tax;
+
+    // LÀM TRÒN PHẦN NGHÌN (Round to nearest 1,000)
+    totalPrice = Math.round(totalPrice / 1000) * 1000;
 
     return {
       breakdown: {

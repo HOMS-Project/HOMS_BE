@@ -76,6 +76,9 @@ isDepositPaid: {
   type: Boolean,
   default: false
 },
+  proposedSurveyTimes: [{
+    type: Date
+  }],
 
   notes: String
 

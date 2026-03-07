@@ -35,3 +35,28 @@ exports.approvePricing = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * GET /api/pricing/:requestTicketId
+ * Lấy chi tiết báo giá
+ */
+exports.getPricingByTicket = async (req, res, next) => {
+  try {
+    const { requestTicketId } = req.params;
+    const PricingData = require('../models/PricingData');
+    
+    // Tìm báo giá mới nhất của ticket này
+    const pricingData = await PricingData.findOne({ requestTicketId }).sort({ createdAt: -1 });
+    
+    if (!pricingData) {
+      return res.status(404).json({ success: false, message: 'Chưa có báo giá chi tiết cho đơn này.' });
+    }
+
+    res.json({
+      success: true,
+      data: pricingData
+    });
+  } catch (error) {
+    next(error);
+  }
+};

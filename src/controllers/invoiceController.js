@@ -243,6 +243,8 @@ exports.findOptimalRoute = async (req, res) => {
   }
 };
 
+const SurveyData = require('../models/SurveyData');
+
 /**
  * 7. ĐIỀU PHỐI XE & NHÂN SỰ
  */
@@ -250,12 +252,26 @@ exports.dispatchVehicles = async (req, res) => {
   try {
     const { invoiceId } = req.params;
     const {
-      totalWeight,
-      totalVolume,
       driverIds,
       staffIds,
       estimatedDuration
     } = req.body;
+
+    // Truy xuất thông tin SurveyData để lấy khối lượng thực tế
+    const invoice = await Invoice.findById(invoiceId);
+    let totalWeight = 1000;
+    let totalVolume = 10;
+
+    if (invoice && invoice.requestTicketId) {
+      const surveyData = await SurveyData.findOne({ 
+         requestTicketId: invoice.requestTicketId, 
+         status: 'COMPLETED' 
+      });
+      if (surveyData) {
+        totalWeight = surveyData.totalActualWeight || 1000;
+        totalVolume = surveyData.totalActualVolume || 10;
+      }
+    }
 
     const assignment = await VehicleDispatchService.createDispatchAssignment(invoiceId, {
       totalWeight,

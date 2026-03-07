@@ -41,6 +41,35 @@ exports.scheduleSurvey = async (req, res, next) => {
 };
 
 /**
+ * POST /api/surveys/estimate
+ * Ước tính tài nguyên xe tải và nhân viên dựa trên đồ đạc và khoảng cách
+ */
+exports.estimateResources = async (req, res, next) => {
+  try {
+    const { items, distanceKm, floors, hasElevator } = req.body;
+    
+    if (distanceKm == null || floors == null) {
+      throw new AppError('Thiếu thông báo khoảng cách hoặc số tầng', 400);
+    }
+
+    const estimate = await SurveyService.estimateResources(
+      items, 
+      Number(distanceKm), 
+      Number(floors), 
+      Boolean(hasElevator)
+    );
+
+    res.json({
+      success: true,
+      message: 'Tính toán tài nguyên thành công',
+      data: estimate
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * PUT /api/surveys/:ticketId/complete
  * Hoàn tất khảo sát & tính giá tự động
  */

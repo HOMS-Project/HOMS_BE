@@ -41,6 +41,14 @@ router.put(
   requestTicketController.cancelRequestTicket
 );
 
+// PROPOSE SURVEY TIME
+router.put(
+  '/:id/propose-time',
+  authenticate,
+  authorize('ADMIN', 'DISPATCHER'),
+  requestTicketController.proposeSurveyTime
+);
+
 // ACCEPT QUOTE
 router.put(
   '/:id/accept-quote',

@@ -18,6 +18,13 @@ router.post(
   surveyController.scheduleSurvey
 );
 
+// POST /api/surveys/estimate - Ước tính tài nguyên
+router.post(
+  '/estimate',
+  authenticate,
+  surveyController.estimateResources
+);
+
 // PUT /api/surveys/:ticketId/complete - Hoàn tất khảo sát
 router.put(
   '/:ticketId/complete',

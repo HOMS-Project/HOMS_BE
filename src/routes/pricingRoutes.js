@@ -18,4 +18,11 @@ router.post(
   pricingController.approvePricing
 );
 
+// GET /api/pricing/:requestTicketId - Tìm báo giá của ticket
+router.get(
+  '/:requestTicketId',
+  authenticate,
+  pricingController.getPricingByTicket
+);
+
 module.exports = router;

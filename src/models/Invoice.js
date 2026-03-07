@@ -58,7 +58,14 @@ const invoiceSchema = new mongoose.Schema({
     notes: String
   }],
 
-  notes: String
+  notes: String,
+
+  // Nghiệm thu hoàn thành
+  completionEvidence: {
+    beforeImages: [String], // Ảnh trước khi chuyển
+    afterImages: [String],  // Ảnh sau khi chuyển xong
+    customerSignature: String // Chữ ký xác nhận của khách hàng
+  }
 
 }, { timestamps: true });
 

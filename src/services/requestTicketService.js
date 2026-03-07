@@ -81,6 +81,33 @@ class RequestTicketService {
   }
 
   /**
+   * Dispatcher từ chối lịch khảo sát và đề xuất lịch mới
+   */
+  async proposeNewTime(ticketId, userId, proposedTimes, reason) {
+    const ticket = await RequestTicket.findById(ticketId);
+    if (!ticket) {
+      throw new AppError('Request ticket không tồn tại', 404);
+    }
+
+    if (ticket.status !== 'CREATED' && ticket.status !== 'WAITING_SURVEY') {
+      throw new AppError(`Không thể đề xuất lịch từ trạng thái ${ticket.status}`, 400);
+    }
+
+    // Cập nhật ngày đề xuất mới
+    // (Lưu ý mảng này là mảng thời gian được Dispatcher chọn gửi lại cho Khách hàng)
+    ticket.proposedSurveyTimes = proposedTimes.map(timeStr => new Date(timeStr));
+    
+    // Ghi chú lý do từ chối (có thể lưu log vào timeline sau này nếu làm hệ thống Log)
+    if (reason) {
+      ticket.notes = (ticket.notes ? ticket.notes + '\n' : '') + `[Dispatcher Đề Xuất Đổi Lịch]: ${reason}`;
+    }
+
+    // Không chuyển status thành CANCELLED, giữ nguyên để Khách hàng có thể thao tác chọn lại lịch.
+    await ticket.save();
+    return ticket;
+  }
+
+  /**
    * Cập nhật trạng thái ticket
    */
   async updateStatus(ticketId, newStatus, userId) {
@@ -280,7 +307,7 @@ console.log("Verified webhook:", webhookData);
  const paymentInfo = await payos.paymentRequests.get(orderCode);
   if (paymentInfo.status !== "PAID") return;
 
-  ticket.status = "WAITING_SURVEY";
+  // Giữ nguyên trạng thái CREATED, chỉ cập nhật đã thanh toán cọc
   ticket.isDepositPaid = true;
 
   await ticket.save();

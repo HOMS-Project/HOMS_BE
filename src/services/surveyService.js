@@ -59,124 +59,131 @@ class SurveyService {
    */
   async completeSurvey(requestTicketId, surveyData, userId) {
 
-  // 1️⃣ Validate ticket
-  const ticket = await RequestTicket.findById(requestTicketId);
-  if (!ticket) {
-    throw new AppError('Request ticket không tồn tại', 404);
-  }
+    // 1️⃣ Validate ticket
+    const ticket = await RequestTicket.findById(requestTicketId);
+    if (!ticket) {
+      throw new AppError('Request ticket không tồn tại', 404);
+    }
 
-  if (ticket.status !== 'WAITING_SURVEY') {
-    throw new AppError(
-      `Không thể hoàn tất khảo sát từ trạng thái ${ticket.status}`,
-      400
-    );
-  }
+    if (ticket.status !== 'WAITING_SURVEY') {
+      throw new AppError(
+        `Không thể hoàn tất khảo sát từ trạng thái ${ticket.status}`,
+        400
+      );
+    }
 
-  // 2️⃣ Tìm survey
-  const survey = await SurveyData.findOne({
-    requestTicketId,
-    status: 'SCHEDULED'
-  });
-
-  if (!survey) {
-    throw new AppError('Không tìm thấy đợt khảo sát', 404);
-  }
-
-  // 3️⃣ Destructure đúng field mới
-  const {
-    suggestedVehicle,
-    suggestedStaffCount,
-    distanceKm,
-    carryMeter = 0,
-    floors = 0,
-    hasElevator = false,
-    needsAssembling = false,
-    needsPacking = false,
-    insuranceRequired = false,
-    declaredValue = 0,
-    items,
-    notes
-  } = surveyData;
-
-  // Validate
-  if (!suggestedVehicle || suggestedStaffCount == null || distanceKm == null) {
-    throw new AppError('Thiếu dữ liệu khảo sát bắt buộc', 400);
-  }
-
-  // 4️⃣ Update survey
-  survey.suggestedVehicle  = suggestedVehicle;
-  survey.suggestedStaffCount = suggestedStaffCount;
-  survey.distanceKm = distanceKm;
-  survey.carryMeter = carryMeter;
-  survey.floors = floors;
-  survey.hasElevator = hasElevator;
-  survey.needsAssembling = needsAssembling;
-  survey.needsPacking = needsPacking;
-  survey.insuranceRequired = insuranceRequired;
-  survey.declaredValue = declaredValue;
-
-  if (items && Array.isArray(items)) {
-    survey.items = items;
-    survey.totalActualItems = items.length;
-
-    let totalWeight = 0;
-    let totalVolume = 0;
-
-    items.forEach(item => {
-      totalWeight += item.actualWeight || 0;
-      totalVolume += item.actualVolume || 0;
+    // 2️⃣ Tìm survey
+    let survey = await SurveyData.findOne({
+      requestTicketId,
+      status: 'SCHEDULED'
     });
 
-    survey.totalActualWeight = totalWeight;
-    survey.totalActualVolume = totalVolume;
+    if (!survey) {
+      // Nếu chưa có lịch khảo sát, tạo mới một đợt khảo sát online/mặc định gắn với ticket
+      survey = new SurveyData({
+        requestTicketId,
+        surveyType: 'ONLINE',
+        scheduledDate: new Date(),
+        surveyorId: userId || ticket.dispatcherId, // Fallback ngưởi dùng hiện tại
+        status: 'SCHEDULED'
+      });
+    }
+
+    // 3️⃣ Destructure đúng field mới
+    const {
+      suggestedVehicle,
+      suggestedStaffCount,
+      distanceKm,
+      carryMeter = 0,
+      floors = 0,
+      hasElevator = false,
+      needsAssembling = false,
+      needsPacking = false,
+      insuranceRequired = false,
+      declaredValue = 0,
+      items,
+      notes
+    } = surveyData;
+
+    // Validate
+    if (!suggestedVehicle || suggestedStaffCount == null || distanceKm == null) {
+      throw new AppError('Thiếu dữ liệu khảo sát bắt buộc', 400);
+    }
+
+    // 4️⃣ Update survey
+    survey.suggestedVehicle = suggestedVehicle;
+    survey.suggestedStaffCount = suggestedStaffCount;
+    survey.distanceKm = distanceKm;
+    survey.carryMeter = carryMeter;
+    survey.floors = floors;
+    survey.hasElevator = hasElevator;
+    survey.needsAssembling = needsAssembling;
+    survey.needsPacking = needsPacking;
+    survey.insuranceRequired = insuranceRequired;
+    survey.declaredValue = declaredValue;
+
+    if (items && Array.isArray(items)) {
+      survey.items = items;
+      survey.totalActualItems = items.length;
+
+      let totalWeight = 0;
+      let totalVolume = 0;
+
+      items.forEach(item => {
+        totalWeight += item.actualWeight || 0;
+        totalVolume += item.actualVolume || 0;
+      });
+
+      survey.totalActualWeight = totalWeight;
+      survey.totalActualVolume = totalVolume;
+    }
+
+    survey.completedDate = new Date();
+    survey.status = 'COMPLETED';
+    survey.notes = notes || survey.notes;
+
+    await survey.save();
+
+    // ⚠️ RELOAD survey từ DB để đảm bảo tất cả fields được persist
+    const freshSurvey = await SurveyData.findById(survey._id);
+
+    // ========== 5️⃣ TÍNH GIÁ ==========
+    const priceList = await PricingCalculationService.getActivePriceList();
+
+    const pricingCalculation =
+      await PricingCalculationService.calculatePricing(
+        freshSurvey,
+        priceList
+      );
+
+    const pricingData =
+      await PricingCalculationService.createPricingData(
+        requestTicketId,
+        freshSurvey,
+        pricingCalculation,
+        userId
+      );
+
+    // ========== 6️⃣ Update ticket thành QUOTED ==========
+    ticket.status = 'QUOTED';
+
+    ticket.pricing = {
+      pricingDataId: pricingData._id,
+      subtotal: pricingData.subtotal,
+      tax: pricingData.tax,
+      totalPrice: pricingData.totalPrice,
+      version: pricingData.version,
+      quotedAt: new Date(),
+      isFinalized: false
+    };
+
+    await ticket.save();
+
+    return {
+      survey: freshSurvey,
+      pricing: pricingData
+    };
   }
-
-  survey.completedDate = new Date();
-  survey.status = 'COMPLETED';
-  survey.notes = notes || survey.notes;
-
-  await survey.save();
-
-  // ⚠️ RELOAD survey từ DB để đảm bảo tất cả fields được persist
-  const freshSurvey = await SurveyData.findById(survey._id);
-
-  // ========== 5️⃣ TÍNH GIÁ ==========
-  const priceList = await PricingCalculationService.getActivePriceList();
-
-  const pricingCalculation =
-    await PricingCalculationService.calculatePricing(
-      freshSurvey,
-      priceList
-    );
-
-  const pricingData =
-    await PricingCalculationService.createPricingData(
-      requestTicketId,
-      freshSurvey,
-      pricingCalculation,
-      userId
-    );
-
-  // ========== 6️⃣ Update ticket thành QUOTED ==========
-  ticket.status = 'QUOTED';
-
-  ticket.pricing = {
-    pricingDataId: pricingData._id,
-    subtotal: pricingData.subtotal,
-    tax: pricingData.tax,
-    totalPrice: pricingData.totalPrice,
-    version: pricingData.version,
-    quotedAt: new Date(),
-    isFinalized: false
-  };
-
-  await ticket.save();
-
-  return {
-    survey: freshSurvey,
-    pricing: pricingData
-  };
-}
 
   /**
    * Lấy chi tiết khảo sát
@@ -206,6 +213,53 @@ class SurveyService {
 
     return survey;
   }
-}
 
+  /**
+   * Tính toán ước lượng: loại xe, số nhân viên cơ bản dựa trên items
+   */
+  async estimateResources(items, distanceKm, floors, hasElevator) {
+    let totalVolume = 0;
+    let totalWeight = 0;
+
+    if (items && Array.isArray(items)) {
+      items.forEach(item => {
+        totalVolume += (item.actualVolume || 0);
+        totalWeight += (item.actualWeight || 0);
+      });
+    }
+
+    // Xác định loại xe dựa trên Volume & Weight
+    let suggestedVehicle = '500KG';
+    if (totalWeight > 1000 || totalVolume > 5) {
+      suggestedVehicle = '1.5TON';
+    } else if (totalWeight > 500 || totalVolume > 2.5) {
+      suggestedVehicle = '1TON';
+    }
+
+    if (totalWeight > 1500 || totalVolume > 8) {
+      suggestedVehicle = '2TON';
+    }
+
+    // Đề xuất nhân viên cơ bản
+    let suggestedStaffCount = 2;
+    if (totalVolume > 5 || totalWeight > 500) suggestedStaffCount += 1;
+    if (floors > 2 && !hasElevator) suggestedStaffCount += 1;
+    if (suggestedStaffCount > 5) suggestedStaffCount = 5;
+
+    // Check luật giao thông
+    const routeWarnings = [];
+    if (suggestedVehicle === '2TON' || suggestedVehicle === '1.5TON') {
+      routeWarnings.push(`Lưu ý: Xe ${suggestedVehicle} có thể bị cấm tải trong giờ cao điểm nội thành.`);
+    }
+
+    return {
+      suggestedVehicle,
+      suggestedStaffCount,
+      totalVolume,
+      totalWeight,
+      distanceKm,
+      routeWarnings
+    };
+  }
+}
 module.exports = new SurveyService();
