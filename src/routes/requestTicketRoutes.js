@@ -10,8 +10,10 @@ router.post(
   "/:id/create-payment-link",
   authenticate,
   authorize('CUSTOMER'),
-  requestTicketController.createPaymentLink
+  requestTicketController.createSurveyPayment
 );
+router.post("/:id/deposit",  authenticate,
+  authorize('CUSTOMER'),requestTicketController.createMovingDepositPayment);
 // GET list
 router.get(
   '/',

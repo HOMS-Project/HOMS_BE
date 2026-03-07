@@ -72,7 +72,7 @@ const requestTicketSchema = new mongoose.Schema({
   unique: true,
   sparse: true
 },
-isDepositPaid: {
+isSurveyPaid: {
   type: Boolean,
   default: false
 },
@@ -83,5 +83,13 @@ isDepositPaid: {
   notes: String
 
 }, { timestamps: true });
+requestTicketSchema.virtual("invoice", {
+  ref: "Invoice",
+  localField: "_id",
+  foreignField: "requestTicketId",
+  justOne: true
+});
 
+requestTicketSchema.set("toObject", { virtuals: true });
+requestTicketSchema.set("toJSON", { virtuals: true });
 module.exports = mongoose.model('RequestTicket', requestTicketSchema);

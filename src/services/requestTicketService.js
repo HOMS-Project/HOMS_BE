@@ -3,6 +3,7 @@
  */
 
 const RequestTicket = require('../models/RequestTicket');
+const Invoice = require("../models/Invoice")
 const AppError = require('../utils/appErrors');
 const PaymentService = require('../services/paymentService')
 const payos = require("../config/payos");
@@ -164,6 +165,7 @@ class RequestTicketService {
     const tickets = await RequestTicket.find(query)
       .populate('customerId', 'fullName email phone')
       .populate('dispatcherId', 'fullName email phone')
+      .populate("invoice")
       .sort({ createdAt: -1 })
       .limit(filters.limit || 20)
       .skip(filters.skip || 0);
@@ -262,7 +264,7 @@ class RequestTicketService {
     async findByPaymentOrderCode(orderCode) {
     return await RequestTicket.findOne({ paymentOrderCode: orderCode });
   }
-   async createPaymentLink(ticketId, amount) {
+   async createSurveyPayment(ticketId, amount) {
 
     const ticket = await RequestTicket.findById(ticketId);
 
@@ -270,50 +272,122 @@ class RequestTicketService {
     if (ticket.status !== "CREATED") throw new Error("Invalid ticket status");
 
     const orderCode = Number(`${Date.now()}${Math.floor(Math.random()*100)}`);
+    
 
     ticket.paymentOrderCode = orderCode;
+    ticket.paymentType = "SURVEY_DEPOSIT";
     await ticket.save();
 
     const checkoutUrl = await PaymentService.createPayosPayment({
       orderCode,
       amount,
-      ticket
+      ticket,
+      paymentType: "SURVEY_DEPOSIT"
     });
 
     return { checkoutUrl };
   }
-  async handlePayosWebhook (payload) {
+  async createMovingDepositPayment(ticketId) {
+console.log("ticketId received:", ticketId);
+console.log("type:", typeof ticketId);
+  const invoice = await Invoice.findOne({
+    requestTicketId: ticketId
+  });
+
+  if (!invoice) {
+    throw new Error("Invoice not found for this ticket");
+  }
+
+  const depositAmount = Math.floor(invoice.priceSnapshot.totalPrice * 0.5);
+
+  const orderCode = Number(`${Date.now()}${Math.floor(Math.random()*100)}`);
+
+  invoice.paymentOrderCode = orderCode;
+
+  await invoice.save();
+
+  const checkoutUrl = await PaymentService.createPayosPayment({
+    orderCode,
+    amount: depositAmount,
+    ticket: { code: invoice.code },
+    paymentType: "MOVING_DEPOSIT"
+  });
+
+  return { checkoutUrl };
+
+}
+  
+ async handlePayosWebhook(payload) {
 
   const webhookData = PaymentService.verifyWebhook(payload);
-console.log("Verified webhook:", webhookData);
+
   if (!webhookData) return;
 
-   const { orderCode, code } = webhookData;
+  const { orderCode, code } = webhookData;
 
-    if (code !== "00") return;
+  if (code !== "00") return;
 
- const ticket = await RequestTicket.findOne({
+  const paymentInfo = await payos.paymentRequests.get(orderCode);
+
+  if (paymentInfo.status !== "PAID") return;
+
+  /*
+  =====================
+  1. CHECK SURVEY PAYMENT
+  =====================
+  */
+
+  const ticket = await RequestTicket.findOne({
     paymentOrderCode: orderCode
   });
 
+  if (ticket && ticket.paymentType === "SURVEY_DEPOSIT") {
 
-  if (!ticket) return;
+    if (ticket.isSurveyPaid) {
+      console.log("Duplicate survey webhook");
+      return;
+    }
 
-  if (ticket.isDepositPaid) {
-    console.log("Duplicate webhook ignored");
+    ticket.isSurveyPaid = true;
+
+    await ticket.save();
+
     return;
   }
 
- const paymentInfo = await payos.paymentRequests.get(orderCode);
-  if (paymentInfo.status !== "PAID") return;
+  /*
+  =====================
+  2. CHECK MOVING DEPOSIT
+  =====================
+  */
 
-  // Giữ nguyên trạng thái CREATED, chỉ cập nhật đã thanh toán cọc
-  ticket.isDepositPaid = true;
+  const invoice = await Invoice.findOne({
+    paymentOrderCode: orderCode,
+     paymentStatus: "UNPAID"
+  });
 
-  await ticket.save();
-};
+  if (invoice) {
+
+    if (invoice.paymentStatus !== "UNPAID") {
+      console.log("Duplicate deposit webhook");
+      return;
+    }
+      const depositAmount = paymentInfo.amount;
+ invoice.paidAmount += depositAmount;
+       invoice.remainingAmount =
+    invoice.priceSnapshot.totalPrice - invoice.paidAmount;
+
+   invoice.paymentStatus =
+    invoice.remainingAmount <= 0 ? "PAID" : "PARTIAL";
+
+    invoice.status="CONFIRMED"
+    await invoice.save();
+
+    return;
+  }
 
 }
+};
 
 
 

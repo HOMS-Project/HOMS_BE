@@ -59,7 +59,18 @@ const invoiceSchema = new mongoose.Schema({
   }],
 
   notes: String,
-
+paidAmount: {
+  type: Number,
+  default: 0
+},
+remainingAmount: {
+  type: Number
+},
+  paymentOrderCode: {
+  type: Number,
+  unique: true,
+  sparse: true
+},
   // Nghiệm thu hoàn thành
   completionEvidence: {
     beforeImages: [String], // Ảnh trước khi chuyển

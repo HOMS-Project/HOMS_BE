@@ -197,17 +197,37 @@
 
 
 
-exports.createPaymentLink = async (req, res, next) => {
+exports.createSurveyPayment = async (req, res, next) => {
   try {
+
     const { id } = req.params;
     const { amount } = req.body;
 
-    const result = await RequestTicketService.createPaymentLink(id, amount);
+    const result = await RequestTicketService.createSurveyPayment(id, amount);
 
     res.json({
       success: true,
       data: result
     });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+
+exports.createMovingDepositPayment = async (req, res, next) => {
+  try {
+
+    const { id } = req.params;
+
+    const result = await RequestTicketService.createMovingDepositPayment(id);
+
+    res.json({
+      success: true,
+      data: result
+    });
+
   } catch (error) {
     next(error);
   }
