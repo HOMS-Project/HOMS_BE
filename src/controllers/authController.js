@@ -58,38 +58,37 @@ exports.register = async (req, res, next) => {
 
 
 exports.login = async (req, res, next) => {
-    try {
-        const { user, accessToken, refreshToken,expiresInMs } = await authService.loginUser(req.body);
-           res.cookie('refreshToken', refreshToken, {
+  try {
+    const { user, accessToken, refreshToken, expiresInMs } = await authService.loginUser(req.body);
+    res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-secure: process.env.NODE_ENV === 'production',
-
+      sameSite: 'none',
+      secure: true,
       maxAge: 7 * 24 * 60 * 60 * 1000
     });
-        res.status(200).json({ 
-            success: true,
-            message: 'Đăng nhập thành công',
-            data: {
-                user: { id: user._id, fullName: user.fullName, role: user.role }, // Trả về role để FE biết đường điều hướng
-                accessToken,
-                expiresInMs
-            }
-        });
-    } catch (error) {
-        next(error);
-    }
+    res.status(200).json({
+      success: true,
+      message: 'Đăng nhập thành công',
+      data: {
+        user: { id: user._id, fullName: user.fullName, role: user.role }, // Trả về role để FE biết đường điều hướng
+        accessToken,
+        expiresInMs
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 exports.googleLogin = async (req, res, next) => {
   try {
-    const { user, accessToken, refreshToken,expiresInMs } =
+    const { user, accessToken, refreshToken, expiresInMs } =
       await authService.googleLogin(req.body);
 
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-secure: process.env.NODE_ENV === 'production',
+      sameSite: 'none',
+      secure: true,
       maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
@@ -102,7 +101,7 @@ secure: process.env.NODE_ENV === 'production',
           fullName: user.fullName,
           role: user.role
         },
-        accessToken,expiresInMs
+        accessToken, expiresInMs
       }
     });
   } catch (err) {
@@ -110,7 +109,7 @@ secure: process.env.NODE_ENV === 'production',
   }
 };
 exports.forgotPassword = async (req, res, next) => {
-     console.log("req.body:", req.body); 
+  console.log("req.body:", req.body);
   try {
     const { email } = req.body;
     await authService.forgotPassword(email);
@@ -124,9 +123,9 @@ exports.verifyOTP = async (req, res, next) => {
   try {
     const { email, otp } = req.body;
     await authService.verifyOTP({ email, otp });
-    res.json({ 
+    res.json({
       success: true,
-      message: "Xác thực OTP thành công" 
+      message: "Xác thực OTP thành công"
     });
   } catch (err) {
     next(err);
@@ -137,9 +136,9 @@ exports.resetPassword = async (req, res, next) => {
   try {
     const { email, newPassword } = req.body;
     await authService.resetPasswordWithEmail({ email, newPassword });
-    res.json({ 
+    res.json({
       success: true,
-      message: "Đặt lại mật khẩu thành công" 
+      message: "Đặt lại mật khẩu thành công"
     });
   } catch (err) {
     next(err);
@@ -151,15 +150,15 @@ exports.refreshToken = async (req, res, next) => {
     const { accessToken, refreshToken, expiresInMs } = await authService.refreshAccessToken(oldRefreshToken);
     res.cookie('refreshToken', refreshToken, {
       httpOnly: true,
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'none',
+      secure: true,
       maxAge: 7 * 24 * 60 * 60 * 1000
     });
 
     res.json({
       success: true,
       accessToken,
-      expiresInMs 
+      expiresInMs
     });
   } catch (err) {
     next(err);
