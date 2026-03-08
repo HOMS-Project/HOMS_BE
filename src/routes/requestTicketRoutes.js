@@ -6,59 +6,16 @@ const { authenticate, authorize } = require('../middlewares/authMiddleware');
 /**
  * REQUEST TICKET ENDPOINTS
  */
-router.post(
-  "/:id/create-payment-link",
-  authenticate,
-  authorize('CUSTOMER'),
-  requestTicketController.createSurveyPayment
-);
-router.post("/:id/deposit",  authenticate,
-  authorize('CUSTOMER'),requestTicketController.createMovingDepositPayment);
-// GET list
-router.get(
-  '/',
-  authenticate,
-  requestTicketController.listRequestTickets
-);
+router.get('/', authenticate, requestTicketController.listRequestTickets);
+router.get('/:id', authenticate, requestTicketController.getRequestTicket);
+router.get("/:id/verify-payment", authenticate, authorize('CUSTOMER'), requestTicketController.verifyPaymentStatus);
 
-// CREATE
-router.post(
-  '/',
-  authenticate,
-  authorize('CUSTOMER'),
-  requestTicketController.createRequestTicket
-);
+router.post("/:id/create-payment-link", authenticate, authorize('CUSTOMER'), requestTicketController.createSurveyPayment);
+router.post("/:id/deposit", authenticate, authorize('CUSTOMER'), requestTicketController.createMovingDepositPayment);
+router.post('/', authenticate, authorize('CUSTOMER'), requestTicketController.createRequestTicket);
 
-// GET detail
-router.get(
-  '/:id',
-  authenticate,
-  requestTicketController.getRequestTicket
-);
-
-// CANCEL
-router.put(
-  '/:id/cancel',
-  authenticate,
-  requestTicketController.cancelRequestTicket
-);
-
-// PROPOSE SURVEY TIME
-router.put(
-  '/:id/propose-time',
-  authenticate,
-  authorize('ADMIN', 'DISPATCHER'),
-  requestTicketController.proposeSurveyTime
-);
-
-// ACCEPT QUOTE
-router.put(
-  '/:id/accept-quote',
-  authenticate,
-  authorize('CUSTOMER'),
-  requestTicketController.acceptQuote
-);
-
-
+router.put('/:id/cancel', authenticate, requestTicketController.cancelRequestTicket);
+router.put('/:id/propose-time', authenticate, authorize('ADMIN', 'DISPATCHER'), requestTicketController.proposeSurveyTime);
+router.put('/:id/accept-quote', authenticate, authorize('CUSTOMER'), requestTicketController.acceptQuote)
 
 module.exports = router;

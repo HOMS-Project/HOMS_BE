@@ -5,18 +5,49 @@ const routeSchema = new mongoose.Schema({
   name: String,
   description: String,
 
-  // Khu vực áp dụng
-  area: String,        // HCM, HN
-  districts: [String],// Q1, Q3, Q7...
+  /* ===== AREA ===== */
+  area: {
+    type: String,
+    required: true
+  },
 
-  // Điểm đầu - cuối logic (không phải GPS tracking)
+  /* ===== DISTRICT MATCHING ===== */
+  // NEW (recommended)
+  fromDistrict: {
+    type: String,
+    enum: [
+      "HAI_CHAU",
+      "THANH_KHE",
+      "SON_TRA",
+      "NGU_HANH_SON",
+      "LIEN_CHIEU",
+      "CAM_LE"
+    ]
+  },
+  toDistrict: {
+    type: String,
+    enum: [
+      "HAI_CHAU",
+      "THANH_KHE",
+      "SON_TRA",
+      "NGU_HANH_SON",
+      "LIEN_CHIEU",
+      "CAM_LE"
+    ]
+  },
+
+  // OLD (keep for compatibility)
+  // districts: [String],
+
+  /* ===== ZONES ===== */
   startZone: String,
   endZone: String,
 
+  /* ===== ESTIMATION ===== */
   estimatedDistanceKm: Number,
   estimatedDurationMin: Number,
 
-  // 🚦 Quy định lưu thông (GỘP giờ cấm + cao điểm)
+  /* ===== TRAFFIC RULES =====  (GỘP giờ cấm + cao điểm) */
   trafficRules: [
     {
       ruleType: {
@@ -24,31 +55,54 @@ const routeSchema = new mongoose.Schema({
         enum: ["PEAK_HOUR", "TRUCK_BAN", "HOLIDAY", "WEATHER"]
       },
 
-      daysOfWeek: [String], // Monday → Sunday
+      daysOfWeek: [
+        {
+          type: String,
+          enum: [
+            "MONDAY", "TUESDAY", "WEDNESDAY",
+            "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY"
+          ]
+        }
+      ],
       startTime: String,    // "06:00"
       endTime: String,      // "09:00"
 
-      restrictedVehicles: [String], // 2T, 3T...
+      restrictedVehicles: [String],
+
       note: String
     }
   ],
 
-  // Xe được khuyến nghị
-  compatibleVehicles: [String], // 500kg, 1T, 2T
+  /* ===== VEHICLE COMPATIBILITY ===== */
+  compatibleVehicles: [String], // 0.5T, 1T, 2T
 
-  // Gợi ý nhân lực
+  /* ===== STAFF RECOMMENDATION ===== */
   recommendedStaff: {
     min: Number,
     max: Number
   },
 
-  // Phụ phí theo tuyến
-  routeSurcharge: Number, // VNĐ
-  routeDiscountRate: Number, // %
+  /* ===== PRICE MODIFIERS ===== */
+  routeSurcharge: {
+    type: Number,
+    default: 0
+  },
+  routeDiscountRate: {
+    type: Number,
+    default: 0
+  },
 
   notes: String,
-  isActive: { type: Boolean, default: true }
+
+  isActive: {
+    type: Boolean,
+    default: true
+  }
 
 }, { timestamps: true });
+
+/* ===== INDEXES - faster query time for route ===== */
+routeSchema.index({ area: 1, fromDistrict: 1, toDistrict: 1 });
+routeSchema.index({ code: 1 });
 
 module.exports = mongoose.model("Route", routeSchema);

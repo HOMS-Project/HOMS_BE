@@ -21,6 +21,21 @@ const invoiceSchema = new mongoose.Schema({
     required: true
   },
 
+  surveyDataId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'SurveyData'
+  },
+
+  dispatchAssignmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'DispatchAssignment'
+  },
+
+  routeId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Route'
+  },
+
   /* ===== SNAPSHOT GIÁ ===== */
   priceSnapshot: {
     subtotal: Number,
@@ -59,18 +74,27 @@ const invoiceSchema = new mongoose.Schema({
   }],
 
   notes: String,
-paidAmount: {
-  type: Number,
-  default: 0
-},
-remainingAmount: {
-  type: Number
-},
+
+  scheduledTime: {
+    type: Date,
+    required: true
+  },
+
+  paidAmount: {
+    type: Number,
+    default: 0
+  },
+
+  remainingAmount: {
+    type: Number
+  },
+
   paymentOrderCode: {
-  type: Number,
-  unique: true,
-  sparse: true
-},
+    type: Number,
+    unique: true,
+    sparse: true
+  },
+
   // Nghiệm thu hoàn thành
   completionEvidence: {
     beforeImages: [String], // Ảnh trước khi chuyển

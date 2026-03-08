@@ -194,13 +194,13 @@ class PricingService {
    */
   calculateVehicleFee(vehicleType, estimatedDurationMinutes) {
     const VEHICLE_PRICES = {
-      'SMALL_TRUCK': { perDay: 1500000, perHour: 100000 },
-      'MEDIUM_TRUCK': { perDay: 2000000, perHour: 150000 },
-      'LARGE_TRUCK': { perDay: 3000000, perHour: 200000 },
-      'VAN': { perDay: 1200000, perHour: 80000 }
+      '500KG': { perDay: 1000000, perHour: 80000 },
+      '1TON': { perDay: 1500000, perHour: 100000 },
+      '1.5TON': { perDay: 1800000, perHour: 120000 },
+      '2TON': { perDay: 2000000, perHour: 150000 }
     };
 
-    const price = VEHICLE_PRICES[vehicleType] || VEHICLE_PRICES['SMALL_TRUCK'];
+    const price = VEHICLE_PRICES[vehicleType] || VEHICLE_PRICES['500KG'];
     const hours = estimatedDurationMinutes / 60;
     const totalFee = hours * price.perHour;
 

@@ -11,54 +11,14 @@ const { authenticate, authorize } = require('../middlewares/authMiddleware');
  * INVOICE ENDPOINTS
  */
 
-// GET /api/invoices - Lấy danh sách
-router.get(
-  '/',
-  authenticate,
-  invoiceController.listInvoices
-);
+router.get('/', authenticate, invoiceController.listInvoices);
+router.get('/:invoiceId', authenticate, invoiceController.getInvoice);
+router.get('/ticket/:ticketId', authenticate, invoiceController.getInvoiceByTicket);
+router.get('/:invoiceId/timeline', authenticate, invoiceController.getTimeline);
 
-// GET /api/invoices/:id - Lấy chi tiết
-router.get(
-  '/:id',
-  authenticate,
-  invoiceController.getInvoice
-);
+router.post('/from-ticket/:requestTicketId', authenticate, invoiceController.createInvoiceFromTicket, invoiceController.confirmInvoice);
+router.post('/:invoiceId/dispatch', authenticate, invoiceController.dispatchVehicles);
 
-// POST /api/invoices/from-ticket/:requestTicketId - Tạo invoice từ request ticket
-router.post(
-  '/from-ticket/:requestTicketId',
-  authenticate,
-  invoiceController.createInvoiceFromTicket,
-  invoiceController.confirmInvoice
-);
-
-// POST /api/invoices/:id/dispatch - Phân công vehicles
-router.post(
-  '/:id/dispatch',
-  authenticate,
-  invoiceController.dispatchVehicles
-);
-
-// PUT /api/invoices/:id/status/:newStatus - Cập nhật status
-router.put(
-  '/:id/status/:newStatus',
-  authenticate,
-  invoiceController.updateInvoiceStatus
-);
-
-// GET /api/invoices/:id/timeline - Lấy timeline
-router.get(
-  '/:id/timeline',
-  authenticate,
-  invoiceController.getTimeline
-);
-
-// PUT /api/invoices/:id/cancel - Hủy invoice
-router.put(
-  '/:id/cancel',
-  authenticate,
-  invoiceController.cancelInvoice
-);
+router.put('/:invoiceId/cancel', authenticate, invoiceController.cancelInvoice);
 
 module.exports = router;

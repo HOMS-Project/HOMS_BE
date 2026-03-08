@@ -19,47 +19,28 @@ class VehicleDispatchService {
    */
   async calculateVehicleNeeds(totalWeight, totalVolume) {
     const VEHICLE_SPECS = {
-      'SMALL_TRUCK': { maxWeight: 1000, maxVolume: 10, capacity: '1T' },
-      'MEDIUM_TRUCK': { maxWeight: 2500, maxVolume: 20, capacity: '2.5T' },
-      'LARGE_TRUCK': { maxWeight: 5000, maxVolume: 40, capacity: '5T' },
-      'VAN': { maxWeight: 1500, maxVolume: 15, capacity: '1.5T' }
+      '500KG': { maxWeight: 500, maxVolume: 5 },
+      '1TON': { maxWeight: 1000, maxVolume: 10 },
+      '1.5TON': { maxWeight: 1500, maxVolume: 15 },
+      '2TON': { maxWeight: 2000, maxVolume: 20 }
     };
+    const vehicleTypes = ['500KG', '1TON', '1.5TON', '2TON'];
 
-    const requiredVehicles = [];
-    let remainingWeight = totalWeight;
-    let remainingVolume = totalVolume;
-
-    // Sắp xếp từ nhỏ đến lớn để chọn xe tối ưu
-    const vehicleTypes = ['SMALL_TRUCK', 'MEDIUM_TRUCK', 'LARGE_TRUCK', 'VAN'];
-
+    // Step 1: find the smallest single vehicle that can carry the entire load
     for (const vehicleType of vehicleTypes) {
       const spec = VEHICLE_SPECS[vehicleType];
-
-      // Nếu có thể chở toàn bộ với 1 xe loại này
-      if (remainingWeight <= spec.maxWeight && remainingVolume <= spec.maxVolume) {
-        requiredVehicles.push({ vehicleType, count: 1 });
-        return requiredVehicles;
-      }
-
-      // Nếu không, dùng xe này rồi tiếp tục
-      if (remainingWeight > 0 || remainingVolume > 0) {
-        const vehiclesNeeded = Math.ceil(
-          Math.max(
-            remainingWeight / spec.maxWeight,
-            remainingVolume / spec.maxVolume
-          )
-        );
-
-        if (vehiclesNeeded > 0) {
-          requiredVehicles.push({ vehicleType, count: vehiclesNeeded });
-          remainingWeight = 0;
-          remainingVolume = 0;
-          break;
-        }
+      if (totalWeight <= spec.maxWeight && totalVolume <= spec.maxVolume) {
+        return [{ vehicleType, count: 1 }];
       }
     }
 
-    return requiredVehicles;
+    // Step 2: load exceeds even the largest vehicle — use multiples of 2TON
+    const largestSpec = VEHICLE_SPECS['2TON'];
+    const count = Math.ceil(Math.max(
+      totalWeight / largestSpec.maxWeight,
+      totalVolume / largestSpec.maxVolume
+    ));
+    return [{ vehicleType: '2TON', count }];
   }
 
   /**
@@ -120,10 +101,13 @@ class VehicleDispatchService {
    */
   async createDispatchAssignment(invoiceId, dispatchData) {
     try {
-      const invoice = await Invoice.findById(invoiceId);
+      const invoice = await Invoice.findById(invoiceId)
+        .populate('requestTicketId', 'pickup delivery scheduledTime');
       if (!invoice) {
         throw new AppError('Invoice not found', 404);
       }
+
+      const ticket = invoice.requestTicketId;  // populated RequestTicket
 
       let assignment = await DispatchAssignment.findOne({ invoiceId });
       if (!assignment) {
@@ -152,10 +136,10 @@ class VehicleDispatchService {
               vehicleType: need.vehicleType,
               totalWeight: dispatchData.totalWeight,
               totalVolume: dispatchData.totalVolume,
-              pickupTime: invoice.scheduledTime,
-              deliveryTime: new Date(invoice.scheduledTime.getTime() + 8 * 3600000),
-              pickupAddress: invoice.pickup.address,
-              deliveryAddress: invoice.delivery.address
+              pickupTime: invoice.scheduledTime || ticket?.scheduledTime || new Date(),
+              deliveryTime: new Date((invoice.scheduledTime || ticket?.scheduledTime || new Date()).getTime() + 8 * 3600000),
+              pickupAddress: ticket?.pickup?.address || '',
+              deliveryAddress: ticket?.delivery?.address || ''
             }
           );
 
@@ -179,8 +163,8 @@ class VehicleDispatchService {
             staffIds: staffAssignment.staffIds,
             staffCount: staffAssignment.staffCount,
             staffRole: staffAssignment.staffRole,
-            pickupTime: invoice.scheduledTime,
-            deliveryTime: new Date(invoice.scheduledTime.getTime() + 8 * 3600000),
+            pickupTime: invoice.scheduledTime || new Date(),
+            deliveryTime: new Date((invoice.scheduledTime || new Date()).getTime() + 8 * 3600000),
             estimatedDuration: dispatchData.estimatedDuration || 480, // 8 giờ
             loadWeight: dispatchData.totalWeight,
             loadVolume: dispatchData.totalVolume,
@@ -248,10 +232,10 @@ class VehicleDispatchService {
    */
   determineCapacityStatus(vehicleType, weight) {
     const VEHICLE_SPECS = {
-      'SMALL_TRUCK': { maxWeight: 1000 },
-      'MEDIUM_TRUCK': { maxWeight: 2500 },
-      'LARGE_TRUCK': { maxWeight: 5000 },
-      'VAN': { maxWeight: 1500 }
+      '500KG': { maxWeight: 500 },
+      '1TON': { maxWeight: 1000 },
+      '1.5TON': { maxWeight: 1500 },
+      '2TON': { maxWeight: 2000 }
     };
 
     const maxWeight = VEHICLE_SPECS[vehicleType]?.maxWeight || 1000;
@@ -268,10 +252,10 @@ class VehicleDispatchService {
    */
   getVehicleCapacity(vehicleType) {
     const VEHICLE_SPECS = {
-      'SMALL_TRUCK': 1000,
-      'MEDIUM_TRUCK': 2500,
-      'LARGE_TRUCK': 5000,
-      'VAN': 1500
+      '500KG': 500,
+      '1TON': 1000,
+      '1.5TON': 1500,
+      '2TON': 2000
     };
     return VEHICLE_SPECS[vehicleType] || 0;
   }
