@@ -5,6 +5,8 @@
 const Invoice = require('../models/Invoice');
 const RequestTicket = require('../models/RequestTicket');
 const DispatchAssignment = require('../models/DispatchAssignment');
+const Route = require('../models/Route');
+const GeocodeService = require('./geocodeService');
 const AppError = require('../utils/appErrors');
 
 // State transitions
@@ -19,9 +21,64 @@ const STATE_TRANSITIONS = {
 
 class InvoiceService {
   /**
+   * Find best matching Route by pickup/delivery district.
+   * Tries exact match first, then reverse direction, then area-only.
+   * Returns null if nothing found (dynamic fallback is still used).
+   */
+  async findBestRoute(rawPickup, rawDelivery) {
+    // Normalize both district values from any source format → UPPER_SNAKE_CASE enum
+    const pickupDistrict = GeocodeService.normalizeDistrict(rawPickup) || rawPickup;
+    const deliveryDistrict = GeocodeService.normalizeDistrict(rawDelivery) || rawDelivery;
+
+    console.log(`[InvoiceService] findBestRoute — raw: "${rawPickup}" → "${rawDelivery}" | normalized: "${pickupDistrict}" → "${deliveryDistrict}"`);
+
+    if (!pickupDistrict && !deliveryDistrict) {
+      console.log('[InvoiceService] findBestRoute: no districts provided, skipping route match.');
+      return null;
+    }
+
+    // 1. Exact district-to-district match
+    if (pickupDistrict && deliveryDistrict) {
+      const exact = await Route.findOne({
+        fromDistrict: pickupDistrict,
+        toDistrict: deliveryDistrict,
+        isActive: true
+      });
+      if (exact) {
+        console.log(`[InvoiceService] ✅ Route matched (exact): ${exact.code || exact._id} — ${pickupDistrict} → ${deliveryDistrict}`);
+        return exact;
+      }
+
+      // 2. Bidirectional — same route can serve both directions
+      const reversed = await Route.findOne({
+        fromDistrict: deliveryDistrict,
+        toDistrict: pickupDistrict,
+        isActive: true
+      });
+      if (reversed) {
+        console.log(`[InvoiceService] ✅ Route matched (bidirectional): ${reversed.code || reversed._id} — ${deliveryDistrict} ↔ ${pickupDistrict}`);
+        return reversed;
+      }
+    }
+
+    // 3. Match on fromDistrict only (generic area route)
+    const fromOnly = await Route.findOne({
+      fromDistrict: pickupDistrict || deliveryDistrict,
+      isActive: true
+    });
+    if (fromOnly) {
+      console.log(`[InvoiceService] ✅ Route matched (area-only): ${fromOnly.code || fromOnly._id} — fromDistrict=${pickupDistrict || deliveryDistrict}`);
+      return fromOnly;
+    }
+
+    console.log(`[InvoiceService] ⚠️ No route found for ${pickupDistrict} → ${deliveryDistrict}. Dynamic validation will apply.`);
+    return null;
+  }
+
+  /**
    * Tạo Invoice từ RequestTicket ACCEPTED
    * Snapshot giá từ pricing snapshot của RequestTicket
-   * Sau khi tạo, cập nhật RequestTicket status -> CONVERTED
+   * Ticket status stays ACCEPTED — only moves to CONVERTED when moving job is fully completed
    */
   async createInvoiceFromTicket(requestTicketId) {
     // Validate request ticket
@@ -38,9 +95,32 @@ class InvoiceService {
       throw new AppError('RequestTicket chưa có pricing snapshot', 400);
     }
 
+    // ── Idempotency guard ──────────────────────────────────────────────────────
+    // If an invoice already exists for this ticket (customer cancelled PayOS and
+    // re-signed the contract), return the existing one instead of creating a dupe.
+    const existing = await Invoice.findOne({ requestTicketId });
+    if (existing) {
+      console.log(`[InvoiceService] Invoice already exists for ticket ${requestTicketId} (${existing.code}). Returning existing.`);
+      return existing;
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
     // Generate invoice code
     const count = await Invoice.countDocuments();
     const code = `INV-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
+
+    console.log(`[InvoiceService] Ticket districts from DB — pickup: "${ticket.pickup?.district}" | delivery: "${ticket.delivery?.district}"`);
+
+    const route = await this.findBestRoute(
+      ticket.pickup?.district,
+      ticket.delivery?.district
+    );
+
+    if (route) {
+      console.log(`[InvoiceService] Matched route: ${route.code || route._id} (${ticket.pickup?.district} → ${ticket.delivery?.district})`);
+    } else {
+      console.log(`[InvoiceService] No DB route matched (${ticket.pickup?.district} → ${ticket.delivery?.district}). Dynamic validation will be used.`);
+    }
 
     // Create invoice - snapshot pricing from RequestTicket
     const invoice = new Invoice({
@@ -48,6 +128,8 @@ class InvoiceService {
       requestTicketId,
       customerId: ticket.customerId,
       pricingDataId: ticket.pricing.pricingDataId,
+      scheduledTime: ticket.scheduledTime || null,
+      routeId: route?._id || null,
       priceSnapshot: {
         subtotal: ticket.pricing.subtotal,
         tax: ticket.pricing.tax,
@@ -65,9 +147,9 @@ class InvoiceService {
 
     await invoice.save();
 
-    // Update RequestTicket status to CONVERTED
-    ticket.status = 'CONVERTED';
-    await ticket.save();
+    // Ticket stays ACCEPTED after contract is signed and invoice created.
+    // It only moves to CONVERTED once the actual moving job is confirmed complete.
+    // (No status change needed here — it's already ACCEPTED)
 
     return invoice;
   }

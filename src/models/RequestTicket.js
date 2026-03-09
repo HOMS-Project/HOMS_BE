@@ -22,11 +22,13 @@ const requestTicketSchema = new mongoose.Schema({
 
   pickup: {
     address: String,
+    district: String,
     coordinates: { lat: Number, lng: Number }
   },
 
   delivery: {
     address: String,
+    district: String,
     coordinates: { lat: Number, lng: Number }
   },
 
@@ -35,6 +37,11 @@ const requestTicketSchema = new mongoose.Schema({
     quantity: Number,
     notes: String
   }],
+
+  scheduledTime: {
+    type: Date,
+    required: true
+  },
 
   /* ===== QUOTE SNAPSHOT ===== */
   pricing: {
@@ -68,14 +75,16 @@ const requestTicketSchema = new mongoose.Schema({
     default: 'CREATED'
   },
   paymentOrderCode: {
-  type: Number, 
-  unique: true,
-  sparse: true
-},
-isSurveyPaid: {
-  type: Boolean,
-  default: false
-},
+    type: Number,
+    unique: true,
+    sparse: true
+  },
+
+  // isSurveyPaid: {
+  //   type: Boolean,
+  //   default: false
+  // },
+
   proposedSurveyTimes: [{
     type: Date
   }],

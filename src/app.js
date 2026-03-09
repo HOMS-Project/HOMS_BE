@@ -4,6 +4,7 @@ const connectDB = require("./config/database");
 const errorMiddleware = require("./middlewares/errorMiddleware");
 const cors = require('cors');
 const app = express();
+app.set('trust proxy', 1);
 const cookieParser = require('cookie-parser');
 connectDB();
 app.use(cors({

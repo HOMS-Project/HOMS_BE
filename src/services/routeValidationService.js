@@ -24,42 +24,71 @@ class RouteValidationService {
     deliveryAddress
   }) {
     try {
-      const route = await Route.findById(routeId);
-      if (!route) {
-        throw new AppError('Route not found', 404);
-      }
-
       const violations = [];
       const warnings = [];
-
-      // ===== 1. Kiểm tra loại xe =====
-      const vehicleViolation = this.checkVehicleType(route, vehicleType);
-      if (vehicleViolation) violations.push(vehicleViolation);
-
-      // ===== 2. Kiểm tra giờ cấm & quy định giao thông =====
-      const trafficIssues = this.checkTrafficRules(route, pickupTime, vehicleType);
-      violations.push(...trafficIssues.violations);
-      warnings.push(...trafficIssues.warnings);
 
       // ===== 3. Kiểm tra khả năng chở (weight/volume) =====
       const capacityIssue = await this.checkCapacity(vehicleType, totalWeight, totalVolume);
       if (capacityIssue) violations.push(capacityIssue);
 
-      // ===== 4. Kiểm tra khoảng cách hợp lý =====
-      // TODO: Tích hợp với Google Maps API hoặc service tính distance
+      // ===== Try to load a pre-configured route for extra rule checks =====
+      // For a moving company, routes are customer-defined (dynamic) so routeId is
+      // often null. In that case we skip the DB-backed rule checks and just validate
+      // capacity + time, which is good enough for dispatch assignment.
+      if (routeId) {
+        const route = await Route.findById(routeId);
+        if (route) {
+          // ===== 1. Kiểm tra loại xe =====
+          const vehicleViolation = this.checkVehicleType(route, vehicleType);
+          if (vehicleViolation) violations.push(vehicleViolation);
+
+          // ===== 2. Kiểm tra giờ cấm & quy định giao thông =====
+          const trafficIssues = this.checkTrafficRules(route, pickupTime, vehicleType);
+          violations.push(...trafficIssues.violations);
+          warnings.push(...trafficIssues.warnings);
+
+          // ===== 3. Kiểm tra khả năng chở (weight/volume) =====
+          const capacityIssue = await this.checkCapacity(vehicleType, totalWeight, totalVolume);
+          if (capacityIssue) violations.push(capacityIssue);
+
+          // ===== 4. Kiểm tra khoảng cách hợp lý =====
+          // TODO: Tích hợp với Google Maps API hoặc service tính distance
+
+          const isValid = violations.length === 0;
+          return {
+            isValid,
+            routeId,
+            vehicleType,
+            violations,
+            warnings,
+            surcharge: route.routeSurcharge || 0,
+            discountRate: route.routeDiscountRate || 0,
+            recommendedStaff: route.recommendedStaff
+          };
+        }
+      }
+
+      // ===== Dynamic route (no pre-seeded DB route) =====
+      // Warn about peak hours based on pickup time even without a configured route
+      if (pickupTime) {
+        const hour = new Date(pickupTime).getHours();
+        if ((hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 19)) {
+          warnings.push(`Pickup during peak hours (${hour}:00). Expect delays.`);
+        }
+      }
 
       const isValid = violations.length === 0;
-
       return {
         isValid,
-        routeId,
+        routeId: null,
         vehicleType,
         violations,
         warnings,
-        surcharge: route.routeSurcharge || 0,
-        discountRate: route.routeDiscountRate || 0,
-        recommendedStaff: route.recommendedStaff
+        surcharge: 0,
+        discountRate: 0,
+        recommendedStaff: null
       };
+
     } catch (error) {
       throw error;
     }
@@ -128,10 +157,10 @@ class RouteValidationService {
    */
   async checkCapacity(vehicleType, totalWeight, totalVolume) {
     const VEHICLE_SPECS = {
-      'SMALL_TRUCK': { maxWeight: 1000, maxVolume: 10 },      // 1T, 10m3
-      'MEDIUM_TRUCK': { maxWeight: 2500, maxVolume: 20 },     // 2.5T, 20m3
-      'LARGE_TRUCK': { maxWeight: 5000, maxVolume: 40 },      // 5T, 40m3
-      'VAN': { maxWeight: 1500, maxVolume: 15 }               // 1.5T, 15m3
+      '500KG': { maxWeight: 500, maxVolume: 5 },
+      '1TON': { maxWeight: 1000, maxVolume: 10 },
+      '1.5TON': { maxWeight: 1500, maxVolume: 15 },
+      '2TON': { maxWeight: 2000, maxVolume: 20 }
     };
 
     const specs = VEHICLE_SPECS[vehicleType];

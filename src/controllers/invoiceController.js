@@ -33,6 +33,23 @@ exports.createInvoiceFromTicket = async (req, res, next) => {
 };
 
 /**
+ * GET /api/invoices/ticket/:ticketId
+ * Returns the invoice for a given request ticket (used by SignContract to check payment status)
+ */
+exports.getInvoiceByTicket = async (req, res, next) => {
+  try {
+    const { ticketId } = req.params;
+    const invoice = await Invoice.findOne({ requestTicketId: ticketId });
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: 'Invoice not found' });
+    }
+    res.status(200).json({ success: true, data: invoice });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * 1. TẠO INVOICE TỪ REQUEST TICKET
  * Status: DRAFT
  */
@@ -263,9 +280,9 @@ exports.dispatchVehicles = async (req, res) => {
     let totalVolume = 10;
 
     if (invoice && invoice.requestTicketId) {
-      const surveyData = await SurveyData.findOne({ 
-         requestTicketId: invoice.requestTicketId, 
-         status: 'COMPLETED' 
+      const surveyData = await SurveyData.findOne({
+        requestTicketId: invoice.requestTicketId,
+        status: 'COMPLETED'
       });
       if (surveyData) {
         totalWeight = surveyData.totalActualWeight || 1000;
