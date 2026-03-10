@@ -285,7 +285,12 @@ class InvoiceService {
     const invoice = await Invoice.findById(invoiceId)
       .populate('customerId', 'fullName email phone')
       .populate('requestTicketId')
-      .populate('dispatchAssignmentId');
+      .populate({
+        path: 'dispatchAssignmentId',
+        populate: {
+          path: 'assignments.vehicleId assignments.driverIds assignments.staffIds'
+        }
+      });
 
     if (!invoice) {
       throw new AppError('Invoice không tồn tại', 404);
@@ -306,6 +311,7 @@ class InvoiceService {
 
     const invoices = await Invoice.find(query)
       .populate('customerId', 'fullName email phone')
+      .populate('requestTicketId')
       .sort({ createdAt: -1 })
       .limit(filters.limit || 20)
       .skip(filters.skip || 0);

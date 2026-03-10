@@ -269,8 +269,11 @@ exports.dispatchVehicles = async (req, res) => {
   try {
     const { invoiceId } = req.params;
     const {
+      leaderId,
       driverIds,
       staffIds,
+      vehicleType,
+      vehicleCount,
       estimatedDuration
     } = req.body;
 
@@ -293,8 +296,11 @@ exports.dispatchVehicles = async (req, res) => {
     const assignment = await VehicleDispatchService.createDispatchAssignment(invoiceId, {
       totalWeight,
       totalVolume,
+      leaderId,
       driverIds,
       staffIds,
+      vehicleType,
+      vehicleCount,
       estimatedDuration
     });
 
@@ -346,13 +352,7 @@ exports.getInvoice = async (req, res) => {
   try {
     const { invoiceId } = req.params;
 
-    const invoice = await Invoice.findById(invoiceId)
-      .populate('requestTicketId')
-      .populate('customerId')
-      .populate('pricingDataId')
-      .populate('surveyDataId')
-      .populate('dispatchAssignmentId')
-      .populate('routeId');
+    const invoice = await InvoiceService.getInvoice(invoiceId);
 
     if (!invoice) {
       throw new AppError('Invoice not found', 404);

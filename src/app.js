@@ -40,8 +40,10 @@ const adminStatisticRoutes = require("./routes/admin/statisticRoutes");
 const adminContractRoutes = require("./routes/admin/contractRoutes");
 const adminRouteRoutes = require("./routes/admin/routeRoutes");
 const adminPriceListRoutes = require("./routes/admin/priceListRoutes");
+const publicRoutes = require("./routes/publicRoutes");
 
 app.use("/api/auth", authRoutes);
+app.use("/api/public", publicRoutes);
 app.use("/api/customer", userRoutes);
 app.use("/api/request-tickets", requestTicketRoutes);
 app.use("/api/invoices", invoiceRoutes);

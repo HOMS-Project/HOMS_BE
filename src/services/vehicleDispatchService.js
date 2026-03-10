@@ -68,28 +68,38 @@ class VehicleDispatchService {
   }
 
   /**
-   * Gán drivers & helpers cho xe
+   * Gán drivers & helpers cho xe, hỗ trợ leaderId
    */
-  async assignStaff(vehicleId, driverIds, staffIds, staffRole = []) {
+  async assignStaff(vehicleId, leaderId, driverIds, staffIds) {
     try {
-      // Kiểm tra user tồn tại
-      const drivers = await User.find({ _id: { $in: driverIds } });
-      const staff = await User.find({ _id: { $in: staffIds } });
+      let allDriverIds = [...(driverIds || [])];
+      if (leaderId && !allDriverIds.includes(leaderId)) {
+        allDriverIds.push(leaderId);
+      }
 
-      if (drivers.length !== driverIds.length) {
+      // Kiểm tra user tồn tại
+      const drivers = await User.find({ _id: { $in: allDriverIds } });
+      const staff = await User.find({ _id: { $in: staffIds || [] } });
+
+      if (drivers.length !== allDriverIds.length) {
         throw new AppError('Some drivers not found', 404);
       }
 
-      if (staff.length !== staffIds.length) {
+      if (staff.length !== (staffIds?.length || 0)) {
         throw new AppError('Some staff not found', 404);
       }
 
+      let roles = [];
+      if (leaderId) roles.push('TEAM_LEADER');
+      if (driverIds && driverIds.length > 0) roles.push('DRIVER');
+      if (staffIds && staffIds.length > 0) roles.push('HELPER');
+
       return {
         vehicleId,
-        driverIds,
+        driverIds: allDriverIds,
         staffIds,
-        staffCount: staffIds.length,
-        staffRole: staffRole.length > 0 ? staffRole : ['HELPER']
+        staffCount: (staffIds?.length || 0) + allDriverIds.length,
+        staffRole: roles.length > 0 ? roles : ['HELPER']
       };
     } catch (error) {
       throw error;
@@ -114,11 +124,16 @@ class VehicleDispatchService {
         assignment = new DispatchAssignment({ invoiceId });
       }
 
-      // Tính toán phương tiện cần thiết
-      const vehicleNeeds = await this.calculateVehicleNeeds(
-        dispatchData.totalWeight,
-        dispatchData.totalVolume
-      );
+      // Tính toán phương tiện cần thiết HOẶC sử dụng chỉ định thủ công
+      let vehicleNeeds;
+      if (dispatchData.vehicleType && dispatchData.vehicleCount) {
+        vehicleNeeds = [{ vehicleType: dispatchData.vehicleType, count: parseInt(dispatchData.vehicleCount) }];
+      } else {
+        vehicleNeeds = await this.calculateVehicleNeeds(
+          dispatchData.totalWeight,
+          dispatchData.totalVolume
+        );
+      }
 
       assignment.assignments = [];
       let totalCapacity = 0;
@@ -150,9 +165,10 @@ class VehicleDispatchService {
             );
           }
 
-          // Gán drivers & helpers
+          // Gán drivers & helpers (truyền leaderId)
           const staffAssignment = await this.assignStaff(
             vehicle._id,
+            dispatchData.leaderId,
             dispatchData.driverIds || [],
             dispatchData.staffIds || []
           );
