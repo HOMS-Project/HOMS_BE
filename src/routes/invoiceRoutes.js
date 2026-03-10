@@ -18,6 +18,7 @@ router.get('/:invoiceId/timeline', authenticate, invoiceController.getTimeline);
 
 router.post('/from-ticket/:requestTicketId', authenticate, invoiceController.createInvoiceFromTicket, invoiceController.confirmInvoice);
 router.post('/:invoiceId/dispatch', authenticate, invoiceController.dispatchVehicles);
+router.post('/:invoiceId/calculate-price', authenticate, invoiceController.calculatePrice);
 
 router.put('/:invoiceId/cancel', authenticate, invoiceController.cancelInvoice);
 

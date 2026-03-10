@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 
+const ITEM_TYPES = ['TV', 'FRIDGE', 'BED', 'SOFA', 'WARDROBE', 'AC', 'WASHING_MACHINE', 'OTHER'];
+
 const surveyDataSchema = new mongoose.Schema({
   requestTicketId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -24,6 +26,11 @@ const surveyDataSchema = new mongoose.Schema({
 
   items: [{
     name: String,
+    itemType: {
+      type: String,
+      enum: ITEM_TYPES,
+      default: 'OTHER'
+    },
     actualWeight: Number,
     actualDimensions: {
       length: Number,
@@ -51,6 +58,13 @@ const surveyDataSchema = new mongoose.Schema({
   suggestedStaffCount: {
     type: Number,
     min: 1
+  },
+
+  /* Estimated hours for the move (filled by surveyor) */
+  estimatedHours: {
+    type: Number,
+    min: 1,
+    default: 3
   },
 
   distanceKm: Number,
