@@ -22,39 +22,28 @@ const pricingDataSchema = new mongoose.Schema({
 
   version: { type: Number, default: 1 },
 
-  /* ===== BREAKDOWN (matches calculation formula) =====
-   * TOTAL = baseTransportFee + vehicleFee + laborFee + serviceFee
-   *       + distanceSurcharge + difficultySurcharge (carryFee + floorFee)
-   *       + insuranceFee + managementFee
-   *       - discountAmount  ← BEFORE tax
-   *       + tax
-   */
   breakdown: {
-    baseTransportFee: { type: Number, default: 0 },  // Tiered transport base cost
-    vehicleFee: { type: Number, default: 0 },  // Vehicle base + distance surcharge
-    laborFee: { type: Number, default: 0 },  // staffCount × hourlyRate × estimatedHours
-    serviceFee: { type: Number, default: 0 },  // Per-item fees (TV, fridge, etc.) + packing/assembling
-    distanceSurcharge: { type: Number, default: 0 },  // Extra distance surcharge (if distanceSurchargePerKm > 0)
-    carryFee: { type: Number, default: 0 },  // Carry distance surcharge (beyond freeCarryDistance)
-    floorFee: { type: Number, default: 0 },  // Stair / elevator surcharge
-    insuranceFee: { type: Number, default: 0 },  // declaredValue × insuranceRate
-    managementFee: { type: Number, default: 0 },  // subtotal × managementFeeRate
-    estimatedHours: { type: Number, default: 0 }   // Hours used for labor calculation (audit trail)
+    vehicleFee: { type: Number, default: 0 },
+    laborFee: { type: Number, default: 0 },
+    distanceFee: { type: Number, default: 0 },
+    floorFee: { type: Number, default: 0 },
+    carryFee: { type: Number, default: 0 },
+    assemblingFee: { type: Number, default: 0 },
+    packingFee: { type: Number, default: 0 },
+    insuranceFee: { type: Number, default: 0 },
+    managementFee: { type: Number, default: 0 }
   },
 
-  subtotal: { type: Number, required: true },     // Sum of all breakdown items + managementFee
-  discountAmount: { type: Number, default: 0 },   // Applied BEFORE tax
-  tax: { type: Number, required: true },          // (subtotal - discountAmount) × taxRate
-  totalPrice: { type: Number, required: true },   // subtotal - discountAmount + tax
+  subtotal: { type: Number, required: true },
+  tax: { type: Number, required: true },
+  totalPrice: { type: Number, required: true },
 
-  minimumChargeApplied: { type: Boolean, default: false },
-
-  /* Snapshot key rates at the time of calculation (audit / drift protection) */
-  priceListSnapshot: {
-    taxRate: Number,
-    minimumCharge: Number,
-    managementFeeRate: Number
+  minimumChargeApplied: {
+    type: Boolean,
+    default: false
   },
+
+  discountAmount: { type: Number, default: 0 },
 
   calculatedBy: {
     type: mongoose.Schema.Types.ObjectId,

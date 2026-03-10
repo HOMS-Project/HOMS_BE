@@ -161,7 +161,6 @@ class SurveyService {
         requestTicketId,
         freshSurvey,
         pricingCalculation,
-        priceList,   // ← required for priceListSnapshot
         userId
       );
 

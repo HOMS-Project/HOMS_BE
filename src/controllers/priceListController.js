@@ -15,24 +15,18 @@ exports.createPriceList = async (req, res, next) => {
       code,
       name,
       description,
+      serviceScope,
       isActive,
       basePrice,
-      transportTiers,
       vehiclePricing,
-      laborCost,
+      laborPricing,
       movingSurcharge,
-      additionalServices,
-      itemServiceRates,
-      surveyFee,
-      pricingRules,
-      promotionRules,
-      effectiveFrom,
-      effectiveTo
+      additionalServices
     } = req.body;
 
     // Validate required fields
-    if (!code || !name || !vehiclePricing || !laborCost) {
-      throw new AppError('Thiếu dữ liệu bắt buộc: code, name, vehiclePricing, laborCost', 400);
+    if (!code || !name || !basePrice || !vehiclePricing || !laborPricing) {
+      throw new AppError('Thiếu dữ liệu bắt buộc', 400);
     }
 
     // Nếu isActive = true, deactivate các bảng giá cũ
@@ -44,19 +38,13 @@ exports.createPriceList = async (req, res, next) => {
       code,
       name,
       description,
+      serviceScope: serviceScope || 'SPECIFIC_ITEMS',
       isActive: isActive !== false, // Default true
       basePrice,
-      transportTiers,
       vehiclePricing,
-      laborCost,
+      laborPricing,
       movingSurcharge,
-      additionalServices,
-      itemServiceRates,
-      surveyFee,
-      pricingRules,
-      promotionRules,
-      effectiveFrom,
-      effectiveTo
+      additionalServices
     });
 
     await priceList.save();

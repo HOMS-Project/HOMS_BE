@@ -146,31 +146,35 @@ exports.completeSurvey = async (req, res) => {
 
 /**
  * 4. TÍNH GIÁ
- * Input: surveyDataId + priceListId (measurements are read from SurveyData in DB)
- * Optional: promotionId
+ * Tính basePrice + services + staff + vehicle + surcharge + tax
  */
 exports.calculatePrice = async (req, res) => {
   try {
     const { invoiceId } = req.params;
-    const { surveyDataId, priceListId, promotionId } = req.body;
-
-    if (!surveyDataId) {
-      return res.status(400).json({
-        success: false,
-        message: 'surveyDataId là bắt buộc để tính giá'
-      });
-    }
-
-    // Load invoice to get requestTicketId
-    const invoice = await Invoice.findById(invoiceId);
-    if (!invoice) {
-      return res.status(404).json({ success: false, message: 'Invoice không tồn tại' });
-    }
-
-    const pricing = await PricingService.calculatePrice(invoice.requestTicketId, {
-      surveyDataId,
-      priceListId,   // optional — falls back to active PriceList
+    const {
+      estimatedDistance,
+      totalWeight,
+      totalVolume,
+      services,
+      staffCount,
+      vehicleType,
+      estimatedDuration,
+      surcharge,
       promotionId,
+      discountCode
+    } = req.body;
+
+    const pricing = await PricingService.calculatePrice(invoiceId, {
+      estimatedDistance,
+      totalWeight,
+      totalVolume,
+      services,
+      staffCount,
+      vehicleType,
+      estimatedDuration,
+      surcharge,
+      promotionId,
+      discountCode,
       calculatedBy: req.user._id
     });
 
