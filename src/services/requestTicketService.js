@@ -7,7 +7,10 @@ const Invoice = require("../models/Invoice")
 const AppError = require('../utils/appErrors');
 const PaymentService = require('../services/paymentService')
 const payos = require("../config/payos");
+const NotificationService = require("./notificationService");
+const { getIo } = require("../utils/socket");
 const GeocodeService = require('./geocodeService');
+
 // State transitions
 const STATE_TRANSITIONS = {
   CREATED: ['WAITING_SURVEY', 'CANCELLED'],
@@ -103,7 +106,7 @@ class RequestTicketService {
   /**
    * Dispatcher từ chối lịch khảo sát và đề xuất lịch mới
    */
-  async proposeNewTime(ticketId, userId, proposedTimes, reason) {
+  async proposeNewTime(ticketId, userId, proposedTimes, reason, surveyorId) {
     const ticket = await RequestTicket.findById(ticketId);
     if (!ticket) {
       throw new AppError('Request ticket không tồn tại', 404);
@@ -116,17 +119,58 @@ class RequestTicketService {
     // Cập nhật ngày đề xuất mới
     // (Lưu ý mảng này là mảng thời gian được Dispatcher chọn gửi lại cho Khách hàng)
     ticket.proposedSurveyTimes = proposedTimes.map(timeStr => new Date(timeStr));
-
+if (surveyorId) {
+  ticket.dispatcherId = surveyorId;
+}
     // Ghi chú lý do từ chối (có thể lưu log vào timeline sau này nếu làm hệ thống Log)
-    if (reason) {
-      ticket.notes = (ticket.notes ? ticket.notes + '\n' : '') + `[Dispatcher Đề Xuất Đổi Lịch]: ${reason}`;
-    }
+     if (reason) {
+    ticket.rescheduleReason = reason;
+  }
 
     // Không chuyển status thành CANCELLED, giữ nguyên để Khách hàng có thể thao tác chọn lại lịch.
     await ticket.save();
+    const io = getIo();
+    await NotificationService.createNotification(
+    {
+      userId: ticket.customerId,
+      title: "Dispatcher đề xuất đổi lịch khảo sát",
+      message: "Dispatcher đã đề xuất thời gian khảo sát mới cho đơn của bạn",
+      type: "System",
+       ticketId: ticket._id 
+    },
+    io
+  );
     return ticket;
   }
+  async acceptSurveyTime(ticketId, selectedTime) {
 
+    const ticket = await RequestTicket.findById(ticketId);
+
+    if (!ticket) {
+      throw new AppError('Ticket không tồn tại', 404);
+    }
+
+    ticket.scheduledTime = selectedTime;
+    ticket.status = "WAITING_SURVEY";
+
+    await ticket.save();
+
+    return ticket;
+  }
+  //  async rejectSurveyTime(ticketId) {
+
+  //   const ticket = await RequestTicket.findById(ticketId);
+
+  //   if (!ticket) {
+  //     throw new AppError('Ticket không tồn tại', 404);
+  //   }
+
+  //   ticket.status = "CANCEL";
+
+  //   await ticket.save();
+
+  //   return ticket;
+  // }
   /**
    * Cập nhật trạng thái ticket
    */

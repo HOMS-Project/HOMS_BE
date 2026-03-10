@@ -6,6 +6,8 @@ const SurveyData = require('../models/SurveyData');
 const RequestTicket = require('../models/RequestTicket');
 const AppError = require('../utils/appErrors');
 const PricingCalculationService = require('./pricingCalculationService');
+const NotificationService = require("./notificationService");
+const { getIo } = require("../utils/socket");
 
 class SurveyService {
   /**
@@ -50,7 +52,17 @@ class SurveyService {
     ticket.status = 'WAITING_SURVEY';
     ticket.dispatcherId = surveyorId;
     await ticket.save();
-
+    const io = getIo();
+await NotificationService.createNotification(
+    {
+      userId: ticket.customerId,
+      title: "Lịch khảo sát đã được xác nhận",
+      message: `Khảo sát được lên lịch vào ${schedDate.toLocaleString()}`,
+      type: "System",
+       ticketId: ticket._id 
+    },
+    io
+  );
     return survey;
   }
 

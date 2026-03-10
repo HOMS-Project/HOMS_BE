@@ -88,7 +88,9 @@ const requestTicketSchema = new mongoose.Schema({
   proposedSurveyTimes: [{
     type: Date
   }],
-
+rescheduleReason: {
+  type: String
+},
   notes: String
 
 }, { timestamps: true });

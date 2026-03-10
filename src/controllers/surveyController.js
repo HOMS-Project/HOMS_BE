@@ -27,7 +27,7 @@ exports.scheduleSurvey = async (req, res, next) => {
       surveyType,
       scheduledDate,
       surveyorId,
-      notes
+      notes,
     );
 
     res.status(201).json({
