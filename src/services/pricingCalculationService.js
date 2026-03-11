@@ -64,12 +64,26 @@ class PricingCalculationService {
     const vehicleFee = vehicleConfig.pricePerHour * estimatedHours;
 
     // ================= STAFF =================
-    const staffConfig = priceList.staffPricing?.find(
+    let staffConfig = priceList.staffPricing?.find(
       s => s.staffCount === suggestedStaffCount
     );
 
+    // Fallback if no exact match is found, try to calculate based on an average or use a default
     if (!staffConfig) {
-      throw new AppError(`Không tìm thấy cấu hình nhân viên cho ${suggestedStaffCount} người`, 400);
+       console.warn(`[Pricing] Không tìm thấy cấu hình staffPricing chính xác cho ${suggestedStaffCount} người. Sẽ sử dụng mặc định.`);
+       // If there's any staff pricing, we can use it to derive a per-person cost.
+       // Else use a hardcoded fallback of 200k/person.
+       let defaultPricePerPerson = 200000; 
+       
+       if (priceList.staffPricing && priceList.staffPricing.length > 0) {
+           defaultPricePerPerson = priceList.staffPricing[0].pricePerPerson || 200000;
+       }
+
+       staffConfig = {
+           staffCount: suggestedStaffCount,
+           pricePerPerson: defaultPricePerPerson,
+           pricePerHour: Math.round(defaultPricePerPerson / 4)
+       };
     }
 
     const laborFee = suggestedStaffCount * (staffConfig.pricePerPerson || 0);
@@ -104,8 +118,11 @@ class PricingCalculationService {
       ? declaredValue * (priceList.additionalServices?.insuranceRate || 0)
       : 0;
 
+    // ================= BASE TRANSPORT FEE =================
+    const baseTransportFee = vehicleConfig.basePriceForFirstXKm || 0;
+
     // ================= SUBTOTAL =================
-    let subtotal = vehicleFee + laborFee + distanceFee + carryFee + floorFee + assemblingFee + packingFee + insuranceFee;
+    let subtotal = vehicleFee + laborFee + distanceFee + carryFee + floorFee + assemblingFee + packingFee + insuranceFee + baseTransportFee;
 
     // ================= MANAGEMENT FEE =================
     const managementFeeRate = priceList.additionalServices?.managementFeeRate || 0;
@@ -130,6 +147,7 @@ class PricingCalculationService {
 
     return {
       breakdown: {
+        baseTransportFee,
         vehicleFee,
         laborFee,
         distanceFee,
