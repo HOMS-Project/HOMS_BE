@@ -5,7 +5,10 @@ const notificationSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-
+ticketId: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "RequestTicket"
+},
   title: String,
   message: String,
 
@@ -15,6 +18,7 @@ const notificationSchema = new mongoose.Schema({
   },
 
   isRead: { type: Boolean, default: false }
+
 }, { timestamps: true });
 
 module.exports = mongoose.model('Notification', notificationSchema);

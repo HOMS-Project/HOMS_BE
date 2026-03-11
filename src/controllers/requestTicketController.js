@@ -148,7 +148,7 @@ exports.cancelRequestTicket = async (req, res, next) => {
 exports.proposeSurveyTime = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { proposedTimes, reason } = req.body;
+    const { proposedTimes, reason ,surveyorId } = req.body;
     const userId = req.user?._id || req.user?.id;
 
     if (!userId) {
@@ -159,7 +159,7 @@ exports.proposeSurveyTime = async (req, res, next) => {
       throw new AppError('Phải cung cấp ít nhất một giờ đề xuất mới', 400);
     }
 
-    const ticket = await RequestTicketService.proposeNewTime(id, userId, proposedTimes, reason);
+    const ticket = await RequestTicketService.proposeNewTime(id, userId, proposedTimes, reason,surveyorId);
 
     res.json({
       success: true,
@@ -170,7 +170,40 @@ exports.proposeSurveyTime = async (req, res, next) => {
     next(error);
   }
 };
+exports.acceptSurveyTime = async (req, res, next) => {
+  try {
 
+    const { selectedTime } = req.body;
+    const ticketId = req.params.id;
+
+    await RequestTicketService.acceptSurveyTime(ticketId, selectedTime);
+
+    res.json({
+      success: true,
+      message: "Đã chấp nhận thời gian khảo sát"
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// exports.rejectSurveyTime = async (req, res, next) => {
+//   try {
+
+//     const ticketId = req.params.id;
+
+//     await RequestTicketService.rejectSurveyTime(ticketId);
+
+//     res.json({
+//       success: true,
+//       message: "Đã từ chối khảo sát và hủy ticket"
+//     });
+
+//   } catch (error) {
+//     next(error);
+//   }
+// };
 /**
  * PUT /api/request-tickets/:id/accept-quote
  * Customer chấp nhận báo giá
