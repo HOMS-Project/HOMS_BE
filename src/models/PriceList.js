@@ -14,45 +14,82 @@ const priceListSchema = new mongoose.Schema({
     specificItemsBase: Number // Phí quản lý cho dọn đồ lẻ
   },
 
-  /* 2. GIÁ XE (VehicleCost) - Tính theo loại xe */
+  /* 2. BẬC PHÍ VẬN CHUYỂN (Transport Tiers) */
+  transportTiers: [{
+    fromKm: Number,
+    toKm: Number,
+    flatFee: Number,
+    pricePerKmBeyond: Number
+  }],
+
+  /* 3. GIÁ XE (VehicleCost) - Tính theo loại xe */
   vehiclePricing: [{
     vehicleType: { type: String, enum: ["500KG", "1TON", "1.5TON", "2TON"] },
-    // Hỗ trợ cả distance-based và time-based
-    basePriceForFirstXKm: Number, // Giá mở cửa (ví dụ 4km đầu)
-    limitKm: Number,              // Số km được bao gồm trong giá mở cửa
-    pricePerNextKm: Number,       // Giá mỗi km tiếp theo
-    pricePerHour: Number,         // Giá theo giờ (time-based)
-    pricePerDay: Number           // Giá theo ngày
+    basePriceForFirstXKm: Number,
+    limitKm: Number,
+    pricePerNextKm: Number,
+    pricePerHour: Number,
+    pricePerDay: Number
   }],
 
-  /* 3. GIÁ NHÂN CÔNG (LaborCost) */
-  staffPricing: [{
-    staffCount: Number,
-    pricePerPerson: Number,
-    pricePerHour: Number
-  }],
+  /* 4. GIÁ NHÂN CÔNG (LaborCost) */
+  laborCost: {
+    basePricePerPerson: { type: Number, default: 0 },
+    pricePerHourPerPerson: { type: Number, default: 0 }
+  },
 
-  /* 4. PHÍ QUÃNG ĐƯỜNG & TẦNG LẦU & BƯNG ĐỒ */
+  /* 5. PHÍ QUÃNG ĐƯỜNG & TẦNG LẦU & BƯNG ĐỒ */
   movingSurcharge: {
-    freeCarryDistance: Number,      // Miễn phí X mét đầu (VD: 15m)
-    pricePerExtraMeter: Number,     // Giá mỗi mét khiêng bộ thêm
-    distanceSurchargePerKm: Number, // Phí bổ sung cho khoảng cách (nếu tính riêng)
-    stairSurchargePerFloor: Number, // Phí lên xuống cầu thang bộ (không thang máy)
-    elevatorSurcharge: Number,      // Phí sử dụng thang máy (thấp hơn thang bộ)
-    peakHourMultiplier: Number,     // Hệ số giờ cao điểm
-    weekendMultiplier: Number       // Hệ số cuối tuần
+    freeCarryDistance: Number,
+    pricePerExtraMeter: Number,
+    distanceSurchargePerKm: Number,
+    stairSurchargePerFloor: Number,
+    elevatorSurcharge: Number,
+    peakHourMultiplier: Number,
+    weekendMultiplier: Number
   },
 
-  /* 5. DỊCH VỤ BỔ SUNG */
+  /* 6. DỊCH VỤ BỔ SUNG */
   additionalServices: {
-    packingMaterial: Number,    // Phí thùng carton, màng co
-    packingFee: Number,         // Phí dịch vụ đóng gói (nếu khách yêu cầu)
-    assemblingFee: Number,      // Phí tháo lắp tủ, giường, máy lạnh
-    insuranceRate: Number,      // % giá trị khai báo
-    managementFeeRate: Number   // % phí quản lý từ subtotal
+    packingMaterial: Number,
+    packingFee: Number,
+    assemblingFee: Number,
+    insuranceRate: Number,
+    managementFeeRate: Number
   },
 
-  /* 6. PHÍ KHẢO SÁT */
+  /* 7. PHÍ DỊCH VỤ THEO TỪNG MÓN ĐỒ (Item Service Rates) */
+  itemServiceRates: {
+    type: Map,
+    of: mongoose.Schema.Types.Mixed // Có thể là Number hoặc String "30000"
+  },
+
+  /* 8. QUY TẮC TÍNH PHÍ (Pricing Rules) */
+  pricingRules: {
+    distanceSurcharge: {
+      enabled: Boolean,
+      pricePerKm: Number,
+      freeKm: Number
+    },
+    volumeSurcharge: {
+      enabled: Boolean,
+      pricePerM3: Number,
+      freeM3: Number
+    },
+    weightSurcharge: {
+      enabled: Boolean,
+      pricePerKg: Number,
+      freeKg: Number
+    }
+  },
+
+  /* 9. QUY TẮC KHUYẾN MÃI (Promotion Rules) */
+  promotionRules: {
+    maxDiscountPercent: Number,
+    minOrderAmount: Number
+  },
+
+  /* 10. PHÍ KHẢO SÁT */
   surveyFee: {
     offline: Number,
     online: Number

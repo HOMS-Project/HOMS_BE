@@ -54,6 +54,12 @@ const DISTRICT_NORMALIZE = {
     'Quận Cẩm Lệ': 'CAM_LE',
     'CamLe': 'CAM_LE',
     'CAM_LE': 'CAM_LE',
+
+    // Hòa Vang
+    'Hòa Vang': 'HOA_VANG',
+    'Quận Hòa Vang': 'HOA_VANG',
+    'HoaVang': 'HOA_VANG',
+    'HOA_VANG': 'HOA_VANG',
 };
 
 class GeocodeService {

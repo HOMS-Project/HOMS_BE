@@ -16,9 +16,9 @@ const userSchema = new mongoose.Schema({
     }
   },
 
-  email: { type: String, unique: true, sparse: true },
+  email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
 
-  phone: { type: String, unique: true, sparse: true },
+  phone: { type: String, unique: true, sparse: true, trim: true },
 
   password: {
     type: String,
@@ -56,6 +56,7 @@ const userSchema = new mongoose.Schema({
   },
   dispatcherProfile: {
     workingAreas: [String], // Ví dụ: ['Hải Châu', 'Sơn Trà'] để phân công tự động
+    isGeneral: { type: Boolean, default: false }, // Dispatcher tổng có quyền điều phối toàn bộ
     isAvailable: { type: Boolean, default: true }
   },
   otpResetPassword: String,

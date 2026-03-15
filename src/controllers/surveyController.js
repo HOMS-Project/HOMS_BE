@@ -11,8 +11,8 @@ const AppError = require('../utils/appErrors');
  */
 exports.scheduleSurvey = async (req, res, next) => {
   try {
-    const { requestTicketId, surveyType, scheduledDate, notes } = req.body;
-    const surveyorId = req.user?._id || req.user?.id;
+    const { requestTicketId, surveyType, scheduledDate, notes, surveyorId: bodySurveyorId } = req.body;
+    const surveyorId = bodySurveyorId || req.user.userId || req.user._id || req.user.id;
 
     if (!surveyorId) {
       throw new AppError('User ID không tồn tại', 401);
@@ -47,15 +47,15 @@ exports.scheduleSurvey = async (req, res, next) => {
 exports.estimateResources = async (req, res, next) => {
   try {
     const { items, distanceKm, floors, hasElevator } = req.body;
-    
+
     if (distanceKm == null || floors == null) {
       throw new AppError('Thiếu thông báo khoảng cách hoặc số tầng', 400);
     }
 
     const estimate = await SurveyService.estimateResources(
-      items, 
-      Number(distanceKm), 
-      Number(floors), 
+      items,
+      Number(distanceKm),
+      Number(floors),
       Boolean(hasElevator)
     );
 
@@ -83,7 +83,7 @@ exports.completeSurvey = async (req, res, next) => {
     }
 
     const surveyData = req.body;
-    const userId = req.user?._id || req.user?.id;
+    const userId = req.user.userId || req.user._id || req.user.id;
 
     // ✅ Guard user
     if (!userId) {

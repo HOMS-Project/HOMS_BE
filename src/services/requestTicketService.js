@@ -172,6 +172,32 @@ class RequestTicketService {
 
     if (filters.customerId) query.customerId = filters.customerId;
     if (filters.dispatcherId) query.dispatcherId = filters.dispatcherId;
+    
+    // Support for dispatcher-region-based filtering (Dispatcher Region)
+    if (filters.dispatcherRegionFilter) {
+      const { dispatcherId, workingAreas, isGeneral } = filters.dispatcherRegionFilter;
+      
+      if (isGeneral) {
+        // Dispatcher tổng thấy Đơn của họ HOẶC các đơn CREATED chưa gán
+        query.$or = [
+          { dispatcherId: dispatcherId },
+          { 
+            dispatcherId: null, 
+            status: 'CREATED'
+          }
+        ];
+      } else {
+        // Dispatcher khu vực thấy Đơn của họ HOẶC các đơn chưa gán trong khu vực
+        query.$or = [
+          { dispatcherId: dispatcherId },
+          { 
+            dispatcherId: null, 
+            'pickup.district': { $in: workingAreas || [] } 
+          }
+        ];
+      }
+    }
+
     if (filters.status) {
       if (filters.status.includes(',')) {
         query.status = { $in: filters.status.split(',').map(s => s.trim()) };

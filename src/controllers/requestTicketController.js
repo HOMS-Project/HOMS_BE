@@ -13,7 +13,7 @@ const AppError = require('../utils/appErrors');
 exports.createRequestTicket = async (req, res, next) => {
   try {
     const { moveType, pickup, delivery, notes, scheduledTime } = req.body;
-    const customerId = req.user?._id || req.user?.id;
+    const customerId = req.user.userId || req.user._id || req.user.id;
 
     if (!customerId) {
       throw new AppError('User ID không tồn tại', 401);
@@ -72,13 +72,26 @@ exports.listRequestTickets = async (req, res, next) => {
   try {
     const { status, customerId, dispatcherId, limit, skip } = req.query;
 
-    const tickets = await RequestTicketService.listTickets({
+    const filters = {
       status,
       customerId,
       dispatcherId,
       limit: parseInt(limit) || 20,
       skip: parseInt(skip) || 0
-    });
+    };
+
+    // Logic: Dispatcher only sees tickets they are assigned to OR unassigned tickets in their working areas
+    if (req.user.role === 'dispatcher') {
+      filters.dispatcherRegionFilter = {
+        dispatcherId: req.user.userId || req.user._id || req.user.id,
+        workingAreas: req.user.workingAreas || [],
+        isGeneral: req.user.isGeneral || false
+      };
+    } else if (req.user.role === 'customer') {
+      filters.customerId = req.user.userId || req.user._id || req.user.id;
+    }
+
+    const tickets = await RequestTicketService.listTickets(filters);
 
     res.json({
       success: true,
@@ -97,7 +110,7 @@ exports.updateStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    const userId = req.user?._id || req.user?.id;
+    const userId = req.user.userId || req.user._id || req.user.id;
 
     if (!userId) {
       throw new AppError('User ID không tồn tại', 401);
@@ -123,7 +136,7 @@ exports.cancelRequestTicket = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
-    const userId = req.user?._id || req.user?.id;
+    const userId = req.user.userId || req.user._id || req.user.id;
 
     if (!userId) {
       throw new AppError('User ID không tồn tại', 401);
@@ -148,8 +161,8 @@ exports.cancelRequestTicket = async (req, res, next) => {
 exports.proposeSurveyTime = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { proposedTimes, reason } = req.body;
-    const userId = req.user?._id || req.user?.id;
+    const { proposedTimes, reason, surveyorId: bodySurveyorId } = req.body;
+    const userId = bodySurveyorId || req.user.userId || req.user._id || req.user.id;
 
     if (!userId) {
       throw new AppError('User ID không tồn tại', 401);
@@ -178,7 +191,7 @@ exports.proposeSurveyTime = async (req, res, next) => {
 exports.acceptQuote = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const userId = req.user?._id || req.user?.id;
+    const userId = req.user.userId || req.user._id || req.user.id;
 
     if (!userId) {
       throw new AppError('User ID không tồn tại', 401);

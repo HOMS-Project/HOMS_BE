@@ -29,90 +29,122 @@ class PricingCalculationService {
      2️⃣ MAIN CALCULATION (NO DB SAVE HERE)
   ===================================================== */
   async calculatePricing(surveyData, priceList) {
-    
     if (!surveyData) {
       throw new AppError('Thiếu dữ liệu khảo sát', 400);
     }
 
     const {
       suggestedVehicle,
-      suggestedStaffCount,
+      suggestedStaffCount = 0,
       distanceKm = 0,
       carryMeter = 0,
       floors = 0,
       hasElevator = false,
       totalActualVolume = 0,
+      totalActualWeight = 0,
       needsAssembling = false,
       needsPacking = false,
       insuranceRequired = false,
-      declaredValue = 0
+      declaredValue = 0,
+      items = []
     } = surveyData;
 
-    // ================= VEHICLE =================
-    const vehicleConfig = priceList.vehiclePricing?.find(
-      v => v.vehicleType === suggestedVehicle
-    );
-
-    if (!vehicleConfig) {
-      throw new AppError(`Không tìm thấy cấu hình xe ${suggestedVehicle}`, 400);
-    }
-
-    // Ước tính giờ
+    // 1️⃣ Ước tính giờ cơ bản (dùng cho labo và xe)
     let estimatedHours = 2 + (distanceKm / 20) + (totalActualVolume * 0.5) + (floors * 0.3);
     estimatedHours = Math.max(2, Math.round(estimatedHours));
 
-    const vehicleFee = vehicleConfig.pricePerHour * estimatedHours;
-
-    // ================= STAFF =================
-    const staffConfig = priceList.staffPricing?.find(
-      s => s.staffCount === suggestedStaffCount
+    // 2️⃣ PHÍ VẬN CHUYỂN (Transport Tiers)
+    let transportTierFee = 0;
+    const tier = priceList.transportTiers?.find(t =>
+      distanceKm >= t.fromKm && (t.toKm === null || distanceKm < t.toKm)
     );
-
-    if (!staffConfig) {
-      throw new AppError(`Không tìm thấy cấu hình nhân viên cho ${suggestedStaffCount} người`, 400);
+    if (tier) {
+      transportTierFee = tier.flatFee;
+      if (tier.pricePerKmBeyond > 0 && distanceKm > tier.fromKm) {
+        transportTierFee += (distanceKm - tier.fromKm) * tier.pricePerKmBeyond;
+      }
     }
 
-    const laborFee = suggestedStaffCount * (staffConfig.pricePerPerson || 0);
+    // 3️⃣ PHÍ XE (Vehicle Pricing)
+    const vehicleConfig = priceList.vehiclePricing?.find(
+      v => v.vehicleType === suggestedVehicle
+    );
+    let vehicleFee = 0;
+    if (vehicleConfig) {
+      // Phí theo KM
+      const kmFee = vehicleConfig.basePriceForFirstXKm +
+        (Math.max(0, distanceKm - vehicleConfig.limitKm) * vehicleConfig.pricePerNextKm);
 
-    // ================= DISTANCE =================
-    const distanceFee = distanceKm > 0 
-      ? distanceKm * (priceList.movingSurcharge?.distanceSurchargePerKm || 0)
-      : 0;
+      // Phí theo thời gian
+      const timeFee = estimatedHours * (vehicleConfig.pricePerHour || 0);
 
-    // ================= CARRY/MOVE =================
-    const freeCarry = priceList.movingSurcharge?.freeCarryDistance || 0;
+      vehicleFee = kmFee + timeFee;
+    }
+
+    // 4️⃣ PHÍ NHÂN CÔNG (Labor Cost)
+    const laborConfig = priceList.laborCost || {};
+    const laborFee = suggestedStaffCount * (
+      (laborConfig.basePricePerPerson || 0) +
+      ((laborConfig.pricePerHourPerPerson || 0) * estimatedHours)
+    );
+
+    // 5️⃣ PHÍ DỊCH VỤ THEO MÓN ĐỒ (Item Service Rates)
+    let itemServiceFee = 0;
+    const itemRates = priceList.itemServiceRates || new Map();
+    items.forEach(item => {
+      const itemName = item.name?.toUpperCase();
+      let rate = 0;
+
+      if (itemRates instanceof Map) {
+        rate = itemRates.get(itemName) || itemRates.get('OTHER');
+      } else {
+        rate = itemRates[itemName] || itemRates['OTHER'];
+      }
+
+      itemServiceFee += Number(rate) || 0;
+    });
+
+    // 6️⃣ PHỤ PHÍ DI CHUYỂN (Moving Surcharges)
+    const movingSurcharge = priceList.movingSurcharge || {};
+    const freeCarry = movingSurcharge.freeCarryDistance || 0;
     const carryFee = carryMeter > freeCarry
-      ? (carryMeter - freeCarry) * (priceList.movingSurcharge?.pricePerExtraMeter || 0)
+      ? (carryMeter - freeCarry) * (movingSurcharge.pricePerExtraMeter || 0)
       : 0;
 
-    // ================= FLOOR =================
-    const floorSurcharge = hasElevator
-      ? priceList.movingSurcharge?.elevatorSurcharge
-      : priceList.movingSurcharge?.stairSurchargePerFloor;
-    const floorFee = floors * (floorSurcharge || 0);
+    const floorSurchargeAt = hasElevator
+      ? movingSurcharge.elevatorSurcharge
+      : movingSurcharge.stairSurchargePerFloor;
+    const floorFee = floors * (floorSurchargeAt || 0);
 
-    // ================= SERVICES =================
-    const assemblingFee = needsAssembling 
-      ? (priceList.additionalServices?.assemblingFee || 0)
+    // 7️⃣ QUY TẮC TÍNH PHÍ BỔ SUNG (Pricing Rules)
+    let rulesSurcharge = 0;
+    const rules = priceList.pricingRules || {};
+
+    if (rules.distanceSurcharge?.enabled) {
+      rulesSurcharge += Math.max(0, distanceKm - (rules.distanceSurcharge.freeKm || 0)) * (rules.distanceSurcharge.pricePerKm || 0);
+    }
+    if (rules.volumeSurcharge?.enabled) {
+      rulesSurcharge += Math.max(0, totalActualVolume - (rules.volumeSurcharge.freeM3 || 0)) * (rules.volumeSurcharge.pricePerM3 || 0);
+    }
+    if (rules.weightSurcharge?.enabled) {
+      rulesSurcharge += Math.max(0, totalActualWeight - (rules.weightSurcharge.freeKg || 0)) * (rules.weightSurcharge.pricePerKg || 0);
+    }
+
+    // 8️⃣ DỊCH VỤ BỔ SUNG (Additional Services)
+    const addServices = priceList.additionalServices || {};
+    const assemblingFee = needsAssembling ? (addServices.assemblingFee || 0) : 0;
+    const packingFee = needsPacking ? (addServices.packingFee || 0) : 0;
+    const insuranceFee = (insuranceRequired && declaredValue > 0)
+      ? declaredValue * (addServices.insuranceRate || 0)
       : 0;
 
-    const packingFee = needsPacking 
-      ? (priceList.additionalServices?.packingFee || 0)
-      : 0;
+    // 9️⃣ TỔNG CHI PHÍ (Subtotal & Tax)
+    let subtotal = transportTierFee + vehicleFee + laborFee + itemServiceFee + carryFee + floorFee + rulesSurcharge + assemblingFee + packingFee + insuranceFee;
 
-    const insuranceFee = insuranceRequired && declaredValue > 0
-      ? declaredValue * (priceList.additionalServices?.insuranceRate || 0)
-      : 0;
-
-    // ================= SUBTOTAL =================
-    let subtotal = vehicleFee + laborFee + distanceFee + carryFee + floorFee + assemblingFee + packingFee + insuranceFee;
-
-    // ================= MANAGEMENT FEE =================
-    const managementFeeRate = priceList.additionalServices?.managementFeeRate || 0;
+    const managementFeeRate = addServices.managementFeeRate || 0;
     const managementFee = Math.round(subtotal * managementFeeRate);
     subtotal += managementFee;
 
-    // ================= MINIMUM CHARGE =================
     const minimumCharge = priceList.basePrice?.minimumCharge || 0;
     let minimumChargeApplied = false;
     if (subtotal < minimumCharge) {
@@ -120,21 +152,22 @@ class PricingCalculationService {
       minimumChargeApplied = true;
     }
 
-    // ================= TAX =================
     const taxRate = priceList.taxRate || 0.1;
     const tax = Math.round(subtotal * taxRate);
     let totalPrice = subtotal + tax;
 
-    // LÀM TRÒN PHẦN NGHÌN (Round to nearest 1,000)
+    // Làm tròn đến hàng nghìn
     totalPrice = Math.round(totalPrice / 1000) * 1000;
 
     return {
       breakdown: {
+        transportTierFee,
         vehicleFee,
         laborFee,
-        distanceFee,
+        itemServiceFee,
         carryFee,
         floorFee,
+        rulesSurcharge,
         assemblingFee,
         packingFee,
         insuranceFee,

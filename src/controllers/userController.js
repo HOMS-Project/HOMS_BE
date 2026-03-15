@@ -3,7 +3,7 @@ const userService = require('../services/userService');
 // Lấy thông tin người dùng
 exports.getUserInfo = async (req, res, next) => {
     try {
-        const userId = req.user._id || req.user.id;
+        const userId = req.user.userId || req.user._id || req.user.id;
         const user = await userService.getUserInfo(userId);
 
         res.status(200).json({
@@ -18,7 +18,7 @@ exports.getUserInfo = async (req, res, next) => {
 // Cập nhật thông tin người dùng
 exports.updateUserInfo = async (req, res, next) => {
     try {
-        const userId = req.user._id || req.user.id;
+        const userId = req.user.userId || req.user._id || req.user.id;
         const updateData = req.body;
 
         const user = await userService.updateUserInfo(userId, updateData);
@@ -36,7 +36,7 @@ exports.updateUserInfo = async (req, res, next) => {
 // Thay đổi mật khẩu
 exports.changePassword = async (req, res, next) => {
     try {
-        const userId = req.user._id || req.user.id;
+        const userId = req.user.userId || req.user._id || req.user.id;
         const { currentPassword, newPassword } = req.body;
 
         const result = await userService.changePassword(userId, {

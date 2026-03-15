@@ -152,7 +152,7 @@ exports.registerUser = async ({ fullName, email, password, phone }) => {
 // Hàm đăng nhập
 exports.loginUser = async ({ email, password }) => {
     // 1. Tìm user
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
     
     // --- SỬA LỖI Ở ĐÂY ---
     if (!user) {

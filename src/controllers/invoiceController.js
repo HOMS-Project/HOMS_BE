@@ -92,7 +92,7 @@ exports.scheduleSurvey = async (req, res) => {
     const survey = await SurveyService.createSurvey(invoiceId, {
       surveyType,
       scheduledDate,
-      surveyorId: req.user._id
+      surveyorId: req.user.userId || req.user._id || req.user.id
     });
 
     // Cập nhật invoice status
@@ -175,7 +175,7 @@ exports.calculatePrice = async (req, res) => {
       surcharge,
       promotionId,
       discountCode,
-      calculatedBy: req.user._id
+      calculatedBy: req.user.userId || req.user._id || req.user.id
     });
 
     // Cập nhật invoice status
@@ -387,7 +387,7 @@ exports.updateInvoiceStatus = async (req, res) => {
     // Thêm vào timeline
     invoice.timeline.push({
       status,
-      updatedBy: req.user._id,
+      updatedBy: req.user.userId || req.user._id || req.user.id,
       updatedAt: new Date(),
       notes
     });
@@ -412,15 +412,28 @@ exports.updateInvoiceStatus = async (req, res) => {
 exports.listInvoices = async (req, res, next) => {
   try {
     const { status, customerId, dispatcherId, limit, skip } = req.query;
-    const userId = req.user?._id || req.user?.id;
 
-    const invoices = await InvoiceService.listInvoices({
+    const filters = {
       status,
       customerId,
       dispatcherId,
       limit: parseInt(limit) || 20,
       skip: parseInt(skip) || 0
-    });
+    };
+
+    if (req.user.role === 'customer') {
+      filters.customerId = req.user.userId || req.user._id || req.user.id;
+    }
+
+    if (req.user.role === 'dispatcher') {
+      filters.dispatcherRegionFilter = {
+        dispatcherId: req.user.userId || req.user._id || req.user.id,
+        workingAreas: req.user.workingAreas || [],
+        isGeneral: req.user.isGeneral || false
+      };
+    }
+
+    const invoices = await InvoiceService.listInvoices(filters);
 
     res.json({
       success: true,
@@ -438,7 +451,7 @@ exports.listInvoices = async (req, res, next) => {
 exports.confirmInvoice = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const dispatcherId = req.user?._id || req.user?.id;
+    const dispatcherId = req.user?.userId || req.user?._id || req.user?.id;
 
     if (!dispatcherId) {
       throw new AppError('User ID không tồn tại', 401);

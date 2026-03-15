@@ -309,6 +309,21 @@ class InvoiceService {
     if (filters.dispatcherId) query.dispatcherId = filters.dispatcherId;
     if (filters.status) query.status = filters.status;
 
+    // Support for dispatcher-region-based filtering (Dispatcher Region)
+    if (filters.dispatcherRegionFilter) {
+      const { dispatcherId, workingAreas } = filters.dispatcherRegionFilter;
+      const relevantTickets = await RequestTicket.find({
+        $or: [
+          { dispatcherId: dispatcherId },
+          {
+            dispatcherId: null,
+            'pickup.district': { $in: workingAreas || [] }
+          }
+        ]
+      }).select('_id');
+      query.requestTicketId = { $in: relevantTickets.map(t => t._id) };
+    }
+
     const invoices = await Invoice.find(query)
       .populate('customerId', 'fullName email phone')
       .populate('requestTicketId')

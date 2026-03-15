@@ -56,7 +56,7 @@ exports.listInvoices = async (req, res, next) => {
 exports.confirmInvoice = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const dispatcherId = req.user?._id || req.user?.id;
+    const dispatcherId = req.user.userId || req.user._id || req.user.id;
 
     if (!dispatcherId) {
       throw new AppError('User ID không tồn tại', 401);
@@ -82,7 +82,7 @@ exports.dispatchVehicles = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { vehicleIds, staffIds, estimatedPickupTime, estimatedDeliveryTime } = req.body;
-    const dispatcherId = req.user?._id || req.user?.id;
+    const dispatcherId = req.user.userId || req.user._id || req.user.id;
 
     if (!dispatcherId) {
       throw new AppError('User ID không tồn tại', 401);
@@ -117,7 +117,7 @@ exports.updateInvoiceStatus = async (req, res, next) => {
   try {
     const { id, newStatus } = req.params;
     const { notes } = req.body;
-    const userId = req.user?._id || req.user?.id;
+    const userId = req.user.userId || req.user._id || req.user.id;
 
     if (!userId) {
       throw new AppError('User ID không tồn tại', 401);
@@ -162,7 +162,7 @@ exports.cancelInvoice = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
-    const userId = req.user?._id || req.user?.id;
+    const userId = req.user.userId || req.user._id || req.user.id;
 
     if (!userId) {
       throw new AppError('User ID không tồn tại', 401);

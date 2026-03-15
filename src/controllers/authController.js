@@ -20,7 +20,7 @@ exports.verifyRegistrationOTP = async (req, res, next) => {
       message: 'Đăng ký thành công',
       data: {
         user: {
-          id: newUser._id,
+          _id: newUser._id,
           fullName: newUser.fullName,
           email: newUser.email,
           phone: newUser.phone,
@@ -43,7 +43,7 @@ exports.register = async (req, res, next) => {
       message: 'Đăng ký thành công',
       data: {
         user: {
-          id: newUser._id,
+          _id: newUser._id,
           fullName: newUser.fullName,
           email: newUser.email,
           phone: newUser.phone,
@@ -70,7 +70,15 @@ exports.login = async (req, res, next) => {
       success: true,
       message: 'Đăng nhập thành công',
       data: {
-        user: { id: user._id, fullName: user.fullName, role: user.role }, // Trả về role để FE biết đường điều hướng
+        user: {
+          _id: user._id,
+          fullName: user.fullName,
+          role: user.role,
+          email: user.email,
+          dispatcherProfile: user.dispatcherProfile,
+          isGeneral: user.dispatcherProfile?.isGeneral || false,
+          workingAreas: user.dispatcherProfile?.workingAreas || []
+        }, // Trả về role và profile đầy đủ để FE phân quyền ngay
         accessToken,
         expiresInMs
       }
@@ -97,9 +105,13 @@ exports.googleLogin = async (req, res, next) => {
       message: 'Đăng nhập Google thành công',
       data: {
         user: {
-          id: user._id,
+          _id: user._id,
           fullName: user.fullName,
-          role: user.role
+          role: user.role,
+          email: user.email,
+          dispatcherProfile: user.dispatcherProfile,
+          isGeneral: user.dispatcherProfile?.isGeneral || false,
+          workingAreas: user.dispatcherProfile?.workingAreas || []
         },
         accessToken, expiresInMs
       }

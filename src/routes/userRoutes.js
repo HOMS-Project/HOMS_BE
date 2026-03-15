@@ -22,7 +22,10 @@ router.get('/staff', userController.getStaff);
 // Cập nhật thông tin user
 router.put('/personal-info', userController.updateUserInfo);
 
-// Thay đổi mật khẩu
-router.put('/change-password', userController.changePassword);
+const statisticController = require('../controllers/dispatcher/statisticController');
+
+// ...
+// Lấy thống kê cho Dispatcher tổng
+router.get('/dispatcher-stats', statisticController.getDispatcherStats);
 
 module.exports = router;
