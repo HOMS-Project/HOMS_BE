@@ -199,8 +199,13 @@ if (surveyorId) {
   async getTicket(ticketId) {
     const ticket = await RequestTicket.findById(ticketId)
       .populate('customerId', 'fullName email phone')
-      .populate('dispatcherId', 'fullName email phone');
-
+      .populate('dispatcherId', 'fullName email phone')
+      .populate({
+      path: "invoice",
+      populate: {
+        path: "incident"
+      }
+    });
     if (!ticket) {
       throw new AppError('Request ticket không tồn tại', 404);
     }
@@ -228,7 +233,12 @@ if (surveyorId) {
     const tickets = await RequestTicket.find(query)
       .populate('customerId', 'fullName email phone')
       .populate('dispatcherId', 'fullName email phone')
-      .populate("invoice")
+       .populate({
+      path: "invoice",
+      populate: {
+        path: "incident"
+      }
+    })
       .sort({ createdAt: -1 })
       .limit(filters.limit || 20)
       .skip(filters.skip || 0);
