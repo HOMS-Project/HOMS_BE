@@ -103,5 +103,12 @@ const invoiceSchema = new mongoose.Schema({
   }
 
 }, { timestamps: true });
-
+invoiceSchema.virtual("incident", {
+  ref: "Incident",
+  localField: "_id",
+  foreignField: "invoiceId",
+  justOne: true
+});
+invoiceSchema.set("toObject", { virtuals: true });
+invoiceSchema.set("toJSON", { virtuals: true });
 module.exports = mongoose.model('Invoice', invoiceSchema);
