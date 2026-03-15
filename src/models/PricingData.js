@@ -23,6 +23,7 @@ const pricingDataSchema = new mongoose.Schema({
   version: { type: Number, default: 1 },
 
   breakdown: {
+    baseTransportFee: { type: Number, default: 0 },
     vehicleFee: { type: Number, default: 0 },
     laborFee: { type: Number, default: 0 },
     distanceFee: { type: Number, default: 0 },

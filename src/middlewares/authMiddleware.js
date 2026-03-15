@@ -23,17 +23,26 @@ const verifyToken = (req, res, next) => {
 }
 
 // 2. Phân quyền (Authorization) 
-const authorize = (roles = []) => {
-    return (req, res, next) => {
-        if (typeof roles === 'string') {
-            roles = [roles];
-        }
+const authorize = (...roles) => {
+  return (req, res, next) => {
 
-        if (!req.user || (roles.length && !roles.map(role => role.toUpperCase()).includes(req.user.role.toUpperCase()))) {
-            return res.status(403).json({ message: 'Forbidden: Bạn không có quyền truy cập' });
-        }
-        next();
-    };
+    console.log("USER ROLE:", req.user?.role);
+    console.log("ALLOWED:", roles);
+
+    if (!req.user) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+
+    const userRole = req.user.role.toUpperCase();
+
+    if (!roles.map(r => r.toUpperCase()).includes(userRole)) {
+      return res.status(403).json({
+        message: 'Forbidden: Bạn không có quyền truy cập'
+      });
+    }
+
+    next();
+  };
 };
 
 module.exports = { 

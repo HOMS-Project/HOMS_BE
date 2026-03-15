@@ -183,7 +183,40 @@ exports.proposeSurveyTime = async (req, res, next) => {
     next(error);
   }
 };
+exports.acceptSurveyTime = async (req, res, next) => {
+  try {
 
+    const { selectedTime } = req.body;
+    const ticketId = req.params.id;
+
+    await RequestTicketService.acceptSurveyTime(ticketId, selectedTime);
+
+    res.json({
+      success: true,
+      message: "Đã chấp nhận thời gian khảo sát"
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+// exports.rejectSurveyTime = async (req, res, next) => {
+//   try {
+
+//     const ticketId = req.params.id;
+
+//     await RequestTicketService.rejectSurveyTime(ticketId);
+
+//     res.json({
+//       success: true,
+//       message: "Đã từ chối khảo sát và hủy ticket"
+//     });
+
+//   } catch (error) {
+//     next(error);
+//   }
+// };
 /**
  * PUT /api/request-tickets/:id/accept-quote
  * Customer chấp nhận báo giá
