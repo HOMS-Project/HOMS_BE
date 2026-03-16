@@ -2,7 +2,7 @@ const cloudinary = require("cloudinary").v2;
 const streamifier = require("streamifier");
 const Incident = require("../models/Incident");
 const Invoice = require("../models/Invoice");
-
+const AppError = require("../utils/appErrors");
 // ─── Cloudinary config (expects env vars) ────────────────────────────────────
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -59,7 +59,31 @@ const createIncident = async (invoiceId, reporterId, body, files = []) => {
     err.statusCode = 404;
     throw err;
   }
+  console.log("invoice:", invoice);
+console.log("invoice.customerId:", invoice.customerId);
+console.log("reporterId:", reporterId);
+   if (!invoice.customerId) {
+  throw new AppError("Invoice không có customerId.", 400);
+}
 
+if (invoice.customerId.toString() !== reporterId.toString()) {
+  throw new AppError("Bạn không có quyền báo cáo sự cố.", 403);
+}
+
+  const allowedInvoiceStatus = ["IN_PROGRESS", "COMPLETED"];
+  if (!allowedInvoiceStatus.includes(invoice.status)) {
+    throw new AppError("Chỉ có thể báo cáo sự cố khi đơn đang hoặc đã vận chuyển.", 400);
+  }
+   const existing = await Incident.findOne({ invoiceId });
+  if (existing) {
+    throw new AppError("Đơn hàng đã có báo cáo sự cố.", 400);
+  }
+   if (!body.description || body.description.trim().length < 10) {
+    throw new AppError("Mô tả phải ít nhất 10 ký tự.", 400);
+  }
+  if (files.length > 5) {
+    throw new AppError("Tối đa 5 file.", 400);
+  }
   // 2. Validate type value against schema enum
   const allowedTypes = ["Damage", "Delay", "Accident", "Loss", "Other"];
   // FE sends uppercase short codes; map them to schema values

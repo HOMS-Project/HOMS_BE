@@ -7,12 +7,21 @@ const { authenticate } = require("../middlewares/authMiddleware");
 // ── Multer: keep files in memory so the service can stream them to Cloudinary ──
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB per file
-  fileFilter: (_req, file, cb) => {
-    const allowed = /^(image|video)\//;
-    if (allowed.test(file.mimetype)) return cb(null, true);
-    cb(new Error("Chỉ chấp nhận file ảnh hoặc video."));
-  },
+  limits: { fileSize: 20 * 1024 * 1024 }, // 50 MB per file
+ fileFilter: (_req, file, cb) => {
+  const allowedTypes = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "video/mp4"
+  ];
+
+  if (allowedTypes.includes(file.mimetype)) {
+    return cb(null, true);
+  }
+
+  cb(new Error("Chỉ chấp nhận JPG, PNG, WEBP hoặc MP4."));
+},
 });
 
 // ── Customer routes ────────────────────────────────────────────────────────────

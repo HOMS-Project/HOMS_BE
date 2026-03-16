@@ -14,7 +14,7 @@ const createIncident = async (req, res) => {
   try {
     const { ticketId, invoiceId, type, description } = req.body;
 
-    const reporterId = req.user._id; 
+    const reporterId = req.user.id; 
 
     if (!ticketId || !invoiceId|| !type || !description) {
       return res.status(400).json({
