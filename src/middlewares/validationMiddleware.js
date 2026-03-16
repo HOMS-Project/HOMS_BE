@@ -46,6 +46,7 @@ const schemas = {
 
     password: Joi.string()
       .pattern(passwordRegex)
+      .max(50)
       .required()
       .messages({
         'string.empty': 'Mật khẩu không được để trống',
