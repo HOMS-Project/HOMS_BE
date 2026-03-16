@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const vehicleSchema = new mongoose.Schema({
+  vehicleId: { type: String, required: true, unique: true },
   plateNumber: { type: String, required: true, unique: true },
 
   vehicleType: {

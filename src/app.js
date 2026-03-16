@@ -73,9 +73,11 @@ const incidentRoutes = require("./routes/incidentRoutes");
 // Admin routes
 const adminUserRoutes = require("./routes/admin/userRoutes");
 const adminStatisticRoutes = require("./routes/admin/statisticRoutes");
+const adminDashboardRoutes = require("./routes/admin/dashboardRoutes");
 const adminContractRoutes = require("./routes/admin/contractRoutes");
 const adminRouteRoutes = require("./routes/admin/routeRoutes");
 const adminPriceListRoutes = require("./routes/admin/priceListRoutes");
+const adminVehicleRoutes = require("./routes/admin/vehicleRoutes");
 const publicRoutes = require("./routes/publicRoutes");
 
 app.use("/api/auth", authRoutes);
@@ -92,9 +94,11 @@ app.use("/api/incidents",incidentRoutes)
 
 app.use("/api/admin/users", adminUserRoutes);
 app.use("/api/admin/statistics", adminStatisticRoutes);
+app.use("/api/admin/dashboard", adminDashboardRoutes);
 app.use("/api/admin/contracts", adminContractRoutes);
 app.use("/api/admin/routes", adminRouteRoutes);
 app.use("/api/admin/price-lists", adminPriceListRoutes);
+app.use("/api/admin/vehicles", adminVehicleRoutes);
 
 app.use(errorMiddleware);
 const PORT = process.env.PORT || 5000;
