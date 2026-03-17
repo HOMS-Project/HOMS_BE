@@ -94,6 +94,10 @@ const invoiceSchema = new mongoose.Schema({
     unique: true,
     sparse: true
   },
+  isRated: {
+     type: Boolean,
+     default: false,
+   },
 
   // Nghiệm thu hoàn thành
   completionEvidence: {

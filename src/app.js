@@ -70,6 +70,7 @@ const pricingRoutes = require("./routes/pricingRoutes");
 const contractRoutes = require("./routes/contractRoutes");
 const notificationRoutes = require("./routes/notificationRoutes")
 const incidentRoutes = require("./routes/incidentRoutes");
+const serviceRatingRoutes = require("./routes/serviceRatingRoutes");
 // Admin routes
 const adminUserRoutes = require("./routes/admin/userRoutes");
 const adminStatisticRoutes = require("./routes/admin/statisticRoutes");
@@ -93,7 +94,8 @@ app.use("/api/price-lists", priceListRoutes);
 app.use("/api/pricing", pricingRoutes);
 app.use("/api/customer/contracts", contractRoutes);
 app.use("/api/notifications",notificationRoutes);
-app.use("/api/incidents",incidentRoutes)
+app.use("/api/incidents",incidentRoutes);
+app.use("/api/service-ratings",serviceRatingRoutes);
 
 app.use("/api/admin/users", adminUserRoutes);
 app.use("/api/admin/statistics", adminStatisticRoutes);
