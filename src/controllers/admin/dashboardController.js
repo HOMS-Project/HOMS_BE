@@ -4,6 +4,7 @@ const RequestTicket = require('../../models/RequestTicket');
 const User = require('../../models/User');
 const moment = require('moment');
 const adminStatisticService = require('../../services/admin/statisticService');
+const adminDashboardService = require('../../services/admin/dashboardService');
 
 /**
  * GET /api/admin/dashboard/overview
@@ -59,7 +60,17 @@ async function getRevenue(req, res, next) {
 
 async function getOrders(req, res, next) {
 	try {
-		const data = await adminStatisticService.getOrderStats(req.query);
+		// Return time-series of RequestTicket counts (per day by default)
+		const data = await adminDashboardService.getOrders(req.query);
+		return res.status(200).json({ success: true, data });
+	} catch (err) {
+		next(err);
+	}
+}
+
+async function getRecentInvoices(req, res, next) {
+	try {
+		const data = await adminDashboardService.getRecentInvoices(req.query);
 		return res.status(200).json({ success: true, data });
 	} catch (err) {
 		next(err);
@@ -70,5 +81,6 @@ module.exports = {
 	getOverview,
 	getRevenue,
 	getOrders,
+	getRecentInvoices
 };
 
