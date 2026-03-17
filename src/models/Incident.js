@@ -19,7 +19,9 @@ const incidentSchema = new mongoose.Schema({
   resolution: {
     action: String, // 'Refund', 'Compensation', 'Apology'
     compensationAmount: Number,
-    resolvedAt: Date
+    resolvedAt: Date,
+    note: String,
+    resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
   }
 }, { timestamps: true });
 
