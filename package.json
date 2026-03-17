@@ -15,6 +15,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1010.0",
+    "@aws-sdk/s3-request-presigner": "^3.1010.0",
     "@payos/node": "^2.0.5",
     "axios": "^1.13.6",
     "bcryptjs": "^3.0.3",
@@ -34,6 +36,7 @@
     "nodemailer": "^7.0.13",
     "socket.io": "^4.8.3",
     "streamifier": "^0.1.1",
+    "uuid": "^13.0.0",
     "viz.js": "^2.1.2"
   },
   "devDependencies": {
