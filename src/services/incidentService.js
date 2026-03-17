@@ -59,10 +59,11 @@ const createIncident = async (invoiceId, reporterId, body, files = []) => {
     err.statusCode = 404;
     throw err;
   }
-  console.log("invoice:", invoice);
-console.log("invoice.customerId:", invoice.customerId);
-console.log("reporterId:", reporterId);
-   if (!invoice.customerId) {
+if (!reporterId) {
+  throw new AppError("Không xác định được người báo cáo.", 401);
+}
+
+if (!invoice.customerId) {
   throw new AppError("Invoice không có customerId.", 400);
 }
 
