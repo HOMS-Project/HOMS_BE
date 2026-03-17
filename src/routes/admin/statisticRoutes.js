@@ -13,6 +13,9 @@ router.get('/revenue', adminStatisticController.getRevenueStats);
 // Route: /api/admin/statistics/orders
 router.get('/orders', adminStatisticController.getOrderStats);
 
+// Route: /api/admin/statistics/request-tickets/daily
+router.get('/request-tickets/daily', adminStatisticController.getRequestTicketsDaily);
+
 // Route: /api/admin/statistics/overview
 router.get('/overview', adminStatisticController.getOverview);
 

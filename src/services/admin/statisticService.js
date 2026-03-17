@@ -202,6 +202,53 @@ exports.getOrderStats = async (query) => {
 };
 
 /**
+ * Return time-series of RequestTicket counts between startDate and endDate (inclusive).
+ * If no dates provided, default to last 7 days (today included) broken down by day.
+ * Response: [{ date: 'YYYY-MM-DD', count: Number }, ...]
+ */
+exports.getRequestTicketsDaily = async (query) => {
+    let { startDate, endDate } = query || {};
+    const now = moment();
+    if (!startDate || !endDate) {
+        startDate = now.clone().subtract(6, 'day').startOf('day').toDate();
+        endDate = now.clone().endOf('day').toDate();
+    } else {
+        startDate = moment(startDate).startOf('day').toDate();
+        endDate = moment(endDate).endOf('day').toDate();
+    }
+
+    const pipeline = [
+        { $match: { createdAt: { $gte: startDate, $lte: endDate } } },
+        {
+            $group: {
+                _id: {
+                    year: { $year: '$createdAt' },
+                    month: { $month: '$createdAt' },
+                    day: { $dayOfMonth: '$createdAt' }
+                },
+                count: { $sum: 1 }
+            }
+        },
+        { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
+    ];
+
+    const raw = await RequestTicket.aggregate(pipeline);
+
+    const start = moment(startDate).startOf('day');
+    const end = moment(endDate).startOf('day');
+    const days = [];
+    for (let m = start.clone(); m.diff(end) <= 0; m.add(1, 'day')) {
+        days.push(m.clone());
+    }
+
+    const mapKey = (r) => `${r._id.year}-${String(r._id.month).padStart(2, '0')}-${String(r._id.day).padStart(2, '0')}`;
+    const rawMap = {};
+    raw.forEach(r => { rawMap[mapKey(r)] = r.count; });
+
+    return days.map(d => ({ date: d.format('YYYY-MM-DD'), count: rawMap[d.format('YYYY-MM-DD')] || 0 }));
+};
+
+/**
  * Tổng quan Dashboard (Overview)
  */
 exports.getOverview = async () => {
