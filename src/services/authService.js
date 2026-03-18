@@ -169,6 +169,14 @@ exports.loginUser = async ({ email, password }) => {
         throw new AppError('Email hoặc mật khẩu không đúng', 401);
     }
 
+  // 2.5. Block login if user status is not Active
+  // Normalize status and check
+  const userStatus = (user.status || '').toString();
+  if (userStatus.toLowerCase() !== 'active') {
+    // Provide a clear message for the client
+    throw new AppError('Tài khoản không được phép đăng nhập do tài khoản bị vô hiệu hóa', 403);
+  }
+
     // 3. Sinh token
     const accessToken = generateToken(user);
     const refreshToken = generateRefreshToken(user);
@@ -197,6 +205,11 @@ exports.refreshAccessToken = async (refreshToken) => {
   const user = await User.findById(decoded.userId);
   if (!user) {
     throw new AppError('User not found', 401);
+  }
+
+  // Block refresh token usage for non-active accounts
+  if ((user.status || '').toString().toLowerCase() !== 'active') {
+    throw new AppError('Account is not active. Please contact administrator.', 403);
   }
 
   const hashedRefreshToken = crypto
@@ -268,15 +281,9 @@ exports.googleLogin = async ({ token }) => {
       avatar: picture,
     });
   } else {
-
-    if (user.status === "Inactive") {
-      const err = new Error("Tài khoản chưa kích hoạt.");
-      err.statusCode = 403;
-      throw err;
-    }
-
-    if (user.status === "Blocked") {
-      const err = new Error("Tài khoản đã bị khóa.");
+    const status = (user.status || '').toString().toLowerCase();
+    if (status !== 'active') {
+      const err = new Error('Tài khoản không được phép đăng nhập do trạng thái tài khoản không hoạt động');
       err.statusCode = 403;
       throw err;
     }

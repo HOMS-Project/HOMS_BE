@@ -19,14 +19,26 @@ const io = new Server(server, {
 });
 initSocket(io);
 global.onlineUsers = new Map();
+const User = require('./models/User');
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
 
   // Khi user login/vào web, FE sẽ gửi event 'register_user' kèm userId
   socket.on('register_user', (userId) => {
-    global.onlineUsers.set(userId.toString(), socket.id);
-    console.log(`User ${userId} registered with socket ${socket.id}`);
+    (async () => {
+      try {
+        const user = await User.findById(userId).select('status');
+        if (user && (user.status || '').toString().toLowerCase() === 'active') {
+          global.onlineUsers.set(userId.toString(), socket.id);
+          console.log(`User ${userId} registered with socket ${socket.id}`);
+        } else {
+          console.log(`Socket registration blocked for user ${userId} due to inactive status`);
+        }
+      } catch (err) {
+        console.error('Error verifying user status for socket registration', err.message || err);
+      }
+    })();
   });
 
   socket.on('disconnect', () => {

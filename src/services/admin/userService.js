@@ -1,5 +1,7 @@
 const User = require('../../models/User');
 const bcrypt = require('bcryptjs');
+const AuditLog = require('../../models/AuditLog');
+const NotificationService = require('../../services/notificationService');
 
 /**
  * Lấy danh sách users (có phân trang và filter)
@@ -9,7 +11,12 @@ exports.getAllUsers = async (query) => {
 
     let filter = {};
     if (role) filter.role = role.toLowerCase();
-    if (status) filter.status = status;
+    if (status) {
+        // Normalize status to match enum values in User model (e.g., 'active' -> 'Active')
+        const s = String(status).toLowerCase();
+        const map = { active: 'Active', inactive: 'Inactive', blocked: 'Blocked', banned: 'Banned' };
+        filter.status = map[s] || status;
+    }
 
     if (search) {
         filter.$or = [
@@ -92,6 +99,13 @@ exports.updateUser = async (id, updateData) => {
         updateData.password = await bcrypt.hash(updateData.password, salt);
     }
 
+    // Normalize status value if provided (allow FE to send lowercase)
+    if (updateData.status) {
+        const s = String(updateData.status).toLowerCase();
+        const map = { active: 'Active', inactive: 'Inactive', blocked: 'Blocked', banned: 'Banned' };
+        updateData.status = map[s] || updateData.status;
+    }
+
     const updatedUser = await User.findByIdAndUpdate(
         id,
         updateData,
@@ -119,4 +133,89 @@ exports.deleteUser = async (id) => {
         throw new Error('User not found');
     }
     return user;
+};
+
+/**
+ * Ban a user (set status to 'Banned') and create audit & notification
+ */
+exports.banUser = async (id, { reason, performedBy } = {}) => {
+    const user = await User.findById(id).select('-password -refreshTokens');
+    if (!user) {
+        throw new Error('User not found');
+    }
+
+    if (user.status === 'Banned') {
+        throw new Error('User already banned');
+    }
+
+    user.status = 'Banned';
+    await user.save();
+
+    // Create audit log
+    await AuditLog.create({
+        action: 'BAN_USER',
+        performedBy: performedBy || null,
+        targetUser: user._id,
+        details: reason || 'Banned by admin'
+    });
+
+    // Send notification to user (best-effort)
+    try {
+        await NotificationService.createNotification({
+            userId: user._id,
+            title: 'Tài khoản bị cấm',
+            message: reason ? `Tài khoản của bạn đã bị cấm: ${reason}` : 'Tài khoản của bạn đã bị cấm bởi quản trị viên.',
+            type: 'account'
+        });
+    } catch (err) {
+        // don't block flow if notification fails
+        console.error('Failed to create ban notification', err.message || err);
+    }
+
+    const response = user.toObject();
+    delete response.refreshTokens;
+    delete response.password;
+    return response;
+};
+
+/**
+ * Unban a user (set status to 'Active') and create audit & notification
+ */
+exports.unbanUser = async (id, { reason, performedBy } = {}) => {
+    const user = await User.findById(id).select('-password -refreshTokens');
+    if (!user) {
+        throw new Error('User not found');
+    }
+
+    if (user.status !== 'Banned') {
+        throw new Error('User is not banned');
+    }
+
+    user.status = 'Active';
+    await user.save();
+
+    // Create audit log
+    await AuditLog.create({
+        action: 'UNBAN_USER',
+        performedBy: performedBy || null,
+        targetUser: user._id,
+        details: reason || 'Unbanned by admin'
+    });
+
+    // Send notification to user (best-effort)
+    try {
+        await NotificationService.createNotification({
+            userId: user._id,
+            title: 'Tài khoản đã được kích hoạt',
+            message: 'Tài khoản của bạn đã được gỡ cấm và hoạt động trở lại.',
+            type: 'account'
+        });
+    } catch (err) {
+        console.error('Failed to create unban notification', err.message || err);
+    }
+
+    const response = user.toObject();
+    delete response.refreshTokens;
+    delete response.password;
+    return response;
 };
