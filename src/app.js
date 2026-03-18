@@ -13,12 +13,22 @@ const server = http.createServer(app);
 // Cấu hình Socket.io
 const io = new Server(server, {
   cors: {
-    origin: "*", // Cấu hình lại domain FE của bạn ở đây để bảo mật
-    methods: ["GET", "POST"]
+    origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 initSocket(io);
 global.onlineUsers = new Map();
+
+const socketAuthMiddleware = require('./middlewares/socketAuthMiddleware');
+const { registerVideoSocketEvents } = require('./socket/videoSocket');
+
+const videoIo = io.of('/video-chat');
+videoIo.use(socketAuthMiddleware);
+videoIo.on('connection', (socket) => {
+  registerVideoSocketEvents(videoIo, socket);
+});
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
