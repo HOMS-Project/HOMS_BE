@@ -26,3 +26,12 @@ exports.getOverview = async (req, res, next) => {
         next(error);
     }
 };
+
+exports.getRequestTicketsDaily = async (req, res, next) => {
+    try {
+        const data = await adminStatisticService.getRequestTicketsDaily(req.query);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        next(error);
+    }
+};

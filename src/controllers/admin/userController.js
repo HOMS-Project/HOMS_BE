@@ -69,3 +69,37 @@ exports.deleteUser = async (req, res, next) => {
         next(error);
     }
 };
+
+exports.banUser = async (req, res, next) => {
+    try {
+        const reason = req.body?.reason || null;
+        const performedBy = req.user?._id || null;
+        const user = await adminUserService.banUser(req.params.id, { reason, performedBy });
+        res.status(200).json({ success: true, message: 'User account has been banned successfully.', data: user });
+    } catch (error) {
+        if (error.message === 'User not found') {
+            return res.status(404).json({ success: false, message: error.message });
+        }
+        if (error.message === 'User already banned') {
+            return res.status(400).json({ success: false, message: 'User account is already banned.' });
+        }
+        next(error);
+    }
+};
+
+exports.unbanUser = async (req, res, next) => {
+    try {
+        const reason = req.body?.reason || null;
+        const performedBy = req.user?._id || null;
+        const user = await adminUserService.unbanUser(req.params.id, { reason, performedBy });
+        res.status(200).json({ success: true, message: 'User account has been unbanned successfully.', data: user });
+    } catch (error) {
+        if (error.message === 'User not found') {
+            return res.status(404).json({ success: false, message: error.message });
+        }
+        if (error.message === 'User is not banned') {
+            return res.status(400).json({ success: false, message: 'User account is not currently banned.' });
+        }
+        next(error);
+    }
+};

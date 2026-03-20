@@ -13,6 +13,11 @@ router.route('/')
     .post(adminUserController.createUser);
 
 // Route: /api/admin/users/:id
+// Ban / Unban routes
+router.patch('/:id/ban', adminUserController.banUser);
+router.patch('/:id/unban', adminUserController.unbanUser);
+
+// Route: /api/admin/users/:id
 router.route('/:id')
     .get(adminUserController.getUserById)
     .put(adminUserController.updateUser)
