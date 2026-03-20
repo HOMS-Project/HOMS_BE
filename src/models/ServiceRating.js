@@ -5,7 +5,8 @@ const serviceRatingSchema = new mongoose.Schema({
   invoiceId: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'Invoice', 
-    required: true 
+    required: true ,
+    unique: true,
   },
   
   customerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
@@ -22,9 +23,11 @@ const serviceRatingSchema = new mongoose.Schema({
     professionalism: { type: Number, min: 1, max: 5 },
     punctuality: { type: Number, min: 1, max: 5 } // Đúng giờ không?
   },
-
+quickTags: [{ type: String, trim: true }],
   comment: String,
   images: [String] // Ảnh feedback (nếu có)
 }, { timestamps: true });
-
+serviceRatingSchema.index({ driverId: 1 });
+serviceRatingSchema.index({ vehicleId: 1 });
+ 
 module.exports = mongoose.model('ServiceRating', serviceRatingSchema);

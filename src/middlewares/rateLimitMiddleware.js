@@ -8,7 +8,7 @@ const baseConfig = {
 exports.loginLimiter = rateLimit({
   ...baseConfig,
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 100,
   message: {
     status: 'fail',
     message: 'Bạn thử đăng nhập quá nhiều lần, vui lòng thử lại sau'
