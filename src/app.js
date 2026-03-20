@@ -13,13 +13,23 @@ const server = http.createServer(app);
 // Cấu hình Socket.io
 const io = new Server(server, {
   cors: {
-    origin: "*", // Cấu hình lại domain FE của bạn ở đây để bảo mật
-    methods: ["GET", "POST"]
+    origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 initSocket(io);
 global.onlineUsers = new Map();
 const User = require('./models/User');
+
+const socketAuthMiddleware = require('./middlewares/socketAuthMiddleware');
+const { registerVideoSocketEvents } = require('./socket/videoSocket');
+
+const videoIo = io.of('/video-chat');
+videoIo.use(socketAuthMiddleware);
+videoIo.on('connection', (socket) => {
+  registerVideoSocketEvents(videoIo, socket);
+});
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
@@ -55,7 +65,7 @@ io.on('connection', (socket) => {
 const cookieParser = require('cookie-parser');
 connectDB();
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: '*',
   credentials: true
 }));
 
@@ -94,10 +104,12 @@ const adminVehicleRoutes = require("./routes/admin/vehicleRoutes");
 const adminIncidentRoutes = require("./routes/admin/incidentRoutes");
 const adminInvoiceRoutes = require("./routes/admin/invoiceRoutes");
 const adminRatingRoutes = require("./routes/admin/ratingRoutes");
+const staffRoutes = require("./routes/staffRoutes");
 const uploadRoutes = require("./routes/uploads");
 const publicRoutes = require("./routes/publicRoutes");
 
 app.use("/api/auth", authRoutes);
+app.use("/api/staff", staffRoutes);
 app.use("/api/public", publicRoutes);
 app.use("/api/customer", userRoutes);
 app.use("/api/request-tickets", requestTicketRoutes);
@@ -106,9 +118,9 @@ app.use("/api/surveys", surveyRoutes);
 app.use("/api/price-lists", priceListRoutes);
 app.use("/api/pricing", pricingRoutes);
 app.use("/api/customer/contracts", contractRoutes);
-app.use("/api/notifications",notificationRoutes);
-app.use("/api/incidents",incidentRoutes);
-app.use("/api/service-ratings",serviceRatingRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/incidents", incidentRoutes);
+app.use("/api/service-ratings", serviceRatingRoutes);
 
 app.use("/api/admin/users", adminUserRoutes);
 app.use("/api/admin/statistics", adminStatisticRoutes);
@@ -124,7 +136,7 @@ app.use("/api/admin/ratings", adminRatingRoutes);
 
 app.use(errorMiddleware);
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
 
