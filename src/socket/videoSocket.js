@@ -1,8 +1,9 @@
-const TicketChat = require('../models/TicketChat');
+const Message = require('../models/Message');
 const RequestTicket = require('../models/RequestTicket');
 
 const registerVideoSocketEvents = (io, socket) => {
-  console.log(`[VideoChat] User connected: ${socket.id} (User ID: ${socket.user?.id})`);
+  const userIdLog = socket.user?.id || socket.user?._id || socket.user?.userId;
+  console.log(`[VideoChat] User connected: ${socket.id} (User ID: ${userIdLog})`);
 
   // When a user wants to join a specific room (for chat & video)
   socket.on('join_room', async (roomId) => {
@@ -12,12 +13,15 @@ const registerVideoSocketEvents = (io, socket) => {
     try {
       const ticket = await RequestTicket.findOne({ code: roomId });
       if (ticket) {
-        const chat = await TicketChat.findOne({ requestTicketId: ticket._id });
-        if (chat) {
-          socket.emit('chat_history', chat.messages);
-        } else {
-          socket.emit('chat_history', []);
-        }
+        const messages = await Message.find({ 'context.refId': ticket._id, 'context.type': 'RequestTicket' }).sort({ createdAt: 1 }).populate('senderId', 'fullName email');
+        
+        const history = messages.map(m => ({
+          content: m.content,
+          senderName: m.senderId?.fullName || m.senderId?.email || 'User',
+          timestamp: m.createdAt
+        }));
+        
+        socket.emit('chat_history', history);
       } else {
         socket.emit('chat_history', []);
       }
@@ -32,30 +36,39 @@ const registerVideoSocketEvents = (io, socket) => {
 
   // Handle chat messages
   socket.on('send_message', async (data) => {
+    console.log('[VideoChat] Received send_message:', data);
     // data should have { roomId, message, sender, time }
     io.to(data.roomId).emit('receive_message', data);
 
     try {
       const ticket = await RequestTicket.findOne({ code: data.roomId });
       if (ticket) {
-        let chat = await TicketChat.findOne({ requestTicketId: ticket._id });
-        const newMessage = {
-          senderId: socket.user?.id || socket.user?._id,
-          senderName: data.sender || socket.user?.fullName || 'User',
+        console.log('[VideoChat] Found ticket:', ticket._id);
+        const senderId = socket.user?.id || socket.user?._id || socket.user?.userId;
+        console.log('[VideoChat] SenderId:', senderId);
+        
+        let isCustomer = false;
+        if (ticket.customerId && senderId) {
+           isCustomer = String(ticket.customerId) === String(senderId);
+        }
+        
+        const recipientId = isCustomer ? (ticket.dispatcherId || ticket.customerId) : ticket.customerId;
+        console.log('[VideoChat] RecipientId:', recipientId);
+        
+        const newMessage = new Message({
+          senderId,
+          recipientId,
+          context: {
+            type: 'RequestTicket',
+            refId: ticket._id
+          },
           content: data.message,
           type: 'Text',
-        };
-
-        if (chat) {
-          chat.messages.push(newMessage);
-          await chat.save();
-        } else {
-          chat = new TicketChat({
-            requestTicketId: ticket._id,
-            messages: [newMessage]
-          });
-          await chat.save();
-        }
+        });
+        await newMessage.save();
+        console.log('[VideoChat] Message saved successfully:', newMessage._id);
+      } else {
+        console.log('[VideoChat] Ticket not found for room:', data.roomId);
       }
     } catch (error) {
       console.error('[VideoChat] Error saving message to database:', error);

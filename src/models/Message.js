@@ -3,30 +3,50 @@ const mongoose = require("mongoose");
 const messageSchema = new mongoose.Schema({
   senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   recipientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  
-  // Context của tin nhắn (Chat về đơn hàng nào?)
-  invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice' }, 
-  requestTicketId: { type: mongoose.Schema.Types.ObjectId, ref: 'RequestTicket' }, // Chat khi chưa chốt đơn
+
+  context: {
+    type: {
+      type: String,
+      enum: ['Invoice', 'RequestTicket']
+    },
+    refId: mongoose.Schema.Types.ObjectId
+  },
 
   content: String,
 
-  // [UPDATE]: Thêm Call Log
   type: {
     type: String,
-    enum: ['Text', 'Image', 'Location', 'Video', 'Call_Log', 'Video_Call_Log'], 
+    enum: ['Text', 'Media', 'Location', 'Call'],
     default: 'Text'
   },
 
-  // Chi tiết cuộc gọi (dùng cho type Call_Log)
   callMetadata: {
+    callerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    callType: { type: String, enum: ['Audio', 'Video'] },
     durationSeconds: Number,
     status: { type: String, enum: ['Missed', 'Completed', 'Rejected'] },
     startedAt: Date,
-    endedAt: Date
+    endedAt: Date,
+    recordingUrl: String
   },
 
-  attachments: [String], // Link ảnh/video
-  isRead: { type: Boolean, default: false }
+  attachments: [
+    {
+      url: String,
+      type: { type: String, enum: ['Image', 'Video', 'File'] }
+    }
+  ],
+
+  readBy: [
+    {
+      userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      readAt: Date
+    }
+  ],
+
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: Date
+
 }, { timestamps: true });
 
 module.exports = mongoose.model("Message", messageSchema);
