@@ -1,4 +1,5 @@
 const invoiceService = require('../../services/admin/invoiceService');
+const Invoice = require('../../models/Invoice');
 
 // Helper for error responses
 const sendError = (res, err) => {
@@ -30,6 +31,8 @@ const listInvoices = async (req, res) => {
     return sendError(res, err);
   }
 };
+
+// revenue endpoints removed per request
 
 module.exports = {
   getInvoice,
