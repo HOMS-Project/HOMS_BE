@@ -107,6 +107,7 @@ const adminRatingRoutes = require("./routes/admin/ratingRoutes");
 const staffRoutes = require("./routes/staffRoutes");
 const uploadRoutes = require("./routes/uploads");
 const publicRoutes = require("./routes/publicRoutes");
+const aiRoutes = require("./routes/aiRoutes");
 
 app.use("/api/auth", authRoutes);
 app.use("/api/staff", staffRoutes);
@@ -121,6 +122,7 @@ app.use("/api/customer/contracts", contractRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/incidents", incidentRoutes);
 app.use("/api/service-ratings", serviceRatingRoutes);
+app.use("/api/ai", aiRoutes);
 
 app.use("/api/admin/users", adminUserRoutes);
 app.use("/api/admin/statistics", adminStatisticRoutes);
