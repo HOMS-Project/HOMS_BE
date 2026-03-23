@@ -32,9 +32,19 @@ const listInvoices = async (req, res) => {
   }
 };
 
-// revenue endpoints removed per request
+// GET /api/admin/invoices/revenue-aggregate
+const getRevenueAggregate = async (req, res) => {
+  try {
+    const search = req.query.search || '';
+    const total = await invoiceService.getRevenueAggregate({ search });
+    return res.status(200).json({ success: true, data: { totalRevenue: total } });
+  } catch (err) {
+    return sendError(res, err);
+  }
+};
 
 module.exports = {
   getInvoice,
   listInvoices
+  ,getRevenueAggregate
 };
