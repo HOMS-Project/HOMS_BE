@@ -1,71 +1,88 @@
-const User = require('../models/User');
-const AppError = require('../utils/appErrors');
-const bcrypt = require('bcryptjs');
+const User = require("../models/User");
+const AppError = require("../utils/appErrors");
+const bcrypt = require("bcryptjs");
 
 // Lấy thông tin người dùng
 exports.getUserInfo = async (userId) => {
-    const user = await User.findById(userId).select('-password -otpResetPassword -otpResetExpires');
+  const user = await User.findById(userId).select(
+    "-password -otpResetPassword -otpResetExpires",
+  );
 
-    if (!user) {
-        throw new AppError('Không tìm thấy người dùng', 404);
-    }
+  if (!user) {
+    throw new AppError("Không tìm thấy người dùng", 404);
+  }
 
-    return user;
+  return user;
 };
 
 // Cập nhật thông tin người dùng
 exports.updateUserInfo = async (userId, updateData) => {
-    const user = await User.findByIdAndUpdate(userId, updateData, {
-        new: true,
-        runValidators: true
-    }).select('-password -otpResetPassword -otpResetExpires');
+  const user = await User.findByIdAndUpdate(userId, updateData, {
+    new: true,
+    runValidators: true,
+  }).select("-password -otpResetPassword -otpResetExpires");
 
-    if (!user) {
-        throw new AppError('Không tìm thấy người dùng', 404);
-    }
+  if (!user) {
+    throw new AppError("Không tìm thấy người dùng", 404);
+  }
 
-    return user;
+  return user;
 };
 
 // Thay đổi mật khẩu
 exports.changePassword = async (userId, { currentPassword, newPassword }) => {
-    const user = await User.findById(userId);
+  const user = await User.findById(userId);
 
-    if (!user) {
-        throw new AppError('Không tìm thấy người dùng', 404);
-    }
+  if (!user) {
+    throw new AppError("Không tìm thấy người dùng", 404);
+  }
 
-    // So khớp mật khẩu hiện tại
-    const isMatch = await bcrypt.compare(currentPassword, user.password);
+  if (!currentPassword || !newPassword) {
+    throw new AppError("Thiếu mật khẩu hiện tại hoặc mật khẩu mới", 400);
+  }
 
-    if (!isMatch) {
-        throw new AppError('Mật khẩu hiện tại không đúng', 401);
-    }
+  if (!user.password) {
+    throw new AppError(
+      "Tài khoản này không có mật khẩu (đăng nhập Google). Vui lòng đặt mật khẩu bằng chức năng đặt lại mật khẩu.",
+      400,
+    );
+  }
 
-    // Hash mật khẩu mới
-    const hashedPassword = await bcrypt.hash(newPassword, 12);
-    user.password = hashedPassword;
+  // So khớp mật khẩu hiện tại
+  const isMatch = await bcrypt.compare(currentPassword, user.password);
 
-    await user.save();
+  if (!isMatch) {
+    throw new AppError("Mật khẩu hiện tại không đúng", 401);
+  }
 
-    return { message: 'Đổi mật khẩu thành công' };
+  // Hash mật khẩu mới
+  const hashedPassword = await bcrypt.hash(newPassword, 12);
+  user.password = hashedPassword;
+
+  await user.save();
+
+  return { message: "Đổi mật khẩu thành công" };
 };
 
 // Lấy danh sách nhân viên khảo sát
 exports.getDispatchers = async () => {
-    const dispatchers = await User.find({ role: 'dispatcher', status: 'Active' })
-        .select('-password -otpResetPassword -otpResetExpires');
-    return dispatchers;
+  const dispatchers = await User.find({
+    role: "dispatcher",
+    status: "Active",
+  }).select("-password -otpResetPassword -otpResetExpires");
+  return dispatchers;
 };
 
 // Lấy danh sách tài xế
 exports.getDrivers = async () => {
-    return await User.find({ role: 'driver', status: 'Active' })
-        .select('-password -otpResetPassword -otpResetExpires');
+  return await User.find({ role: "driver", status: "Active" }).select(
+    "-password -otpResetPassword -otpResetExpires",
+  );
 };
 
 // Lấy danh sách nhân viên bốc xếp (staff). Hệ thống hiện tại có thể chỉ dùng 'driver' cho bốc xếp, nhưng ta cứ map vào 'driver' tạm.
 exports.getStaff = async () => {
-    return await User.find({ role: 'driver', status: 'Active' })
-        .select('-password -otpResetPassword -otpResetExpires');
+  return await User.find({ role: "driver", status: "Active" }).select(
+    "-password -otpResetPassword -otpResetExpires",
+  );
 };
