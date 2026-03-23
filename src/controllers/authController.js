@@ -1,11 +1,12 @@
-const authService = require('../services/authService');
+const authService = require("../services/authService");
+const AppError = require("../utils/appErrors");
 
 exports.sendRegistrationOTP = async (req, res, next) => {
   try {
     await authService.sendRegistrationOTP(req.body);
     res.status(200).json({
       success: true,
-      message: 'Mã OTP đã được gửi đến email của bạn'
+      message: "Mã OTP đã được gửi đến email của bạn",
     });
   } catch (error) {
     next(error);
@@ -17,16 +18,16 @@ exports.verifyRegistrationOTP = async (req, res, next) => {
     const newUser = await authService.verifyRegistrationOTP(req.body);
     res.status(201).json({
       success: true,
-      message: 'Đăng ký thành công',
+      message: "Đăng ký thành công",
       data: {
         user: {
           _id: newUser._id,
           fullName: newUser.fullName,
           email: newUser.email,
           phone: newUser.phone,
-          role: newUser.role
-        }
-      }
+          role: newUser.role,
+        },
+      },
     });
   } catch (error) {
     next(error);
@@ -40,35 +41,44 @@ exports.register = async (req, res, next) => {
 
     res.status(201).json({
       success: true,
-      message: 'Đăng ký thành công',
+      message: "Đăng ký thành công",
       data: {
         user: {
           _id: newUser._id,
           fullName: newUser.fullName,
           email: newUser.email,
           phone: newUser.phone,
-          role: newUser.role
-        }
-      }
+          role: newUser.role,
+        },
+      },
     });
   } catch (error) {
     next(error);
   }
 };
 
-
 exports.login = async (req, res, next) => {
   try {
-    const { user, accessToken, refreshToken, expiresInMs } = await authService.loginUser(req.body);
-    res.cookie('refreshToken', refreshToken, {
+    const isMobileDriver =
+      (req.get("x-client") || "").toLowerCase() === "mobile-driver";
+    const { user, accessToken, refreshToken, expiresInMs } =
+      await authService.loginUser(req.body);
+
+    if (isMobileDriver && user.role !== "driver") {
+      throw new AppError(
+        "Chỉ tài xế (driver) mới được phép đăng nhập ứng dụng di động",
+        403,
+      );
+    }
+    res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      sameSite: 'none',
+      sameSite: "none",
       secure: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
     res.status(200).json({
       success: true,
-      message: 'Đăng nhập thành công',
+      message: "Đăng nhập thành công",
       data: {
         user: {
           _id: user._id,
@@ -77,11 +87,12 @@ exports.login = async (req, res, next) => {
           email: user.email,
           dispatcherProfile: user.dispatcherProfile,
           isGeneral: user.dispatcherProfile?.isGeneral || false,
-          workingAreas: user.dispatcherProfile?.workingAreas || []
-        }, // Trả về role và profile đầy đủ để FE phân quyền ngay
+          workingAreas: user.dispatcherProfile?.workingAreas || [],
+        },
         accessToken,
-        expiresInMs
-      }
+        expiresInMs,
+        ...(isMobileDriver ? { refreshToken } : {}),
+      },
     });
   } catch (error) {
     next(error);
@@ -90,19 +101,28 @@ exports.login = async (req, res, next) => {
 
 exports.googleLogin = async (req, res, next) => {
   try {
+    const isMobileDriver =
+      (req.get("x-client") || "").toLowerCase() === "mobile-driver";
     const { user, accessToken, refreshToken, expiresInMs } =
       await authService.googleLogin(req.body);
 
-    res.cookie('refreshToken', refreshToken, {
+    if (isMobileDriver && user.role !== "driver") {
+      throw new AppError(
+        "Chỉ tài xế (driver) mới được phép đăng nhập ứng dụng di động",
+        403,
+      );
+    }
+
+    res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      sameSite: 'none',
+      sameSite: "none",
       secure: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     res.json({
       success: true,
-      message: 'Đăng nhập Google thành công',
+      message: "Đăng nhập Google thành công",
       data: {
         user: {
           _id: user._id,
@@ -111,10 +131,12 @@ exports.googleLogin = async (req, res, next) => {
           email: user.email,
           dispatcherProfile: user.dispatcherProfile,
           isGeneral: user.dispatcherProfile?.isGeneral || false,
-          workingAreas: user.dispatcherProfile?.workingAreas || []
+          workingAreas: user.dispatcherProfile?.workingAreas || [],
         },
-        accessToken, expiresInMs
-      }
+        accessToken,
+        expiresInMs,
+        ...(isMobileDriver ? { refreshToken } : {}),
+      },
     });
   } catch (err) {
     next(err);
@@ -137,7 +159,7 @@ exports.verifyOTP = async (req, res, next) => {
     await authService.verifyOTP({ email, otp });
     res.json({
       success: true,
-      message: "Xác thực OTP thành công"
+      message: "Xác thực OTP thành công",
     });
   } catch (err) {
     next(err);
@@ -150,7 +172,7 @@ exports.resetPassword = async (req, res, next) => {
     await authService.resetPasswordWithEmail({ email, newPassword });
     res.json({
       success: true,
-      message: "Đặt lại mật khẩu thành công"
+      message: "Đặt lại mật khẩu thành công",
     });
   } catch (err) {
     next(err);
@@ -159,18 +181,19 @@ exports.resetPassword = async (req, res, next) => {
 exports.refreshToken = async (req, res, next) => {
   try {
     const oldRefreshToken = req.cookies.refreshToken;
-    const { accessToken, refreshToken, expiresInMs } = await authService.refreshAccessToken(oldRefreshToken);
-    res.cookie('refreshToken', refreshToken, {
+    const { accessToken, refreshToken, expiresInMs } =
+      await authService.refreshAccessToken(oldRefreshToken);
+    res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
-      sameSite: 'none',
+      sameSite: "none",
       secure: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     res.json({
       success: true,
       accessToken,
-      expiresInMs
+      expiresInMs,
     });
   } catch (err) {
     next(err);
