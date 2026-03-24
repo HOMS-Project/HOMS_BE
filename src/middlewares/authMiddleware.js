@@ -3,20 +3,20 @@ const User = require('../models/User');
 
 // 1. Xác thực (Authentication)
 const verifyToken = async (req, res, next) => {
-    const authHeader = req.headers.authorization;
+  const authHeader = req.headers.authorization;
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ message: 'Unauthorized: Thiếu token hoặc sai định dạng' });
-    }
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ message: 'Unauthorized: Thiếu token hoặc sai định dạng' });
+  }
 
-    const token = authHeader.split(' ')[1];
+  const token = authHeader.split(' ')[1];
 
   try {
-  const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-  // Fetch fresh user object from DB to validate status and existence
-  const userId = decoded.userId;
-  const user = await User.findById(userId).select('-password -refreshTokens');
+    // Fetch fresh user object from DB to validate status and existence
+    const userId = decoded.userId;
+    const user = await User.findById(userId).select('-password -refreshTokens');
     if (!user) {
       return res.status(401).json({ message: 'Unauthorized: user not found' });
     }
@@ -32,15 +32,17 @@ const verifyToken = async (req, res, next) => {
       _id: user._id,
       userId: user._id,
       role: user.role,
-      fullName: user.fullName
+      fullName: user.fullName,
+      workingAreas: user.dispatcherProfile?.workingAreas || [],
+      isGeneral: user.dispatcherProfile?.isGeneral || false
     };
     next();
   } catch (error) {
-        if (error.name === 'TokenExpiredError') {
-            return res.status(401).json({ message: 'Token has expired' });
-        }
-        return res.status(403).json({ message: 'Invalid token' });
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Token has expired' });
     }
+    return res.status(403).json({ message: 'Invalid token' });
+  }
 }
 
 // 2. Phân quyền (Authorization) 
@@ -66,8 +68,8 @@ const authorize = (...roles) => {
   };
 };
 
-module.exports = { 
-  verifyToken, 
+module.exports = {
+  verifyToken,
   authenticate: verifyToken,  // Alias
-  authorize 
+  authorize
 };

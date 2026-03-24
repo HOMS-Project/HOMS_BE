@@ -119,27 +119,27 @@ class RequestTicketService {
     // Cập nhật ngày đề xuất mới
     // (Lưu ý mảng này là mảng thời gian được Dispatcher chọn gửi lại cho Khách hàng)
     ticket.proposedSurveyTimes = proposedTimes.map(timeStr => new Date(timeStr));
-if (surveyorId) {
-  ticket.dispatcherId = surveyorId;
-}
+    if (surveyorId) {
+      ticket.dispatcherId = surveyorId;
+    }
     // Ghi chú lý do từ chối (có thể lưu log vào timeline sau này nếu làm hệ thống Log)
-     if (reason) {
-    ticket.rescheduleReason = reason;
-  }
+    if (reason) {
+      ticket.rescheduleReason = reason;
+    }
 
     // Không chuyển status thành CANCELLED, giữ nguyên để Khách hàng có thể thao tác chọn lại lịch.
     await ticket.save();
     const io = getIo();
     await NotificationService.createNotification(
-    {
-      userId: ticket.customerId,
-      title: "Dispatcher đề xuất đổi lịch khảo sát",
-      message: "Dispatcher đã đề xuất thời gian khảo sát mới cho đơn của bạn",
-      type: "System",
-       ticketId: ticket._id 
-    },
-    io
-  );
+      {
+        userId: ticket.customerId,
+        title: "Dispatcher đề xuất đổi lịch khảo sát",
+        message: "Dispatcher đã đề xuất thời gian khảo sát mới cho đơn của bạn",
+        type: "System",
+        ticketId: ticket._id
+      },
+      io
+    );
     return ticket;
   }
   async acceptSurveyTime(ticketId, selectedTime) {
@@ -201,11 +201,11 @@ if (surveyorId) {
       .populate('customerId', 'fullName email phone')
       .populate('dispatcherId', 'fullName email phone')
       .populate({
-      path: "invoice",
-      populate: {
-        path: "incident"
-      }
-    });
+        path: "invoice",
+        populate: {
+          path: "incident"
+        }
+      });
     if (!ticket) {
       throw new AppError('Request ticket không tồn tại', 404);
     }
@@ -221,27 +221,30 @@ if (surveyorId) {
 
     if (filters.customerId) query.customerId = filters.customerId;
     if (filters.dispatcherId) query.dispatcherId = filters.dispatcherId;
-    
+
     // Support for dispatcher-region-based filtering (Dispatcher Region)
     if (filters.dispatcherRegionFilter) {
       const { dispatcherId, workingAreas, isGeneral } = filters.dispatcherRegionFilter;
-      
+
       if (isGeneral) {
         // Dispatcher tổng thấy Đơn của họ HOẶC các đơn CREATED chưa gán
         query.$or = [
           { dispatcherId: dispatcherId },
-          { 
-            dispatcherId: null, 
+          {
+            dispatcherId: null,
             status: 'CREATED'
           }
         ];
       } else {
+        const GeocodeService = require('./geocodeService');
+        const normalizedAreas = (workingAreas || []).map(area => GeocodeService.normalizeDistrict(area) || area);
+
         // Dispatcher khu vực thấy Đơn của họ HOẶC các đơn chưa gán trong khu vực
         query.$or = [
           { dispatcherId: dispatcherId },
-          { 
-            dispatcherId: null, 
-            'pickup.district': { $in: workingAreas || [] } 
+          {
+            dispatcherId: null,
+            'pickup.district': { $in: normalizedAreas }
           }
         ];
       }
@@ -259,12 +262,12 @@ if (surveyorId) {
     const tickets = await RequestTicket.find(query)
       .populate('customerId', 'fullName email phone')
       .populate('dispatcherId', 'fullName email phone')
-       .populate({
-      path: "invoice",
-      populate: {
-        path: "incident"
-      }
-    })
+      .populate({
+        path: "invoice",
+        populate: {
+          path: "incident"
+        }
+      })
       .sort({ createdAt: -1 })
       .limit(filters.limit || 20)
       .skip(filters.skip || 0);
