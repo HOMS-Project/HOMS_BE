@@ -221,12 +221,9 @@ exports.refreshAccessToken = async (refreshToken) => {
     (t) => t.token === hashedRefreshToken
   );
 
-  if (tokenIndex === -1) {
-    user.refreshTokens = [];
-    await user.save();
-    throw new AppError('Refresh token reuse detected', 401);
-  }
-
+if (tokenIndex === -1) {
+  throw new AppError('Invalid refresh token', 401);
+}
   const tokenInDb = user.refreshTokens[tokenIndex];
   if (tokenInDb.expiresAt < new Date()) {
     user.refreshTokens.splice(tokenIndex, 1);
@@ -446,4 +443,29 @@ const storeRefreshToken = async (user, refreshToken) => {
   });
 
   await user.save();
+};
+exports.logoutUser = async (refreshToken) => {
+  if (!refreshToken) {
+    throw new AppError("No refresh token provided", 400);
+  }
+  console.log("RefreshToken:", refreshToken);
+
+  const hashed = crypto
+    .createHash("sha256")
+    .update(refreshToken)
+    .digest("hex");
+console.log("Hashed:", hashed);
+  const user = await User.findOne({
+    "refreshTokens.token": hashed,
+  });
+  if (!user) {
+    return true;
+  }
+  user.refreshTokens = user.refreshTokens.filter(
+    (t) => t.token !== hashed
+  );
+
+  await user.save();
+
+  return true;
 };

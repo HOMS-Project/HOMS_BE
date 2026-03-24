@@ -199,3 +199,21 @@ exports.refreshToken = async (req, res, next) => {
     next(err);
   }
 };
+
+exports.logout = async (req, res, next) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+    await authService.logoutUser(refreshToken);
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      sameSite: "none",
+      secure: true,
+    });
+    res.json({
+      success: true,
+      message: "Đăng xuất thành công",
+    });
+  } catch (err) {
+    next(err);
+  }
+};
