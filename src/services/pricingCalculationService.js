@@ -161,13 +161,13 @@ class PricingCalculationService {
 
     return {
       breakdown: {
-        transportTierFee,
+        baseTransportFee: transportTierFee,
         vehicleFee,
         laborFee,
         itemServiceFee,
         carryFee,
         floorFee,
-        rulesSurcharge,
+        distanceFee: rulesSurcharge,
         assemblingFee,
         packingFee,
         insuranceFee,
