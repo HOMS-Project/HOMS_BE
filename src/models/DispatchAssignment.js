@@ -54,6 +54,20 @@ const dispatchAssignmentSchema = new mongoose.Schema({
       notes: String
     },
 
+    // Lịch sử đổi lộ trình của tài xế
+    routeDeviations: [{
+      routeId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Route'
+      },
+      reason: String,
+      note: String,
+      reportedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+
     status: {
       type: String,
       enum: ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],

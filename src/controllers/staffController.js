@@ -24,7 +24,7 @@ exports.getAssignedOrders = async (req, res, next) => {
         path: 'requestTicketId',
         select: 'code pickup delivery items customerId'
       }
-    });
+    }).populate('assignments.routeId');
 
     // Lọc ra các assignment cụ thể mà staffId tham gia và định dạng lại dữ liệu
     const formattedOrders = assignments.map(da => {
@@ -45,6 +45,7 @@ exports.getAssignedOrders = async (req, res, next) => {
         invoiceId: invoice._id,
         orderCode: ticket.code,
         status: personalAssignment ? personalAssignment.status : da.status,
+        routeId: personalAssignment ? personalAssignment.routeId : null,
         pickup: ticket.pickup,
         delivery: ticket.delivery,
         scheduledTime: invoice.scheduledTime,
@@ -160,6 +161,47 @@ exports.updateAssignmentStatus = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: `Assignment status updated to ${status}`,
+      data: da.assignments[assignmentIndex]
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PATCH /api/staff/assignments/:assignmentId/route
+ * Driver báo cáo đổi lộ trình (Traffic jam, closed road, etc.)
+ */
+exports.updateAssignmentRoute = async (req, res, next) => {
+  try {
+    const { assignmentId } = req.params;
+    const { routeId, reason, note } = req.body;
+
+    const da = await DispatchAssignment.findOne({ 'assignments._id': assignmentId });
+    if (!da) {
+      throw new AppError('Assignment not found', 404);
+    }
+
+    const assignmentIndex = da.assignments.findIndex(a => a._id.toString() === assignmentId);
+    
+    // Add deviation record
+    da.assignments[assignmentIndex].routeDeviations.push({
+      routeId: da.assignments[assignmentIndex].routeId, // Lộ trình cũ
+      reason: reason || 'Thay đổi lộ trình',
+      note: note,
+      reportedAt: new Date()
+    });
+
+    // Update to new route
+    if (routeId) {
+       da.assignments[assignmentIndex].routeId = routeId;
+    }
+
+    await da.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Assignment route updated successfully',
       data: da.assignments[assignmentIndex]
     });
   } catch (error) {

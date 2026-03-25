@@ -14,7 +14,7 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: process.env.CORS_ORIGIN || "http://localhost:3000",
-    methods: ["GET", "POST"], 
+    methods: ["GET", "POST"],
     credentials: true
   }
 });
@@ -65,7 +65,10 @@ io.on('connection', (socket) => {
 const cookieParser = require('cookie-parser');
 connectDB();
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: function (origin, callback) {
+    // Allow any origin during development since they use ngrok
+    callback(null, true);
+  },
   credentials: true
 }));
 

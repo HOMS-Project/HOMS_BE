@@ -274,6 +274,7 @@ exports.dispatchVehicles = async (req, res) => {
       staffIds,
       vehicleType,
       vehicleCount,
+      routeId,
       estimatedDuration
     } = req.body;
 
@@ -301,6 +302,7 @@ exports.dispatchVehicles = async (req, res) => {
       staffIds,
       vehicleType,
       vehicleCount,
+      routeId,
       estimatedDuration
     });
 

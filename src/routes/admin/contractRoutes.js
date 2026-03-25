@@ -23,7 +23,7 @@ router.get('/:id/download/docx', adminContractController.downloadContractDocx);
 
 // Contract Management
 router.get('/', adminContractController.getContracts);
-router.post('/generate', verifyToken, authorize(['admin', 'staff']), adminContractController.generateContract);
+router.post('/generate', verifyToken, authorize('admin', 'staff'), adminContractController.generateContract);
 
 // Route ký tên (both admin and customer may call this; keep auth so req.user exists)
 router.post('/:id/sign', verifyToken, adminContractController.signContract);

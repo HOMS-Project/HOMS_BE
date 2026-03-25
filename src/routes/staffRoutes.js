@@ -15,4 +15,7 @@ router.get('/orders/:invoiceId', staffController.getOrderDetails);
 // Update status of a specific assignment
 router.patch('/assignments/:assignmentId/status', staffController.updateAssignmentStatus);
 
+// Update route of a specific assignment
+router.patch('/assignments/:assignmentId/route', staffController.updateAssignmentRoute);
+
 module.exports = router;

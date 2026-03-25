@@ -8,12 +8,12 @@ router.use(verifyToken);
 
 // Route: /api/admin/price-lists
 router.route('/')
-    .get(authorize(['admin', 'staff']), adminPriceListController.getAllPriceLists)
+    .get(authorize('admin', 'staff'), adminPriceListController.getAllPriceLists)
     .post(authorize('admin'), adminPriceListController.createPriceList); // Chỉ admin được tạo
 
 // Route: /api/admin/price-lists/:id
 router.route('/:id')
-    .get(authorize(['admin', 'staff']), adminPriceListController.getPriceListById)
+    .get(authorize('admin', 'staff'), adminPriceListController.getPriceListById)
     .put(authorize('admin'), adminPriceListController.updatePriceList)
     .delete(authorize('admin'), adminPriceListController.deletePriceList);
 
