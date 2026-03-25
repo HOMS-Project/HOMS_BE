@@ -29,6 +29,7 @@
     "express-rate-limit": "^8.2.1",
     "express-validator": "^7.2.1",
     "google-auth-library": "^10.5.0",
+    "html-docx-js": "^0.3.1",
     "joi": "^18.0.2",
     "jsonwebtoken": "^9.0.3",
     "moment": "^2.30.1",
