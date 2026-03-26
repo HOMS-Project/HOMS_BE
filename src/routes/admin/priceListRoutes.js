@@ -17,4 +17,8 @@ router.route('/:id')
     .put(authorize('admin'), adminPriceListController.updatePriceList)
     .delete(authorize('admin'), adminPriceListController.deletePriceList);
 
+// Dedicated toggle route to set a single price list active/inactive. When activating,
+// service will ensure other price lists are deactivated.
+router.patch('/:id/toggle-active', authorize('admin'), adminPriceListController.toggleActive);
+
 module.exports = router;
