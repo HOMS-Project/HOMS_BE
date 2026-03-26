@@ -53,6 +53,8 @@ const surveyDataSchema = new mongoose.Schema({
     min: 1
   },
 
+  estimatedHours: Number,
+
   distanceKm: Number,
   carryMeter: { type: Number, default: 0 },
 
