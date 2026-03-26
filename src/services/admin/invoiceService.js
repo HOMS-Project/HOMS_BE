@@ -253,3 +253,245 @@ module.exports = {
   getInvoiceById,
   getRevenueAggregate
 };
+
+/**
+ * Prepare structured data suitable for rendering an e-invoice PDF/HTML
+ */
+const getEinvoiceData = async (id) => {
+  const inv = await getInvoiceById(id);
+  // Basic company info (could be moved to config)
+  const company = {
+    name: process.env.COMPANY_NAME || 'HOMS Company',
+    address: process.env.COMPANY_ADDRESS || 'Your company address',
+    phone: process.env.COMPANY_PHONE || '',
+    email: process.env.COMPANY_EMAIL || ''
+  };
+
+  const price = inv.priceSnapshot || {};
+
+  // Try to extract line items from priceSnapshot.breakdown
+  let items = [];
+  if (price.breakdown) {
+    if (Array.isArray(price.breakdown.items) && price.breakdown.items.length) {
+      items = price.breakdown.items.map((it, idx) => ({
+        id: idx + 1,
+        description: it.description || it.name || `Dịch vụ ${idx + 1}`,
+        quantity: it.quantity || it.qty || 1,
+        unitPrice: Number(it.unitPrice ?? it.price ?? it.amount ?? 0),
+        total: Number(it.total ?? it.lineTotal ?? (it.quantity ? (it.quantity * (it.unitPrice || it.price || 0)) : 0))
+      }));
+    } else if (typeof price.breakdown === 'object') {
+      // flatten object entries
+      items = Object.keys(price.breakdown).map((k, idx) => ({
+        id: idx + 1,
+        description: k,
+        quantity: 1,
+        unitPrice: Number(price.breakdown[k]) || 0,
+        total: Number(price.breakdown[k]) || 0
+      }));
+    }
+  }
+
+  if (!items.length) {
+    // fallback single line item using totalPrice
+    const total = Number(price.totalPrice ?? inv.total ?? 0) || 0;
+    items = [{ id: 1, description: 'Dịch vụ vận chuyển', quantity: 1, unitPrice: total, total }];
+  }
+
+  const subtotal = Number(price.subtotal ?? items.reduce((s, it) => s + (it.total || 0), 0)) || 0;
+  const tax = Number(price.tax ?? 0) || 0;
+  const totalPrice = Number(price.totalPrice ?? subtotal + tax) || 0;
+
+  const customer = inv.customer || { fullName: inv.customerId?.fullName || '', phone: inv.customerId?.phone || '', email: inv.customerId?.email || '' };
+
+  return {
+    company,
+    invoice: {
+      id: inv._id,
+      code: inv.code,
+      date: inv.createdAt || new Date(),
+      scheduledTime: inv.scheduledTime || null
+    },
+    customer,
+    pickup: inv.pickup || null,
+    delivery: inv.delivery || null,
+    items,
+    totals: {
+      subtotal,
+      tax,
+      total: totalPrice,
+      paidAmount: Number(inv.paidAmount || 0),
+      remainingAmount: Number(inv.remainingAmount || (totalPrice - (inv.paidAmount || 0)))
+    }
+  };
+};
+
+module.exports.getEinvoiceData = getEinvoiceData;
+
+/**
+ * Generate a PDF buffer for the e-invoice using pdfkit
+ * Returns a Buffer containing the PDF
+ */
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
+
+const generateEinvoicePdf = async (id) => {
+  const data = await getEinvoiceData(id);
+
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ size: 'A4', margin: 40 });
+      const chunks = [];
+
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', (err) => reject(err));
+
+      // Try to load a Unicode font (supports Vietnamese). Prefer environment variable, then common system fonts.
+      const tryFonts = [];
+      if (process.env.PDF_FONT_REGULAR) tryFonts.push(process.env.PDF_FONT_REGULAR);
+      // Windows common
+      tryFonts.push('C:/Windows/Fonts/arial.ttf', 'C:/Windows/Fonts/ARIAL.TTF', 'C:/Windows/Fonts/times.ttf');
+      // Linux common
+      tryFonts.push('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf');
+      // relative project fonts folder (if someone places fonts under src/fonts or fonts)
+      tryFonts.push(path.join(__dirname, '..', '..', 'fonts', 'NotoSans-Regular.ttf'));
+
+      let regularFont = null;
+      let boldFont = null;
+      for (const p of tryFonts) {
+        try {
+          if (!p) continue;
+          if (fs.existsSync(p)) {
+            regularFont = p;
+            break;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      // try to locate a bold face next to regular (common naming)
+      if (regularFont) {
+        const dir = path.dirname(regularFont);
+        const candidates = ['NotoSans-Bold.ttf', 'NotoSans-Bold.otf', 'DejaVuSans-Bold.ttf', 'ARIALBD.TTF', 'arialbd.ttf', 'Arial Bold.ttf'];
+        for (const c of candidates) {
+          const p = path.join(dir, c);
+          if (fs.existsSync(p)) { boldFont = p; break; }
+        }
+      }
+
+      if (regularFont) {
+        console.info('[einvoice.pdf] using font files:', { regularFont, boldFont });
+        try {
+          if (boldFont) {
+            doc.registerFont('Regular', regularFont);
+            doc.registerFont('Bold', boldFont);
+          } else {
+            doc.registerFont('Regular', regularFont);
+            // register same font for Bold to avoid missing glyphs
+            doc.registerFont('Bold', regularFont);
+          }
+          doc.font('Bold');
+        } catch (e) {
+          console.warn('[einvoice.pdf] Failed to register custom font for PDF generation, falling back to built-in fonts', e && e.message);
+          doc.font('Helvetica-Bold');
+        }
+      } else {
+        // fallback to built-in fonts (may not support Vietnamese)
+        console.warn('[einvoice.pdf] No Unicode font found for PDF generation. If Vietnamese text appears garbled, install a Unicode font and set PDF_FONT_REGULAR env var to its path.');
+        doc.font('Helvetica-Bold');
+      }
+
+      // Header
+      doc.fontSize(18).fillColor('#000').text(data.company.name || 'HOMS', { align: 'left' });
+      doc.moveDown(0.2);
+      // use regular face for body
+      doc.font('Regular');
+      doc.fontSize(10).fillColor('#444').text(data.company.address || '', { align: 'left' });
+      if (data.company.phone) doc.text(`Tel: ${data.company.phone}`, { align: 'left' });
+      if (data.company.email) doc.text(`Email: ${data.company.email}`, { align: 'left' });
+
+      // Invoice box on right
+      const topY = doc.y;
+      const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+      const boxWidth = 220;
+      const boxX = doc.page.margins.left + pageWidth - boxWidth;
+
+  // Draw invoice box (light border, light fill)
+  doc.save();
+  doc.lineWidth(1).strokeColor('#ddd');
+  doc.rect(boxX, topY - 20, boxWidth, 70).stroke();
+  doc.restore();
+  doc.fontSize(12).font('Bold').text('HÓA ĐƠN', boxX + 8, topY - 16);
+  doc.fontSize(10).font('Regular').text(`Mã: ${data.invoice.code || ''}`, boxX + 8, topY + 2);
+  doc.text(`Ngày: ${new Date(data.invoice.date).toLocaleString('vi-VN')}`, boxX + 8, topY + 18);
+
+      doc.moveDown(2);
+
+      // Customer / Addresses
+      doc.fontSize(11).font('Helvetica-Bold').text('Khách hàng');
+      doc.fontSize(10).font('Helvetica').text(`${data.customer.fullName || ''}`);
+      if (data.customer.phone) doc.text(`Tel: ${data.customer.phone}`);
+      if (data.customer.email) doc.text(`Email: ${data.customer.email}`);
+      doc.moveDown(0.5);
+
+      doc.fontSize(11).font('Helvetica-Bold').text('Địa chỉ');
+      doc.fontSize(10).font('Helvetica').text(`Nhận: ${data.delivery?.address || ''}`);
+      doc.text(`Lấy: ${data.pickup?.address || ''}`);
+
+      doc.moveDown(1);
+
+  // Items table header
+  doc.fontSize(10).font('Bold');
+      const tableTop = doc.y;
+      doc.text('Mục', doc.page.margins.left, tableTop);
+      doc.text('Số lượng', doc.page.margins.left + 300, tableTop, { width: 60, align: 'right' });
+      doc.text('Đơn giá', doc.page.margins.left + 360, tableTop, { width: 90, align: 'right' });
+      doc.text('Thành tiền', doc.page.margins.left + 460, tableTop, { width: 90, align: 'right' });
+
+  doc.moveDown(0.5);
+  doc.font('Regular').fontSize(10);
+
+      data.items.forEach((it) => {
+        const y = doc.y;
+        doc.text(it.description || '', doc.page.margins.left, y, { width: 280 });
+        doc.text(String(it.quantity || 1), doc.page.margins.left + 300, y, { width: 60, align: 'right' });
+        doc.text(new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(it.unitPrice || 0), doc.page.margins.left + 360, y, { width: 90, align: 'right' });
+        doc.text(new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(it.total || 0), doc.page.margins.left + 460, y, { width: 90, align: 'right' });
+        doc.moveDown(0.7);
+      });
+
+      doc.moveDown(0.5);
+
+  // Totals
+      const format = (v) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(v || 0);
+      doc.moveDown(0.5);
+      const rightX = doc.page.margins.left + pageWidth;
+      const labelX = doc.page.margins.left + 360;
+
+      doc.text('Tạm tính:', labelX, doc.y, { width: 90, align: 'left' });
+      doc.text(format(data.totals.subtotal), labelX + 90, doc.y, { width: 120, align: 'right' });
+      doc.moveDown(0.3);
+      doc.text('Thuế (VAT):', labelX, doc.y, { width: 90, align: 'left' });
+      doc.text(format(data.totals.tax), labelX + 90, doc.y, { width: 120, align: 'right' });
+      doc.moveDown(0.3);
+      doc.text('Tổng cộng:', labelX, doc.y, { width: 90, align: 'left' });
+  doc.font('Bold').text(format(data.totals.total), labelX + 90, doc.y, { width: 120, align: 'right' });
+      doc.moveDown(1);
+
+      // Footer notes
+      if (data.invoice.notes) {
+        doc.font('Helvetica').fontSize(9).text('Ghi chú:', { underline: true });
+        doc.text(data.invoice.notes || '', { width: pageWidth - 40 });
+      }
+
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+};
+
+module.exports.generateEinvoicePdf = generateEinvoicePdf;

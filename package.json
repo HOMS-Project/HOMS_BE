@@ -41,6 +41,8 @@
     "uuid": "^13.0.0",
     "viz.js": "^2.1.2",
     "json2csv": "^5.0.7"
+  ,
+    "pdfkit": "^0.13.0"
   },
   "devDependencies": {
     "@mermaid-js/mermaid-cli": "^11.12.0",
