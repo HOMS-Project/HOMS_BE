@@ -7,6 +7,8 @@ const RequestTicket = require('../models/RequestTicket');
 const AppError = require('../utils/appErrors');
 const PricingCalculationService = require('./pricingCalculationService');
 const NotificationService = require("./notificationService");
+const RecommendationService = require('./recommendationService');
+const PricingAdjustmentService = require('./pricingAdjustmentService');
 const { getIo } = require("../utils/socket");
 
 class SurveyService {
@@ -164,19 +166,34 @@ await NotificationService.createNotification(
     // ========== 5️⃣ TÍNH GIÁ ==========
     const priceList = await PricingCalculationService.getActivePriceList();
 
-    const pricingCalculation =
-      await PricingCalculationService.calculatePricing(
-        freshSurvey,
-        priceList
-      );
+    // 5.1 Calculate Base Pricing
+    const basePricing = await PricingCalculationService.calculatePricing(
+      freshSurvey,
+      priceList
+    );
 
-    const pricingData =
-      await PricingCalculationService.createPricingData(
-        requestTicketId,
-        freshSurvey,
-        pricingCalculation,
-        userId
-      );
+    // 5.2 Get Recommendations (Weighted Score + Time Slot + Distance Factor)
+    let recommendation = null;
+    try {
+      const moveDate = ticket.scheduledTime;
+      const location = ticket.pickup?.address || 'Ho Chi Minh City';
+      const distanceKm = freshSurvey.distanceKm || 0;
+      recommendation = await RecommendationService.getRecommendations(moveDate, location, distanceKm);
+    } catch (recError) {
+      console.error('Recommendation Error:', recError.message);
+    }
+
+    // 5.3 Apply Dynamic Adjustments
+    const finalPricingResult = recommendation 
+      ? PricingAdjustmentService.applyAdjustments(basePricing, recommendation)
+      : basePricing;
+
+    const pricingData = await PricingCalculationService.createPricingData(
+      requestTicketId,
+      freshSurvey,
+      finalPricingResult,
+      userId
+    );
 
     // ========== 6️⃣ Update ticket thành QUOTED ==========
     ticket.status = 'QUOTED';
