@@ -8,6 +8,8 @@
 
 const Route = require('../models/Route');
 const Vehicle = require('../models/Vehicle');
+const polyline = require('@mapbox/polyline');
+const turf = require('@turf/turf');
 const AppError = require('../utils/appErrors');
 
 class RouteValidationService {
@@ -21,7 +23,8 @@ class RouteValidationService {
     pickupTime,
     deliveryTime,
     pickupAddress,
-    deliveryAddress
+    deliveryAddress,
+    polyline: polylineEncoded
   }) {
     try {
       const violations = [];
@@ -54,6 +57,11 @@ class RouteValidationService {
           // ===== 4. Kiểm tra khoảng cách hợp lý =====
           // TODO: Tích hợp với Google Maps API hoặc service tính distance
 
+          // ===== 5. Kiểm tra các hạn chế cấp độ đường phố (Road Restrictions) =====
+          const streetRestrictions = await this.checkStreetLevelRestrictions(polylineEncoded, vehicleType, route.roadRestrictions);
+          violations.push(...streetRestrictions.violations);
+          warnings.push(...streetRestrictions.warnings);
+
           const isValid = violations.length === 0;
           return {
             isValid,
@@ -61,6 +69,7 @@ class RouteValidationService {
             vehicleType,
             violations,
             warnings,
+            restrictedSegments: streetRestrictions.restrictedSegments,
             surcharge: route.routeSurcharge || 0,
             discountRate: route.routeDiscountRate || 0,
             recommendedStaff: route.recommendedStaff
@@ -223,20 +232,90 @@ class RouteValidationService {
   }
 
   /**
-   * Cảnh báo nếu có vấn đề với tuyến đường
+   * Kiểm tra các hạn chế cấp độ đường phố (Road Restrictions) dọc theo polyline
+   * @param {string} polylineEncoded 
+   * @param {string} vehicleType 
+   * @param {any[]} roadRestrictions
+   * @returns {Promise<{violations: string[], warnings: string[], restrictedSegments: any[]}>}
    */
-  getRouteWarnings(validation) {
+  async checkStreetLevelRestrictions(polylineEncoded, vehicleType, roadRestrictions = []) {
+    const violations = [];
     const warnings = [];
+    const restrictedSegments = [];
 
-    if (validation.violations.length > 0) {
-      warnings.push(`CRITICAL: ${validation.violations.length} violations found`);
+    if (!polylineEncoded || roadRestrictions.length === 0) {
+      return { violations, warnings, restrictedSegments };
     }
 
-    if (validation.warnings.length > 0) {
-      warnings.push(`INFO: ${validation.warnings.join('; ')}`);
-    }
+    try {
+      // Decode polyline: [[lat, lng], ...]
+      const decodedPoints = polyline.decode(polylineEncoded);
+      
+      // Convert to GeoJSON coordinates: [[lng, lat], ...]
+      const pathCoords = decodedPoints.map(p => [p[1], p[0]]);
 
-    return warnings;
+      for (const restriction of roadRestrictions) {
+        if (!restriction.isActive) continue;
+
+        const isMatched = this._checkIntersection(pathCoords, restriction.geometry.coordinates);
+
+        if (isMatched) {
+          if (restriction.severity === 'AVOID' || restriction.restrictionType === 'CLOSED') {
+            violations.push(`CẢNH BÁO CẤM: ${restriction.roadName} - ${restriction.description || restriction.restrictionType}`);
+          } else {
+            warnings.push(`LƯU Ý: ${restriction.roadName} - ${restriction.description || restriction.restrictionType}`);
+          }
+          restrictedSegments.push({
+            roadName: restriction.roadName,
+            restrictionType: restriction.restrictionType,
+            severity: restriction.severity,
+            description: restriction.description
+          });
+        }
+      }
+
+      return { violations, warnings, restrictedSegments };
+    } catch (error) {
+      console.error('[RouteValidationService] Polyline check failed:', error);
+      return { violations, warnings, restrictedSegments };
+    }
+  }
+
+  /**
+   * Helper kiểm tra giao diện giữa 2 mảng tọa độ sử dụng turf.js
+   */
+  _checkIntersection(pathCoords, restrictedCoords) {
+    try {
+      if (!pathCoords || pathCoords.length < 2 || !restrictedCoords || restrictedCoords.length < 2) {
+        return false;
+      }
+
+      const pathLine = turf.lineString(pathCoords);
+      const restrictedLine = turf.lineString(restrictedCoords);
+
+      // 1. Kiểm tra xem 2 line có giao nhau không
+      const intersects = turf.lineIntersect(pathLine, restrictedLine);
+      if (intersects.features.length > 0) {
+        return true;
+      }
+
+      // 2. Kiểm tra xem 2 line có nằm quá gần nhau không (buffer check)
+      // Tạo một vùng đệm (buffer) 50 mét quanh đoạn đường bị hạn chế
+      const buffer = turf.buffer(restrictedLine, 0.05, { units: 'kilometers' });
+      
+      // Kiểm tra xem bất kỳ điểm nào của path có nằm trong buffer không
+      const points = turf.explode(pathLine);
+      for (const point of points.features) {
+        if (turf.booleanPointInPolygon(point, buffer)) {
+          return true;
+        }
+      }
+
+      return false;
+    } catch (error) {
+      console.error('[RouteValidationService] Intersection check failed:', error);
+      return false;
+    }
   }
 }
 

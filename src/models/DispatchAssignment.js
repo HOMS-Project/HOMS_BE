@@ -51,6 +51,12 @@ const dispatchAssignmentSchema = new mongoose.Schema({
       isValid: Boolean,
       violations: [String],        // Danh sách vi phạm (cấm xe, quá tải, etc.)
       warnings: [String],          // Cảnh báo (giờ cao điểm, thời tiết)
+      restrictedSegments: [{
+        roadName: String,
+        restrictionType: String,
+        severity: String,
+        description: String
+      }],
       notes: String
     },
 
