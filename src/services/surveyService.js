@@ -113,6 +113,7 @@ await NotificationService.createNotification(
       needsPacking = false,
       insuranceRequired = false,
       declaredValue = 0,
+      estimatedHours,
       items,
       notes
     } = surveyData;
@@ -133,6 +134,7 @@ await NotificationService.createNotification(
     survey.needsPacking = needsPacking;
     survey.insuranceRequired = insuranceRequired;
     survey.declaredValue = declaredValue;
+    survey.estimatedHours = estimatedHours;
 
     if (items && Array.isArray(items)) {
       survey.items = items;

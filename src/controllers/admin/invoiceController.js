@@ -17,6 +17,33 @@ const getInvoice = async (req, res) => {
   }
 };
 
+// GET /api/admin/invoices/:id/einvoice
+const getEinvoice = async (req, res) => {
+  try {
+    const data = await invoiceService.getEinvoiceData(req.params.id);
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    return sendError(res, err);
+  }
+};
+
+/*
+// GET /api/admin/invoices/:id/einvoice/pdf
+// Temporarily disabled: PDF generation endpoint commented out per request
+const getEinvoicePdf = async (req, res) => {
+  try {
+    // service will return a Buffer containing PDF
+    const pdfBuffer = await invoiceService.generateEinvoicePdf(req.params.id);
+    const filename = `invoice-${req.params.id}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.status(200).send(pdfBuffer);
+  } catch (err) {
+    return sendError(res, err);
+  }
+};
+*/
+
 // GET /api/admin/invoices
 const listInvoices = async (req, res) => {
   try {
@@ -47,4 +74,6 @@ module.exports = {
   getInvoice,
   listInvoices
   ,getRevenueAggregate
+  ,getEinvoice
+  // getEinvoicePdf temporarily removed
 };
