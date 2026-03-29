@@ -32,7 +32,9 @@ const pricingDataSchema = new mongoose.Schema({
     assemblingFee: { type: Number, default: 0 },
     packingFee: { type: Number, default: 0 },
     insuranceFee: { type: Number, default: 0 },
-    managementFee: { type: Number, default: 0 }
+    managementFee: { type: Number, default: 0 },
+    itemServiceFee: { type: Number, default: 0 },
+    estimatedHours: { type: Number, default: 0 }
   },
 
   subtotal: { type: Number, required: true },

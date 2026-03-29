@@ -1,4 +1,5 @@
 const PriceList = require('../../models/PriceList');
+const mongoose = require('mongoose');
 
 /**
  * Lấy danh sách bảng giá / phí vận chuyển
@@ -34,8 +35,16 @@ exports.getPriceListById = async (id) => {
  * Admin tạo bảng giá mới (VD: Giá cơ bản, phụ phí, phí bốc dỡ)
  */
 exports.createPriceList = async (data) => {
+    // Basic validation
+    if (!data || !data.code || !data.name) throw new Error('Missing required fields: code/name');
+
     const existingPriceList = await PriceList.findOne({ code: data.code });
     if (existingPriceList) throw new Error('PriceList code already exists');
+
+    // If this new price list should be active, deactivate others
+    if (data.isActive === true) {
+        await PriceList.updateMany({ isActive: true }, { isActive: false });
+    }
 
     const newPriceList = new PriceList(data);
     return await newPriceList.save();
@@ -45,6 +54,11 @@ exports.createPriceList = async (data) => {
  * Admin cập nhật bảng giá
  */
 exports.updatePriceList = async (id, updateData) => {
+    // If updating to active, deactivate other active price lists
+    if (updateData && updateData.isActive === true) {
+        await PriceList.updateMany({ _id: { $ne: id }, isActive: true }, { isActive: false });
+    }
+
     const priceList = await PriceList.findByIdAndUpdate(
         id,
         updateData,
@@ -53,6 +67,39 @@ exports.updatePriceList = async (id, updateData) => {
 
     if (!priceList) throw new Error('PriceList not found');
     return priceList;
+};
+
+/**
+ * Toggle isActive on a price list explicitly.
+ * If setting to true, deactivate other active price lists.
+ */
+exports.toggleActive = async (id, isActive) => {
+    // Use a transaction to ensure the deactivate/activate steps are atomic
+    const session = await mongoose.startSession();
+    try {
+        let updatedDoc = null;
+        await session.withTransaction(async () => {
+            if (isActive === true) {
+                // deactivate others first within the transaction
+                await PriceList.updateMany({ _id: { $ne: id }, isActive: true }, { isActive: false }, { session });
+            }
+
+            updatedDoc = await PriceList.findByIdAndUpdate(
+                id,
+                { isActive },
+                { new: true, runValidators: true, session }
+            );
+            if (!updatedDoc) {
+                // throwing will abort the transaction
+                throw new Error('PriceList not found');
+            }
+        });
+
+        // return the updated document (outside transaction)
+        return await PriceList.findById(id);
+    } finally {
+        session.endSession();
+    }
 };
 
 /**

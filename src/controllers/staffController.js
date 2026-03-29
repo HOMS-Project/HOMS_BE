@@ -1,8 +1,10 @@
-const DispatchAssignment = require('../models/DispatchAssignment');
-const Invoice = require('../models/Invoice');
-const User = require('../models/User');
-const Route = require('../models/Route');
-const AppError = require('../utils/appErrors');
+const DispatchAssignment = require("../models/DispatchAssignment");
+const Invoice = require("../models/Invoice");
+const User = require("../models/User");
+const Route = require("../models/Route");
+const SurveyData = require("../models/SurveyData");
+const AppError = require("../utils/appErrors");
+const staffEvidenceService = require("../services/staffEvidenceService");
 
 /**
  * GET /api/staff/orders
@@ -15,47 +17,52 @@ exports.getAssignedOrders = async (req, res, next) => {
     // Tìm các DispatchAssignment có chứa staffId trong driverIds hoặc staffIds của bất kỳ assignment nào
     const assignments = await DispatchAssignment.find({
       $or: [
-        { 'assignments.driverIds': staffId },
-        { 'assignments.staffIds': staffId }
-      ]
-    }).populate({
-      path: 'invoiceId',
-      populate: {
-        path: 'requestTicketId',
-        select: 'code pickup delivery items customerId'
-      }
-    }).populate('assignments.routeId');
+        { "assignments.driverIds": staffId },
+        { "assignments.staffIds": staffId },
+      ],
+    })
+      .populate({
+        path: "invoiceId",
+        populate: {
+          path: "requestTicketId",
+          select: "code pickup delivery items customerId",
+        },
+      })
+      .populate("assignments.routeId");
 
     // Lọc ra các assignment cụ thể mà staffId tham gia và định dạng lại dữ liệu
-    const formattedOrders = assignments.map(da => {
-      const invoice = da.invoiceId;
-      if (!invoice || !invoice.requestTicketId) return null;
+    const formattedOrders = assignments
+      .map((da) => {
+        const invoice = da.invoiceId;
+        if (!invoice || !invoice.requestTicketId) return null;
 
-      const ticket = invoice.requestTicketId;
-      
-      // Lấy assignment cụ thể cho staff này
-      const personalAssignment = da.assignments.find(a => 
-        a.driverIds.some(id => id.toString() === staffId.toString()) || 
-        a.staffIds.some(id => id.toString() === staffId.toString())
-      );
+        const ticket = invoice.requestTicketId;
 
-      return {
-        dispatchAssignmentId: da._id,
-        assignmentId: personalAssignment ? personalAssignment._id : null,
-        invoiceId: invoice._id,
-        orderCode: ticket.code,
-        status: personalAssignment ? personalAssignment.status : da.status,
-        routeId: personalAssignment ? personalAssignment.routeId : null,
-        pickup: ticket.pickup,
-        delivery: ticket.delivery,
-        scheduledTime: invoice.scheduledTime,
-        items: ticket.items
-      };
-    }).filter(order => order !== null);
+        // Lấy assignment cụ thể cho staff này
+        const personalAssignment = da.assignments.find(
+          (a) =>
+            a.driverIds.some((id) => id.toString() === staffId.toString()) ||
+            a.staffIds.some((id) => id.toString() === staffId.toString()),
+        );
+
+        return {
+          dispatchAssignmentId: da._id,
+          assignmentId: personalAssignment ? personalAssignment._id : null,
+          invoiceId: invoice._id,
+          orderCode: ticket.code,
+          status: personalAssignment ? personalAssignment.status : da.status,
+          routeId: personalAssignment ? personalAssignment.routeId : null,
+          pickup: ticket.pickup,
+          delivery: ticket.delivery,
+          scheduledTime: invoice.scheduledTime,
+          items: ticket.items,
+        };
+      })
+      .filter((order) => order !== null);
 
     res.status(200).json({
       success: true,
-      data: formattedOrders
+      data: formattedOrders,
     });
   } catch (error) {
     next(error);
@@ -69,23 +76,28 @@ exports.getAssignedOrders = async (req, res, next) => {
 exports.getOrderDetails = async (req, res, next) => {
   try {
     const { invoiceId } = req.params;
-    
+
     const invoice = await Invoice.findById(invoiceId)
       .populate({
-        path: 'requestTicketId',
+        path: "requestTicketId",
         populate: {
-          path: 'customerId',
-          select: 'fullName phoneNumber email'
-        }
+          path: "customerId",
+          select: "fullName phoneNumber email",
+        },
       })
-      .populate('routeId');
+      .populate("routeId");
 
     if (!invoice) {
-      throw new AppError('Invoice not found', 404);
+      throw new AppError("Invoice not found", 404);
     }
 
     const ticket = invoice.requestTicketId;
     const customer = ticket.customerId;
+
+    // Lấy dữ liệu khảo sát (nếu có) cho ticket này
+    const survey = await SurveyData.findOne({
+      requestTicketId: ticket._id,
+    }).lean();
 
     res.status(200).json({
       success: true,
@@ -100,10 +112,24 @@ exports.getOrderDetails = async (req, res, next) => {
         customer: {
           name: customer.fullName,
           phone: customer.phoneNumber,
-          email: customer.email
+          email: customer.email,
         },
-        route: invoice.routeId
-      }
+        route: invoice.routeId,
+        survey: survey
+          ? {
+              distanceKm: survey.distanceKm,
+              floors: survey.floors,
+              hasElevator: survey.hasElevator,
+              carryMeter: survey.carryMeter,
+              needsPacking: survey.needsPacking,
+              needsAssembling: survey.needsAssembling,
+              insuranceRequired: survey.insuranceRequired,
+              suggestedVehicle: survey.suggestedVehicle,
+              suggestedStaffCount: survey.suggestedStaffCount,
+              items: survey.items || [],
+            }
+          : null,
+      },
     });
   } catch (error) {
     next(error);
@@ -119,49 +145,56 @@ exports.updateAssignmentStatus = async (req, res, next) => {
     const { assignmentId } = req.params;
     const { status, notes } = req.body;
 
-    const da = await DispatchAssignment.findOne({ 'assignments._id': assignmentId });
+    const da = await DispatchAssignment.findOne({
+      "assignments._id": assignmentId,
+    });
     if (!da) {
-      throw new AppError('Assignment not found', 404);
+      throw new AppError("Assignment not found", 404);
     }
 
-    const assignmentIndex = da.assignments.findIndex(a => a._id.toString() === assignmentId);
+    const assignmentIndex = da.assignments.findIndex(
+      (a) => a._id.toString() === assignmentId,
+    );
     da.assignments[assignmentIndex].status = status;
-    
-    if (status === 'COMPLETED') {
+
+    if (status === "COMPLETED") {
       da.assignments[assignmentIndex].completedAt = new Date();
-    } else if (status === 'IN_PROGRESS' && !da.assignments[assignmentIndex].confirmedAt) {
+    } else if (
+      status === "IN_PROGRESS" &&
+      !da.assignments[assignmentIndex].confirmedAt
+    ) {
       da.assignments[assignmentIndex].confirmedAt = new Date();
     }
 
     await da.save();
 
     // Nếu tất cả các assignment con đều COMPLETED, cập nhật trạng thái cha
-    const allCompleted = da.assignments.every(a => a.status === 'COMPLETED');
+    const allCompleted = da.assignments.every((a) => a.status === "COMPLETED");
     if (allCompleted) {
-      da.status = 'COMPLETED';
+      da.status = "COMPLETED";
       await da.save();
-      
+
       // Cập nhật luôn Invoice status
-      await Invoice.findByIdAndUpdate(da.invoiceId, { 
-        status: 'COMPLETED',
-        $push: { 
-          timeline: { 
-            status: 'COMPLETED', 
-            updatedBy: req.user.userId || req.user._id, 
+      await Invoice.findByIdAndUpdate(da.invoiceId, {
+        status: "COMPLETED",
+        $push: {
+          timeline: {
+            status: "COMPLETED",
+            updatedBy: req.user.userId || req.user._id,
             updatedAt: new Date(),
-            notes: 'All staff completed their assignments'
-          }
-        }
+            notes: "All staff completed their assignments",
+          },
+        },
       });
-    } else if (status === 'IN_PROGRESS') {
+    } else if (status === "IN_PROGRESS") {
       // Nếu có ít nhất 1 cái IN_PROGRESS, Invoice cũng là IN_PROGRESS
-      await Invoice.findByIdAndUpdate(da.invoiceId, { status: 'IN_PROGRESS' });
+      await Invoice.findByIdAndUpdate(da.invoiceId, { status: "IN_PROGRESS" });
     }
 
     res.status(200).json({
       success: true,
       message: `Assignment status updated to ${status}`,
-      data: da.assignments[assignmentIndex]
+      data: da.assignments[assignmentIndex],
     });
   } catch (error) {
     next(error);
@@ -177,32 +210,136 @@ exports.updateAssignmentRoute = async (req, res, next) => {
     const { assignmentId } = req.params;
     const { routeId, reason, note } = req.body;
 
-    const da = await DispatchAssignment.findOne({ 'assignments._id': assignmentId });
+    const da = await DispatchAssignment.findOne({
+      "assignments._id": assignmentId,
+    });
     if (!da) {
-      throw new AppError('Assignment not found', 404);
+      throw new AppError("Assignment not found", 404);
     }
 
-    const assignmentIndex = da.assignments.findIndex(a => a._id.toString() === assignmentId);
-    
+    const assignmentIndex = da.assignments.findIndex(
+      (a) => a._id.toString() === assignmentId,
+    );
+
     // Add deviation record
     da.assignments[assignmentIndex].routeDeviations.push({
       routeId: da.assignments[assignmentIndex].routeId, // Lộ trình cũ
-      reason: reason || 'Thay đổi lộ trình',
+      reason: reason || "Thay đổi lộ trình",
       note: note,
-      reportedAt: new Date()
+      reportedAt: new Date(),
     });
 
     // Update to new route
     if (routeId) {
-       da.assignments[assignmentIndex].routeId = routeId;
+      da.assignments[assignmentIndex].routeId = routeId;
     }
 
     await da.save();
 
     res.status(200).json({
       success: true,
-      message: 'Assignment route updated successfully',
-      data: da.assignments[assignmentIndex]
+      message: "Assignment route updated successfully",
+      data: da.assignments[assignmentIndex],
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/staff/orders/:invoiceId/pickup
+ * Staff uploads pre-trip evidence (photos/note)
+ */
+exports.submitPickupProof = async (req, res, next) => {
+  try {
+    const { invoiceId } = req.params;
+    const note = req.body?.note || "";
+    const files = req.files || [];
+
+    if (!files.length && !note.trim()) {
+      throw new AppError("Vui lòng gửi ít nhất 1 ảnh hoặc ghi chú.", 400);
+    }
+
+    const invoice = await Invoice.findById(invoiceId);
+    if (!invoice) {
+      throw new AppError("Invoice not found", 404);
+    }
+
+    const imageUrls = await staffEvidenceService.uploadImages(
+      files,
+      "staff-evidence/pickup",
+    );
+
+    // Persist evidence
+    const existing = invoice.completionEvidence?.beforeImages || [];
+    invoice.completionEvidence = invoice.completionEvidence || {};
+    invoice.completionEvidence.beforeImages = [...existing, ...imageUrls];
+
+    // Append timeline entry for traceability
+    invoice.timeline = invoice.timeline || [];
+    invoice.timeline.push({
+      status: "PICKUP_PROOF",
+      updatedBy: req.user?.userId || req.user?._id,
+      updatedAt: new Date(),
+      notes: note || undefined,
+    });
+
+    await invoice.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Pre-trip evidence uploaded",
+      data: { imageUrls, note: note || null },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/staff/orders/:invoiceId/dropoff
+ * Staff uploads arrival/completion evidence (photos/note)
+ */
+exports.submitDropoffProof = async (req, res, next) => {
+  try {
+    const { invoiceId } = req.params;
+    const note = req.body?.note || "";
+    const files = req.files || [];
+
+    if (!files.length && !note.trim()) {
+      throw new AppError("Vui lòng gửi ít nhất 1 ảnh hoặc ghi chú.", 400);
+    }
+
+    const invoice = await Invoice.findById(invoiceId);
+    if (!invoice) {
+      throw new AppError("Invoice not found", 404);
+    }
+
+    const imageUrls = await staffEvidenceService.uploadImages(
+      files,
+      "staff-evidence/dropoff",
+    );
+
+    // Persist evidence
+    const existing = invoice.completionEvidence?.afterImages || [];
+    invoice.completionEvidence = invoice.completionEvidence || {};
+    invoice.completionEvidence.afterImages = [...existing, ...imageUrls];
+
+    // Append timeline entry for traceability
+    invoice.timeline = invoice.timeline || [];
+    invoice.timeline.push({
+      status: "DROPOFF_PROOF",
+      updatedBy: req.user?.userId || req.user?._id,
+      updatedAt: new Date(),
+      notes: note || undefined,
+    });
+
+    await invoice.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Arrival evidence uploaded",
+      data: { imageUrls, note: note || null },
     });
   } catch (error) {
     next(error);
