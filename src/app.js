@@ -9,7 +9,8 @@ const { initSocket } = require("./utils/socket");
 app.set('trust proxy', 1);
 const { Server } = require('socket.io');
 const server = http.createServer(app);
-
+const helmet = require('helmet');
+const csurf = require('csurf');
 // Cấu hình Socket.io
 const io = new Server(server, {
   cors: {
@@ -65,10 +66,7 @@ io.on('connection', (socket) => {
 const cookieParser = require('cookie-parser');
 connectDB();
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow any origin during development since they use ngrok
-    callback(null, true);
-  },
+  origin: process.env.CORS_ORIGIN || "http://localhost:3000",
   credentials: true
 }));
 
@@ -79,8 +77,46 @@ app.post(
   express.raw({ type: "application/json" }),
   requestTicketController.payosWebhook
 );
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],                         // Mặc định chỉ chấp nhận cùng origin
+      scriptSrc: ["'self'", "https://accounts.google.com"], // Cho phép Google OAuth script
+      styleSrc: ["'self'", "'unsafe-inline'"],        // Cần unsafe-inline nếu dùng inline style
+      imgSrc: ["'self'", "data:", "https:"],           // Cho phép ảnh từ https
+      connectSrc: ["'self'", process.env.CORS_ORIGIN || "http://localhost:3000"],
+      frameSrc: ["https://accounts.google.com"],      // Google OAuth dùng iframe
+      objectSrc: ["'none'"],                          // Chặn <object>, <embed> (nguy hiểm)
+      upgradeInsecureRequests: [],                    // Tự động upgrade HTTP → HTTPS
+    },
+  },
+  // ✅ Strict-Transport-Security (HSTS)
+  // Bắt browser luôn dùng HTTPS, không fallback về HTTP
+  // maxAge: 1 năm (tính bằng giây), includeSubDomains: áp dụng cho subdomain
+  hsts: {
+    maxAge: 31536000,     
+    includeSubDomains: true,
+    preload: true            
+  },
+  noSniff: true,
+  frameguard: { action: 'deny' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  crossOriginEmbedderPolicy: false, 
+}));
 app.use(express.json());
 app.use(cookieParser());
+
+const csrfProtection = csurf({
+  cookie: {
+    httpOnly: true,
+    sameSite: 'strict',
+    secure: process.env.NODE_ENV === 'production'
+  }
+});
+app.get('/api/csrf-token', csrfProtection, (req, res) => {
+  res.json({ csrfToken: req.csrfToken() });
+});
+
 app.get("/", (req, res) => {
   res.send("HOMS Backend is running 🚚");
 });
@@ -116,15 +152,15 @@ const aiRoutes = require("./routes/aiRoutes");
 app.use("/api/auth", authRoutes);
 app.use("/api/staff", staffRoutes);
 app.use("/api/public", publicRoutes);
-app.use("/api/customer", userRoutes);
-app.use("/api/request-tickets", requestTicketRoutes);
-app.use("/api/invoices", invoiceRoutes);
+app.use("/api/customer",csrfProtection, userRoutes);
+app.use("/api/request-tickets",csrfProtection, requestTicketRoutes);
+app.use("/api/invoices",csrfProtection, invoiceRoutes);
 app.use("/api/surveys", surveyRoutes);
 app.use("/api/price-lists", priceListRoutes);
 app.use("/api/pricing", pricingRoutes);
 app.use("/api/customer/contracts", contractRoutes);
 app.use("/api/notifications", notificationRoutes);
-app.use("/api/incidents", incidentRoutes);
+app.use("/api/incidents",csrfProtection, incidentRoutes);
 app.use("/api/service-ratings", serviceRatingRoutes);
 app.use("/api/ai", aiRoutes);
 
