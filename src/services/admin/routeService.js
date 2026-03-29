@@ -67,6 +67,17 @@ exports.addTrafficRule = async (routeId, ruleData) => {
 };
 
 /**
+ * Thêm hạn chế đường bộ mới vào tuyến đường
+ */
+exports.addRoadRestriction = async (routeId, restrictionData) => {
+    const route = await Route.findById(routeId);
+    if (!route) throw new Error('Route not found');
+
+    route.roadRestrictions.push(restrictionData);
+    return await route.save();
+};
+
+/**
  * Xóa/Vô hiệu hóa tuyến đường
  */
 exports.deleteRoute = async (id) => {

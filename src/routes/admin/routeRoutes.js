@@ -21,4 +21,7 @@ router.route('/:id')
 // Route thêm luật giao thông cho 1 route cụ thể
 router.post('/:id/rules', authorize('admin', 'staff'), adminRouteController.addTrafficRule);
 
+// Route thêm hạn chế đường bộ (street level) cho 1 route cụ thể
+router.post('/:id/road-restrictions', authorize('admin', 'staff'), adminRouteController.addRoadRestriction);
+
 module.exports = router;

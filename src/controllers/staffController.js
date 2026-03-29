@@ -94,6 +94,30 @@ exports.getOrderDetails = async (req, res, next) => {
     const ticket = invoice.requestTicketId;
     const customer = ticket.customerId;
 
+    // Find the assignment specifically for this staff/driver to get its route validation
+    const staffId = req.user.userId || req.user._id || req.user.id;
+    const da = await DispatchAssignment.findOne({ 
+      invoiceId,
+      $or: [
+        { 'assignments.driverIds': staffId },
+        { 'assignments.staffIds': staffId }
+      ]
+    }).populate('assignments.routeId');
+
+    // Find personal assignment once and reuse it
+    let personalAssignment = null;
+    let routeValidation = null;
+    
+    if (da) {
+      personalAssignment = da.assignments.find(a => 
+        a.driverIds.some(id => id.toString() === staffId.toString()) || 
+        a.staffIds.some(id => id.toString() === staffId.toString())
+      );
+      if (personalAssignment) {
+        routeValidation = personalAssignment.routeValidation;
+      }
+    }
+
     // Lấy dữ liệu khảo sát (nếu có) cho ticket này
     const survey = await SurveyData.findOne({
       requestTicketId: ticket._id,
@@ -103,6 +127,7 @@ exports.getOrderDetails = async (req, res, next) => {
       success: true,
       data: {
         id: invoice._id,
+        assignmentId: personalAssignment?._id || null,
         orderCode: ticket.code,
         status: invoice.status,
         pickup: ticket.pickup,
@@ -115,6 +140,8 @@ exports.getOrderDetails = async (req, res, next) => {
           email: customer.email,
         },
         route: invoice.routeId,
+        routeValidation: routeValidation,
+        polyline: invoice.routeId?.geometry?.coordinates || [],
         survey: survey
           ? {
               distanceKm: survey.distanceKm,

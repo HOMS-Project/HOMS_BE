@@ -211,7 +211,7 @@ class VehicleDispatchService {
       // Cập nhật invoice
       invoice.dispatchAssignmentId = assignment._id;
       if (dispatchData.routeId) {
-         invoice.routeId = dispatchData.routeId;
+        invoice.routeId = dispatchData.routeId;
       }
       invoice.status = 'ASSIGNED';
       await invoice.save();
