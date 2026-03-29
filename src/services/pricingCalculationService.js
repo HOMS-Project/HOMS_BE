@@ -50,8 +50,11 @@ class PricingCalculationService {
     } = surveyData;
 
     // 1️⃣ Ước tính giờ cơ bản (dùng cho labo và xe)
-    let estimatedHours = 2 + (distanceKm / 20) + (totalActualVolume * 0.5) + (floors * 0.3);
-    estimatedHours = Math.max(2, Math.round(estimatedHours));
+    let estimatedHours = surveyData.estimatedHours;
+    if (!estimatedHours) {
+      estimatedHours = 2 + (distanceKm / 20) + (totalActualVolume * 0.5) + (floors * 0.3);
+      estimatedHours = Math.max(2, Math.round(estimatedHours));
+    }
 
     // 2️⃣ PHÍ VẬN CHUYỂN (Transport Tiers)
     let transportTierFee = 0;
@@ -88,21 +91,8 @@ class PricingCalculationService {
       ((laborConfig.pricePerHourPerPerson || 0) * estimatedHours)
     );
 
-    // 5️⃣ PHÍ DỊCH VỤ THEO MÓN ĐỒ (Item Service Rates)
+    // 5️⃣ PHÍ DỊCH VỤ THEO MÓN ĐỒ (Removed as per request)
     let itemServiceFee = 0;
-    const itemRates = priceList.itemServiceRates || new Map();
-    items.forEach(item => {
-      const itemName = item.name?.toUpperCase();
-      let rate = 0;
-
-      if (itemRates instanceof Map) {
-        rate = itemRates.get(itemName) || itemRates.get('OTHER');
-      } else {
-        rate = itemRates[itemName] || itemRates['OTHER'];
-      }
-
-      itemServiceFee += Number(rate) || 0;
-    });
 
     // 6️⃣ PHỤ PHÍ DI CHUYỂN (Moving Surcharges)
     const movingSurcharge = priceList.movingSurcharge || {};
@@ -116,20 +106,6 @@ class PricingCalculationService {
       : movingSurcharge.stairSurchargePerFloor;
     const floorFee = floors * (floorSurchargeAt || 0);
 
-    // 7️⃣ QUY TẮC TÍNH PHÍ BỔ SUNG (Pricing Rules)
-    let rulesSurcharge = 0;
-    const rules = priceList.pricingRules || {};
-
-    if (rules.distanceSurcharge?.enabled) {
-      rulesSurcharge += Math.max(0, distanceKm - (rules.distanceSurcharge.freeKm || 0)) * (rules.distanceSurcharge.pricePerKm || 0);
-    }
-    if (rules.volumeSurcharge?.enabled) {
-      rulesSurcharge += Math.max(0, totalActualVolume - (rules.volumeSurcharge.freeM3 || 0)) * (rules.volumeSurcharge.pricePerM3 || 0);
-    }
-    if (rules.weightSurcharge?.enabled) {
-      rulesSurcharge += Math.max(0, totalActualWeight - (rules.weightSurcharge.freeKg || 0)) * (rules.weightSurcharge.pricePerKg || 0);
-    }
-
     // 8️⃣ DỊCH VỤ BỔ SUNG (Additional Services)
     const addServices = priceList.additionalServices || {};
     const assemblingFee = needsAssembling ? (addServices.assemblingFee || 0) : 0;
@@ -138,8 +114,60 @@ class PricingCalculationService {
       ? declaredValue * (addServices.insuranceRate || 0)
       : 0;
 
+    // 🛣️ PHỤ PHÍ QUÃNG ĐƯỜNG (Rules + Multipliers)
+    let finalDistanceFee = 0;
+    if (distanceKm > 30) {
+      const baseDistanceFee = (distanceKm - 30) * 2000;
+      let multiplier = 1;
+
+      // Handle multipliers if the ticket date is available
+      if (surveyData.requestTicketId?.scheduledTime || surveyData.scheduledTime) {
+        const moveDate = new Date(surveyData.requestTicketId?.scheduledTime || surveyData.scheduledTime);
+        const day = moveDate.getDay();
+        const hour = moveDate.getHours();
+        const minute = moveDate.getMinutes();
+        const decimalHour = hour + minute / 60;
+
+        // Weekend: Sat(6) or Sun(0)
+        if (day === 0 || day === 6) multiplier *= 1.15;
+
+        // Peak Hour: 7:00-9:00 or 16:30-18:30 (typical VN peak hours)
+        if ((decimalHour >= 7 && decimalHour <= 9) || (decimalHour >= 16.5 && decimalHour <= 18.5)) {
+          multiplier *= 1.2;
+        }
+      }
+      finalDistanceFee = Math.round(baseDistanceFee * multiplier);
+    }
+
+    // 🚛 CHỌN PHÍ VẬN CHUYỂN (Exclusive Logic)
+    let transportFeeToUse = 0;
+    if (suggestedVehicle) {
+      // VEHICLE FEE (Replace Base Transport Fee)
+      const vConfig = {
+        '500KG': { base: 500000, perKm: 8000, limit: 5 },
+        '1TON': { base: 700000, perKm: 12000, limit: 5 },
+        '1.5TON': { base: 900000, perKm: 15000, limit: 5 },
+        '2TON': { base: 1200000, perKm: 20000, limit: 5 },
+      }[suggestedVehicle];
+
+      if (vConfig) {
+        transportFeeToUse = vConfig.base + Math.max(0, distanceKm - vConfig.limit) * vConfig.perKm;
+      } else {
+        transportFeeToUse = vehicleFee; // Fallback to existing if not in manual rules
+      }
+      transportTierFee = 0; // Ensure exclusive
+      vehicleFee = transportFeeToUse;
+    } else {
+      // BASE TRANSPORT FEE (Fallback)
+      if (distanceKm <= 5) transportTierFee = 500000;
+      else if (distanceKm <= 10) transportTierFee = 700000;
+      else if (distanceKm <= 20) transportTierFee = 1000000;
+      else transportTierFee = 1000000 + (distanceKm - 20) * 20000;
+      vehicleFee = 0;
+    }
+
     // 9️⃣ TỔNG CHI PHÍ (Subtotal & Tax)
-    let subtotal = transportTierFee + vehicleFee + laborFee + itemServiceFee + carryFee + floorFee + rulesSurcharge + assemblingFee + packingFee + insuranceFee;
+    let subtotal = transportTierFee + vehicleFee + laborFee + carryFee + floorFee + finalDistanceFee + assemblingFee + packingFee + insuranceFee;
 
     const managementFeeRate = addServices.managementFeeRate || 0;
     const managementFee = Math.round(subtotal * managementFeeRate);
@@ -167,7 +195,7 @@ class PricingCalculationService {
         itemServiceFee,
         carryFee,
         floorFee,
-        distanceFee: rulesSurcharge,
+        distanceFee: finalDistanceFee,
         assemblingFee,
         packingFee,
         insuranceFee,
