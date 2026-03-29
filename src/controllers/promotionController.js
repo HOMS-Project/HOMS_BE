@@ -95,9 +95,9 @@ const applyPromotion = async (req, res) => {
       discountValue: promo.discountValue,
       appliedAt: new Date()
     };
-    // Keep original total price explicit and store discount/after values so frontend
-    // receives a full snapshot (subtotal/totalPrice, discountAmount, totalAfterPromotion).
-    ticket.pricing.totalPrice = Number(ticket.pricing.totalPrice || baseTotal);
+    // Ensure pricing snapshot contains subtotal/totalPrice for frontend consistency
+    ticket.pricing.subtotal = Number(ticket.pricing.subtotal || ticket.pricing.totalPrice || baseTotal);
+    ticket.pricing.totalPrice = Number(ticket.pricing.totalPrice || ticket.pricing.subtotal || baseTotal);
     ticket.pricing.discountAmount = discountAmount;
     ticket.pricing.totalAfterPromotion = totalAfter;
     await ticket.save();
@@ -115,7 +115,8 @@ const applyPromotion = async (req, res) => {
         appliedAt: new Date()
       };
       // store both before/after and discount so clients can rebuild breakdown if needed
-      invoice.priceSnapshot.totalBefore = Number(invoice.priceSnapshot.totalBefore || baseTotal);
+      invoice.priceSnapshot.subtotal = Number(invoice.priceSnapshot.subtotal || invoice.priceSnapshot.totalPrice || baseTotal);
+      invoice.priceSnapshot.totalBefore = Number(invoice.priceSnapshot.totalBefore || invoice.priceSnapshot.subtotal || baseTotal);
       invoice.priceSnapshot.discountAmount = discountAmount;
       invoice.priceSnapshot.totalPrice = totalAfter;
       await invoice.save();
@@ -132,7 +133,13 @@ const applyPromotion = async (req, res) => {
       console.warn('Failed to increment promotion usage count', e.message || e);
     }
 
-    return res.json({ success: true, data: { discountAmount, totalBefore: baseTotal, totalAfter, pricing: ticket.pricing } });
+    // Reload ticket to return the authoritative pricing snapshot
+    try {
+      const fresh = await RequestTicket.findById(ticket._id).lean();
+      return res.json({ success: true, data: { discountAmount, totalBefore: baseTotal, totalAfter, pricing: fresh.pricing || ticket.pricing } });
+    } catch (e) {
+      return res.json({ success: true, data: { discountAmount, totalBefore: baseTotal, totalAfter, pricing: ticket.pricing } });
+    }
   } catch (err) {
     console.error('[applyPromotion]', err);
     return res.status(500).json({ success: false, message: 'Lỗi server khi áp dụng khuyến mãi' });
