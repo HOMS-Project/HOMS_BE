@@ -2,7 +2,9 @@ const Contract = require('../../models/Contract');
 const ContractTemplate = require('../../models/ContractTemplate');
 const RequestTicket = require('../../models/RequestTicket');
 const crypto = require('crypto');
-
+const PDFDocument = require('pdfkit');
+const path = require('path');
+const mongoose = require('mongoose');
 /**
  * Tạo Contract Template mới
  */
@@ -259,4 +261,47 @@ exports.getContractDocx = async (contractId) => {
 
   const outFilename = (filename || 'contract') .toString().replace(/\.html?$/i, '') + '.docx';
   return { filename: outFilename, buffer: docxBuffer };
+};
+exports.getMyContracts = async (customerId, options = {}) => {
+  const { page = 1, limit = 10, status, search } = options;
+  const skip = (page - 1) * limit;
+
+  const filter = { customerId };
+
+  if (status && ['DRAFT', 'SENT', 'SIGNED', 'EXPIRED', 'CANCELLED'].includes(status)) {
+    filter.status = status;
+  }
+
+  if (search?.trim()) {
+    filter.contractNumber = { $regex: search.trim(), $options: 'i' };
+  }
+ const statsAgg = await Contract.aggregate([
+    { $match: { customerId } },
+    { $group: { _id: '$status', count: { $sum: 1 } } },
+  ]);
+  const stats = { total: 0, signed: 0, pending: 0, expired: 0 };
+  statsAgg.forEach(({ _id, count }) => {
+    stats.total += count;
+    if (_id === 'SIGNED')               stats.signed  = count;
+    if (_id === 'SENT' || _id === 'DRAFT') stats.pending += count;
+    if (_id === 'EXPIRED')              stats.expired = count;
+  });
+
+  const [contracts, total] = await Promise.all([
+    Contract.find(filter)
+      .select('-content')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .populate('templateId', 'title')
+      .populate('requestTicketId', 'ticketNumber')
+      .lean(),
+    Contract.countDocuments(filter),
+  ]);
+
+  return {
+    contracts,
+    pagination: { total, page: Number(page), limit: Number(limit) },
+      stats, 
+  };
 };
