@@ -347,3 +347,71 @@ exports.getMyContracts = async (customerId, options = {}) => {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
+exports.getContractPdf = async (contractId) => {
+  const contract = await Contract.findById(contractId)
+    .populate('customerId', 'fullName email phone')
+    .populate('templateId', 'title')
+    .lean();
+
+  if (!contract) throw new Error('Contract not found');
+
+  const doc = new PDFDocument({ size: 'A4', margin: 50 });
+
+  const buffers = [];
+  doc.on('data', buffers.push.bind(buffers));
+
+  return new Promise((resolve, reject) => {
+    doc.on('end', () => resolve({
+      filename: `contract-${contractId}.pdf`,
+      buffer: Buffer.concat(buffers),
+    }));
+    doc.on('error', reject);
+
+
+    const fontPath     = path.join(__dirname, '../../fonts/Roboto-Regular.ttf');
+    const fontBoldPath = path.join(__dirname, '../../fonts/Roboto-Bold.ttf');
+    doc.registerFont('Roboto', fontPath);
+    doc.registerFont('Roboto-Bold', fontBoldPath);
+
+    const W = doc.page.width - 100; 
+
+
+    doc.font('Roboto-Bold').fontSize(18)
+       .text(contract.templateId?.title || 'HỢP ĐỒNG', { align: 'center', width: W });
+
+    doc.moveDown(0.5);
+
+    const lx = 50;
+    doc.moveTo(lx, doc.y).lineTo(doc.page.width - lx, doc.y).stroke();
+    doc.moveDown(0.5);
+
+
+    doc.font('Roboto-Bold').fontSize(11).text('Mã hợp đồng: ', { continued: true, width: W });
+    doc.font('Roboto').text(contract.contractNumber || '');
+
+    doc.font('Roboto-Bold').fontSize(11).text('Khách hàng: ', { continued: true, width: W });
+    doc.font('Roboto').text(contract.customerId?.fullName || '');
+
+    doc.font('Roboto-Bold').fontSize(11).text('Ngày tạo: ', { continued: true, width: W });
+    doc.font('Roboto').text(new Date(contract.createdAt).toLocaleDateString('vi-VN'));
+
+    doc.font('Roboto-Bold').fontSize(11).text('Trạng thái: ', { continued: true, width: W });
+    doc.font('Roboto').text(contract.status || '');
+
+    doc.moveDown(0.5);
+    doc.moveTo(lx, doc.y).lineTo(doc.page.width - lx, doc.y).stroke();
+    doc.moveDown(1);
+
+
+    const plainText = htmlToPlainText(contract.content || 'Không có nội dung');
+
+    doc.font('Roboto').fontSize(12)
+       .text(plainText, {
+         width: W,
+         align: 'justify',
+         lineGap: 4,
+       });
+
+    doc.end();
+  });
+};
