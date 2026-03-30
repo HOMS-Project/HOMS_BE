@@ -325,3 +325,25 @@ exports.getMyContracts = async (customerId, options = {}) => {
 
   return contract;
 };
+
+ function htmlToPlainText(html = '') {
+  return html
+    .replace(/<\/?(p|div|section|article|header|footer|blockquote)\b[^>]*>/gi, '\n')
+    .replace(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi, (_, inner) =>
+      '\n' + inner.replace(/<[^>]+>/g, '').toUpperCase() + '\n')
+    .replace(/<li[^>]*>/gi, '\n  • ')
+    .replace(/<\/li>/gi, '')
+    .replace(/<\/t[dh]>/gi, '  ')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<hr\s*\/?>/gi, '\n─────────────────────────────────────\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
