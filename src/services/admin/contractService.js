@@ -305,3 +305,23 @@ exports.getMyContracts = async (customerId, options = {}) => {
       stats, 
   };
 };
+
+
+ exports.getContractDetail = async (contractId, customerId) => {
+  const contract = await Contract.findOne({
+    _id: contractId,
+    customerId
+  })
+    .populate('templateId', 'title description')
+    .populate('requestTicketId', 'ticketNumber createdAt')
+    .populate('adminSignature.signedBy', 'fullName email')
+    .lean();
+
+  if (!contract) {
+    const err = new Error('Không tìm thấy hợp đồng hoặc bạn không có quyền truy cập');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  return contract;
+};
