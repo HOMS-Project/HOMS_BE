@@ -10,12 +10,15 @@ exports.createPayosPayment = async ({ orderCode, amount, ticket, paymentType }) 
   if (paymentType === "MOVING_DEPOSIT") {
     description = `Dat coc don ${ticket.code}`;
   }
+  if (paymentType === "MOVING_REMAINING") {
+  description = `Thanh toan don ${ticket.code}`;
+}
   const body = {
     orderCode,
     amount: 2000, //Number(amount) 
     description: description.substring(0, 25),
-    returnUrl: `${FE}/payment/success?ticketId=${ticket._id}`,
-    cancelUrl: `${FE}/payment/cancel?ticketId=${ticket._id}`
+    returnUrl: `${FE}/payment/success?ticketId=${ticket._id}&type=${paymentType}`,
+    cancelUrl: `${FE}/payment/cancel?ticketId=${ticket._id}&type=${paymentType}`
   };
 
   const paymentLink = await payos.paymentRequests.create(body);
