@@ -279,7 +279,20 @@ exports.createMovingDepositPayment = async (req, res, next) => {
     next(error);
   }
 };
+exports.createMovingRemainingPayment = async (req, res, next) => {
+  try {
+    const { id } = req.params;
 
+    const result = await RequestTicketService.createMovingRemainingPayment(id);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 exports.verifyPaymentStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
