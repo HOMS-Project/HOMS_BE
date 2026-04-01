@@ -56,6 +56,7 @@ const invoiceSchema = new mongoose.Schema({
       'DRAFT',
       'CONFIRMED',
       'ASSIGNED',
+      'ACCEPTED',
       'IN_PROGRESS',
       'COMPLETED',
       'CANCELLED'

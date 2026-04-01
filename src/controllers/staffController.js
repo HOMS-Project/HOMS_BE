@@ -1,10 +1,21 @@
 const DispatchAssignment = require("../models/DispatchAssignment");
+const axios = require("axios"); // Added for proxying
 const Invoice = require("../models/Invoice");
 const User = require("../models/User");
 const Route = require("../models/Route");
 const SurveyData = require("../models/SurveyData");
 const AppError = require("../utils/appErrors");
 const staffEvidenceService = require("../services/staffEvidenceService");
+
+// Helper to normalize coordinates: assuming larger number (>100) is Longitude (Vietnam)
+const normalizePoint = (coord) => {
+  if (!coord) return null;
+  const lat = coord.lat ?? coord[1] ?? 0;
+  const lng = coord.lng ?? coord[0] ?? 0;
+  // Vietnam: Lng is ~104-109, Lat is ~8-23
+  if (lat > lng) return { lat: lng, lng: lat };
+  return { lat, lng };
+};
 
 /**
  * GET /api/staff/orders
@@ -49,6 +60,7 @@ exports.getAssignedOrders = async (req, res, next) => {
           dispatchAssignmentId: da._id,
           assignmentId: personalAssignment ? personalAssignment._id : null,
           invoiceId: invoice._id,
+          id: invoice._id, // Trả thêm ID dự phòng cho mobile
           orderCode: ticket.code,
           status: personalAssignment ? personalAssignment.status : da.status,
           routeId: personalAssignment ? personalAssignment.routeId : null,
@@ -96,7 +108,7 @@ exports.getOrderDetails = async (req, res, next) => {
 
     // Find the assignment specifically for this staff/driver to get its route validation
     const staffId = req.user.userId || req.user._id || req.user.id;
-    const da = await DispatchAssignment.findOne({ 
+    const da = await DispatchAssignment.findOne({
       invoiceId,
       $or: [
         { 'assignments.driverIds': staffId },
@@ -107,10 +119,10 @@ exports.getOrderDetails = async (req, res, next) => {
     // Find personal assignment once and reuse it
     let personalAssignment = null;
     let routeValidation = null;
-    
+
     if (da) {
-      personalAssignment = da.assignments.find(a => 
-        a.driverIds.some(id => id.toString() === staffId.toString()) || 
+      personalAssignment = da.assignments.find(a =>
+        a.driverIds.some(id => id.toString() === staffId.toString()) ||
         a.staffIds.some(id => id.toString() === staffId.toString())
       );
       if (personalAssignment) {
@@ -127,11 +139,19 @@ exports.getOrderDetails = async (req, res, next) => {
       success: true,
       data: {
         id: invoice._id,
+        invoiceId: invoice._id,
         assignmentId: personalAssignment?._id || null,
+        assignmentStatus: personalAssignment?.status || null,
         orderCode: ticket.code,
         status: invoice.status,
-        pickup: ticket.pickup,
-        delivery: ticket.delivery,
+        pickup: {
+          ...ticket.pickup,
+          coordinates: normalizePoint(ticket.pickup?.coordinates)
+        },
+        delivery: {
+          ...ticket.delivery,
+          coordinates: normalizePoint(ticket.delivery?.coordinates)
+        },
         items: ticket.items,
         scheduledTime: invoice.scheduledTime,
         customer: {
@@ -139,22 +159,24 @@ exports.getOrderDetails = async (req, res, next) => {
           phone: customer.phoneNumber,
           email: customer.email,
         },
-        route: invoice.routeId,
+        route: personalAssignment?.routeId || invoice.routeId,
         routeValidation: routeValidation,
-        polyline: invoice.routeId?.geometry?.coordinates || [],
+        restrictions: (personalAssignment?.routeId || invoice.routeId)?.roadRestrictions?.flatMap(res =>
+          res.geometry.type === 'LineString' ? res.geometry.coordinates : [res.geometry.coordinates]
+        ).map(normalizePoint) || [],
         survey: survey
           ? {
-              distanceKm: survey.distanceKm,
-              floors: survey.floors,
-              hasElevator: survey.hasElevator,
-              carryMeter: survey.carryMeter,
-              needsPacking: survey.needsPacking,
-              needsAssembling: survey.needsAssembling,
-              insuranceRequired: survey.insuranceRequired,
-              suggestedVehicle: survey.suggestedVehicle,
-              suggestedStaffCount: survey.suggestedStaffCount,
-              items: survey.items || [],
-            }
+            distanceKm: survey.distanceKm,
+            floors: survey.floors,
+            hasElevator: survey.hasElevator,
+            carryMeter: survey.carryMeter,
+            needsPacking: survey.needsPacking,
+            needsAssembling: survey.needsAssembling,
+            insuranceRequired: survey.insuranceRequired,
+            suggestedVehicle: survey.suggestedVehicle,
+            suggestedStaffCount: survey.suggestedStaffCount,
+            items: survey.items || [],
+          }
           : null,
       },
     });
@@ -201,7 +223,6 @@ exports.updateAssignmentStatus = async (req, res, next) => {
       da.status = "COMPLETED";
       await da.save();
 
-      // Cập nhật luôn Invoice status
       await Invoice.findByIdAndUpdate(da.invoiceId, {
         status: "COMPLETED",
         $push: {
@@ -213,6 +234,9 @@ exports.updateAssignmentStatus = async (req, res, next) => {
           },
         },
       });
+    } else if (status === "ACCEPTED") {
+      // Nếu cập nhật thành ACCEPTED, Invoice cũng là ACCEPTED
+      await Invoice.findByIdAndUpdate(da.invoiceId, { status: "ACCEPTED" });
     } else if (status === "IN_PROGRESS") {
       // Nếu có ít nhất 1 cái IN_PROGRESS, Invoice cũng là IN_PROGRESS
       await Invoice.findByIdAndUpdate(da.invoiceId, { status: "IN_PROGRESS" });
@@ -370,5 +394,30 @@ exports.submitDropoffProof = async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+};
+
+/**
+ * GET /api/staff/routing/osrm
+ * Proxy OSRM requests to avoid mobile network/CORS issues
+ */
+exports.getProxyRoute = async (req, res, next) => {
+  try {
+    const { p1, p2 } = req.query; // Format: "lng,lat"
+    if (!p1 || !p2) {
+      throw new AppError("Thiếu tọa độ p1 hoặc p2.", 400);
+    }
+
+    const url = `https://router.project-osrm.org/route/v1/driving/${p1};${p2}?overview=full&geometries=geojson`;
+    const response = await axios.get(url, { timeout: 10000 });
+
+    res.status(200).json(response.data);
+  } catch (error) {
+    console.error("[ProxyRoute] Error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi khi lấy thông tin lộ trình từ server điều phối.",
+      error: error.message
+    });
   }
 };

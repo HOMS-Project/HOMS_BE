@@ -24,6 +24,9 @@ router.get("/orders", staffController.getAssignedOrders);
 // Get detail of a specific order
 router.get("/orders/:invoiceId", staffController.getOrderDetails);
 
+// Proxy OSRM route for mobile map (fixes network errors)
+router.get("/routing/osrm", staffController.getProxyRoute);
+
 // Upload pre-trip pickup evidence (images + note)
 router.post(
   "/orders/:invoiceId/pickup",

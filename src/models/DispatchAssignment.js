@@ -76,7 +76,7 @@ const dispatchAssignmentSchema = new mongoose.Schema({
 
     status: {
       type: String,
-      enum: ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
+      enum: ['PENDING', 'CONFIRMED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
       default: 'PENDING'
     },
 
