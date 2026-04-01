@@ -288,7 +288,7 @@ class InvoiceService {
       .populate({
         path: 'dispatchAssignmentId',
         populate: {
-          path: 'assignments.vehicleId assignments.driverIds assignments.staffIds'
+          path: 'assignments.vehicleId assignments.driverIds assignments.staffIds assignments.routeId'
         }
       });
 
