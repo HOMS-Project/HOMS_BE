@@ -12,6 +12,7 @@ router.get("/:id/verify-payment", authenticate, authorize('CUSTOMER'), requestTi
 
 router.post("/:id/create-payment-link", authenticate, authorize('CUSTOMER'), requestTicketController.createSurveyPayment);
 router.post("/:id/deposit", authenticate, authorize('CUSTOMER'), requestTicketController.createMovingDepositPayment);
+router.post('/:id/remaining',authenticate,authorize('CUSTOMER'),requestTicketController.createMovingRemainingPayment)
 router.post('/', authenticate, authorize('CUSTOMER'), requestTicketController.createRequestTicket);
 router.put('/:id/accept-survey-time',authenticate,authorize('CUSTOMER'),requestTicketController.acceptSurveyTime);
 // router.put('/:id/reject-survey-time',authenticate,authorize('CUSTOMER'),requestTicketController.rejectSurveyTime);

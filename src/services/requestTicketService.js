@@ -418,6 +418,35 @@ class RequestTicketService {
     return { checkoutUrl };
 
   }
+  async createMovingRemainingPayment(ticketId) {
+  const invoice = await Invoice.findOne({
+    requestTicketId: ticketId
+  });
+
+  if (!invoice) {
+    throw new Error("Invoice not found");
+  }
+
+  if (invoice.paymentStatus !== "PARTIAL") {
+    throw new Error("Invoice is not eligible for remaining payment");
+  }
+
+  const remainingAmount = invoice.remainingAmount;
+
+  const orderCode = Number(`${Date.now()}${Math.floor(Math.random() * 100)}`);
+
+  invoice.paymentOrderCode = orderCode;
+  await invoice.save();
+
+  const checkoutUrl = await PaymentService.createPayosPayment({
+    orderCode,
+    amount: remainingAmount,
+    ticket: { code: invoice.code, _id: invoice.requestTicketId },
+    paymentType: "MOVING_REMAINING" 
+  });
+
+  return { checkoutUrl };
+}
 
   async handlePayosWebhook(payload) {
 
@@ -463,7 +492,6 @@ class RequestTicketService {
 
     const invoice = await Invoice.findOne({
       paymentOrderCode: orderCode,
-      paymentStatus: "UNPAID"
     });
 
     if (invoice) {
@@ -479,6 +507,9 @@ class RequestTicketService {
 
       invoice.paymentStatus =
         invoice.remainingAmount <= 0 ? "PAID" : "PARTIAL";
+  if (invoice.paymentStatus === "PAID") {
+    invoice.status = "COMPLETED"; 
+  }
 
       invoice.status = "CONFIRMED"
       await invoice.save();

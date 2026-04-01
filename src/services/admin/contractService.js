@@ -2,7 +2,9 @@ const Contract = require('../../models/Contract');
 const ContractTemplate = require('../../models/ContractTemplate');
 const RequestTicket = require('../../models/RequestTicket');
 const crypto = require('crypto');
-
+const PDFDocument = require('pdfkit');
+const path = require('path');
+const mongoose = require('mongoose');
 /**
  * Tạo Contract Template mới
  */
@@ -259,4 +261,157 @@ exports.getContractDocx = async (contractId) => {
 
   const outFilename = (filename || 'contract') .toString().replace(/\.html?$/i, '') + '.docx';
   return { filename: outFilename, buffer: docxBuffer };
+};
+exports.getMyContracts = async (customerId, options = {}) => {
+  const { page = 1, limit = 10, status, search } = options;
+  const skip = (page - 1) * limit;
+
+  const filter = { customerId };
+
+  if (status && ['DRAFT', 'SENT', 'SIGNED', 'EXPIRED', 'CANCELLED'].includes(status)) {
+    filter.status = status;
+  }
+
+  if (search?.trim()) {
+    filter.contractNumber = { $regex: search.trim(), $options: 'i' };
+  }
+ const statsAgg = await Contract.aggregate([
+    { $match: { customerId } },
+    { $group: { _id: '$status', count: { $sum: 1 } } },
+  ]);
+  const stats = { total: 0, signed: 0, pending: 0, expired: 0 };
+  statsAgg.forEach(({ _id, count }) => {
+    stats.total += count;
+    if (_id === 'SIGNED')               stats.signed  = count;
+    if (_id === 'SENT' || _id === 'DRAFT') stats.pending += count;
+    if (_id === 'EXPIRED')              stats.expired = count;
+  });
+
+  const [contracts, total] = await Promise.all([
+    Contract.find(filter)
+      .select('-content')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .populate('templateId', 'title')
+      .populate('requestTicketId', 'ticketNumber')
+      .lean(),
+    Contract.countDocuments(filter),
+  ]);
+
+  return {
+    contracts,
+    pagination: { total, page: Number(page), limit: Number(limit) },
+      stats, 
+  };
+};
+
+
+ exports.getContractDetail = async (contractId, customerId) => {
+  const contract = await Contract.findOne({
+    _id: contractId,
+    customerId
+  })
+    .populate('templateId', 'title description')
+    .populate('requestTicketId', 'ticketNumber createdAt')
+    .populate('adminSignature.signedBy', 'fullName email')
+    .lean();
+
+  if (!contract) {
+    const err = new Error('Không tìm thấy hợp đồng hoặc bạn không có quyền truy cập');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  return contract;
+};
+
+ function htmlToPlainText(html = '') {
+  return html
+    .replace(/<\/?(p|div|section|article|header|footer|blockquote)\b[^>]*>/gi, '\n')
+    .replace(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi, (_, inner) =>
+      '\n' + inner.replace(/<[^>]+>/g, '').toUpperCase() + '\n')
+    .replace(/<li[^>]*>/gi, '\n  • ')
+    .replace(/<\/li>/gi, '')
+    .replace(/<\/t[dh]>/gi, '  ')
+    .replace(/<\/tr>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<hr\s*\/?>/gi, '\n─────────────────────────────────────\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+exports.getContractPdf = async (contractId) => {
+  const contract = await Contract.findById(contractId)
+    .populate('customerId', 'fullName email phone')
+    .populate('templateId', 'title')
+    .lean();
+
+  if (!contract) throw new Error('Contract not found');
+
+  const doc = new PDFDocument({ size: 'A4', margin: 50 });
+
+  const buffers = [];
+  doc.on('data', buffers.push.bind(buffers));
+
+  return new Promise((resolve, reject) => {
+    doc.on('end', () => resolve({
+      filename: `contract-${contractId}.pdf`,
+      buffer: Buffer.concat(buffers),
+    }));
+    doc.on('error', reject);
+
+
+    const fontPath     = path.join(__dirname, '../../fonts/Roboto-Regular.ttf');
+    const fontBoldPath = path.join(__dirname, '../../fonts/Roboto-Bold.ttf');
+    doc.registerFont('Roboto', fontPath);
+    doc.registerFont('Roboto-Bold', fontBoldPath);
+
+    const W = doc.page.width - 100; 
+
+
+    doc.font('Roboto-Bold').fontSize(18)
+       .text(contract.templateId?.title || 'HỢP ĐỒNG', { align: 'center', width: W });
+
+    doc.moveDown(0.5);
+
+    const lx = 50;
+    doc.moveTo(lx, doc.y).lineTo(doc.page.width - lx, doc.y).stroke();
+    doc.moveDown(0.5);
+
+
+    doc.font('Roboto-Bold').fontSize(11).text('Mã hợp đồng: ', { continued: true, width: W });
+    doc.font('Roboto').text(contract.contractNumber || '');
+
+    doc.font('Roboto-Bold').fontSize(11).text('Khách hàng: ', { continued: true, width: W });
+    doc.font('Roboto').text(contract.customerId?.fullName || '');
+
+    doc.font('Roboto-Bold').fontSize(11).text('Ngày tạo: ', { continued: true, width: W });
+    doc.font('Roboto').text(new Date(contract.createdAt).toLocaleDateString('vi-VN'));
+
+    doc.font('Roboto-Bold').fontSize(11).text('Trạng thái: ', { continued: true, width: W });
+    doc.font('Roboto').text(contract.status || '');
+
+    doc.moveDown(0.5);
+    doc.moveTo(lx, doc.y).lineTo(doc.page.width - lx, doc.y).stroke();
+    doc.moveDown(1);
+
+
+    const plainText = htmlToPlainText(contract.content || 'Không có nội dung');
+
+    doc.font('Roboto').fontSize(12)
+       .text(plainText, {
+         width: W,
+         align: 'justify',
+         lineGap: 4,
+       });
+
+    doc.end();
+  });
 };
