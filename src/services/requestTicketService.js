@@ -10,39 +10,21 @@ const payos = require("../config/payos");
 const NotificationService = require("./notificationService");
 const { getIo } = require("../utils/socket");
 const GeocodeService = require('./geocodeService');
+const StrategyFactory = require('./strategies/StrategyFactory');
 
-// State transitions
-const STATE_TRANSITIONS = {
-  CREATED: ['WAITING_SURVEY', 'CANCELLED'],
-  WAITING_SURVEY: ['SURVEYED', 'CANCELLED'],
-  SURVEYED: ['QUOTED', 'CANCELLED'],
-  QUOTED: ['ACCEPTED', 'CANCELLED'],
-  ACCEPTED: ['CONVERTED', 'CANCELLED'],
-  CONVERTED: [],
-  CANCELLED: []
-};
+// Using strategies for transition logic now. 
+// Old STATE_TRANSITIONS moved/delegated to individual strategies.
 
 class RequestTicketService {
   /**
    * Tạo request ticket mới
    */
   async createTicket(data, customerId) {
-    // Validate dữ liệu
-    if (!data.moveType || !['FULL_HOUSE', 'SPECIFIC_ITEMS'].includes(data.moveType)) {
-      throw new AppError('moveType không hợp lệ', 400);
-    }
-
-    if (!data.pickup?.address || !data.delivery?.address) {
-      throw new AppError('Pickup và delivery address không được rỗng', 400);
-    }
-
-    if (data.pickup.address === data.delivery.address) {
-      throw new AppError('Pickup và delivery phải khác nhau', 400);
-    }
-
-    if (data.moveType === 'SPECIFIC_ITEMS' && (!data.items || data.items.length === 0)) {
-      throw new AppError('SPECIFIC_ITEMS phải có ít nhất 1 item', 400);
-    }
+    // Evaluate strategy based on moveType
+    const strategy = StrategyFactory.getStrategy(data.moveType);
+    
+    // Validate request using specific strategy rules
+    strategy.validateCreate(data);
 
     // Generate code
     const count = await RequestTicket.countDocuments();
@@ -53,6 +35,7 @@ class RequestTicketService {
       customerId,
       moveType: data.moveType,
       items: data.items || [],
+      rentalDetails: data.rentalDetails || undefined,
       pickup: data.pickup,
       delivery: data.delivery,
       scheduledTime: data.scheduledTime || null,
@@ -91,8 +74,9 @@ class RequestTicketService {
     }
 
     // Check có thể cancel không
-    const allowedStatuses = ['CREATED', 'WAITING_SURVEY', 'SURVEYED', 'QUOTED', 'ACCEPTED'];
-    if (!allowedStatuses.includes(ticket.status)) {
+    const strategy = StrategyFactory.getStrategy(ticket.moveType);
+    const allowedStatuses = strategy.getAllowedTransitions(ticket.status);
+    if (!allowedStatuses.includes('CANCELLED')) {
       throw new AppError(`Cannot cancel from status ${ticket.status}`, 400);
     }
 
@@ -181,15 +165,18 @@ class RequestTicketService {
     }
 
     // Validate state transition
-    if (!STATE_TRANSITIONS[ticket.status]?.includes(newStatus)) {
+    const strategy = StrategyFactory.getStrategy(ticket.moveType);
+    const allowedTransitions = strategy.getAllowedTransitions(ticket.status);
+    
+    if (!allowedTransitions.includes(newStatus)) {
       throw new AppError(
-        `Cannot transition from ${ticket.status} to ${newStatus}`,
+        `Cannot transition from ${ticket.status} to ${newStatus} for this service type`,
         400
       );
     }
 
-    ticket.status = newStatus;
-    await ticket.save();
+    // Call strategy handler for potential custom logic updates before saving
+    await strategy.handleStatusUpdate(ticket, newStatus, userId);
     return ticket;
   }
 
