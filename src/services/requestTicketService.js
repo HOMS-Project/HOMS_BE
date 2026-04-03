@@ -10,6 +10,7 @@ const payos = require("../config/payos");
 const NotificationService = require("./notificationService");
 const { getIo } = require("../utils/socket");
 const GeocodeService = require('./geocodeService');
+const invoiceService = require("./invoiceService");
 
 // State transitions
 const STATE_TRANSITIONS = {
@@ -375,7 +376,6 @@ class RequestTicketService {
 
     const orderCode = Number(`${Date.now()}${Math.floor(Math.random() * 100)}`);
 
-
     ticket.paymentOrderCode = orderCode;
     ticket.paymentType = "SURVEY_DEPOSIT";
     await ticket.save();
@@ -389,165 +389,34 @@ class RequestTicketService {
 
     return { checkoutUrl };
   }
-  async createMovingDepositPayment(ticketId) {
-    console.log("ticketId received:", ticketId);
-    console.log("type:", typeof ticketId);
-    const invoice = await Invoice.findOne({
-      requestTicketId: ticketId
-    });
-
-    if (!invoice) {
-      throw new Error("Invoice not found for this ticket");
-    }
-
-    const depositAmount = Math.floor(invoice.priceSnapshot.totalPrice * 0.5);
-
-    const orderCode = Number(`${Date.now()}${Math.floor(Math.random() * 100)}`);
-
-    invoice.paymentOrderCode = orderCode;
-
-    await invoice.save();
-
-    const checkoutUrl = await PaymentService.createPayosPayment({
-      orderCode,
-      amount: depositAmount,
-      ticket: { code: invoice.code, _id: invoice.requestTicketId },
-      paymentType: "MOVING_DEPOSIT"
-    });
-
-    return { checkoutUrl };
-
-  }
-  async createMovingRemainingPayment(ticketId) {
-  const invoice = await Invoice.findOne({
-    requestTicketId: ticketId
-  });
-
-  if (!invoice) {
-    throw new Error("Invoice not found");
-  }
-
-  if (invoice.paymentStatus !== "PARTIAL") {
-    throw new Error("Invoice is not eligible for remaining payment");
-  }
-
-  const remainingAmount = invoice.remainingAmount;
-
-  const orderCode = Number(`${Date.now()}${Math.floor(Math.random() * 100)}`);
-
-  invoice.paymentOrderCode = orderCode;
-  await invoice.save();
-
-  const checkoutUrl = await PaymentService.createPayosPayment({
-    orderCode,
-    amount: remainingAmount,
-    ticket: { code: invoice.code, _id: invoice.requestTicketId },
-    paymentType: "MOVING_REMAINING" 
-  });
-
-  return { checkoutUrl };
-}
 
   async handlePayosWebhook(payload) {
-
     const webhookData = PaymentService.verifyWebhook(payload);
-
     if (!webhookData) return;
 
     const { orderCode } = webhookData;
-
     const paymentInfo = await payos.paymentRequests.get(orderCode);
-
     if (paymentInfo.status !== "PAID") return;
 
-    /*
-    =====================
-    1. CHECK SURVEY PAYMENT
-    =====================
-    */
-
-    const ticket = await RequestTicket.findOne({
-      paymentOrderCode: orderCode
-    });
-
+    // 1. CHECK SURVEY PAYMENT
+    const ticket = await RequestTicket.findOne({ paymentOrderCode: orderCode });
     if (ticket && ticket.paymentType === "SURVEY_DEPOSIT") {
-
-      if (ticket.isSurveyPaid) {
-        console.log("Duplicate survey webhook");
-        return;
-      }
-
+      if (ticket.isSurveyPaid) return;
       ticket.isSurveyPaid = true;
-
       await ticket.save();
-
       return;
     }
 
-    /*
-    =====================
-    2. CHECK MOVING DEPOSIT
-    =====================
-    */
-
-    const invoice = await Invoice.findOne({
-      paymentOrderCode: orderCode,
-    });
-
-    if (invoice) {
-
-      if (invoice.paymentStatus !== "UNPAID") {
-        console.log("Duplicate deposit webhook");
-        return;
-      }
-      const depositAmount = paymentInfo.amount;
-      invoice.paidAmount += depositAmount;
-      invoice.remainingAmount =
-        invoice.priceSnapshot.totalPrice - invoice.paidAmount;
-
-      invoice.paymentStatus =
-        invoice.remainingAmount <= 0 ? "PAID" : "PARTIAL";
-  if (invoice.paymentStatus === "PAID") {
-    invoice.status = "COMPLETED"; 
-  }
-
-      invoice.status = "CONFIRMED"
-      await invoice.save();
-
-      return;
-    }
-
+    // 2. DELEGATE TO INVOICE SERVICE FOR OTHER PAYMENTS
+    await invoiceService.handleInvoicePaymentWebhook(orderCode, paymentInfo);
   }
 
   /**
-   * Manual fallback verification for the frontend PaymentSuccess
-   * Since local env lacks webhooks, frontend explicitly calls this to check the PayOS status.
+   * Manual fallback verification - Delegated to InvoiceService
    */
   async verifyPaymentStatus(ticketId) {
-    if (!ticketId || ticketId === "undefined" || ticketId === "null") return;
-
-    const invoice = await Invoice.findOne({ requestTicketId: ticketId, paymentStatus: "UNPAID" });
-    if (!invoice || !invoice.paymentOrderCode) {
-      return; // Already paid or no invoice found
-    }
-
-    try {
-      const paymentInfo = await payos.paymentRequests.get(invoice.paymentOrderCode);
-      if (paymentInfo.status === "PAID") {
-        const depositAmount = paymentInfo.amount;
-        invoice.paidAmount += depositAmount;
-        invoice.remainingAmount = invoice.priceSnapshot.totalPrice - invoice.paidAmount;
-
-        invoice.paymentStatus = invoice.remainingAmount <= 0 ? "PAID" : "PARTIAL";
-        invoice.status = "CONFIRMED";
-        await invoice.save();
-      }
-    } catch (e) {
-      console.error("Manual verifyPaymentStatus failed:", e);
-    }
+    return await invoiceService.verifyInvoicePayment(ticketId);
   }
-};
+}
 
-
-
-module.exports = new RequestTicketService();  
+module.exports = new RequestTicketService();
