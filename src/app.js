@@ -94,14 +94,14 @@ app.use(helmet({
   // Bắt browser luôn dùng HTTPS, không fallback về HTTP
   // maxAge: 1 năm (tính bằng giây), includeSubDomains: áp dụng cho subdomain
   hsts: {
-    maxAge: 31536000,     
+    maxAge: 31536000,
     includeSubDomains: true,
-    preload: true            
+    preload: true
   },
   noSniff: true,
   frameguard: { action: 'deny' },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-  crossOriginEmbedderPolicy: false, 
+  crossOriginEmbedderPolicy: false,
 }));
 app.use(express.json());
 app.use(cookieParser());
@@ -109,8 +109,10 @@ app.use(cookieParser());
 const csrfProtection = csurf({
   cookie: {
     httpOnly: true,
-    sameSite: 'strict',
-    secure: process.env.NODE_ENV === 'production'
+    // sameSite: 'strict',
+    sameSite: 'none',
+    // secure: process.env.NODE_ENV === 'production'
+    secure: true
   }
 });
 app.get('/api/csrf-token', csrfProtection, (req, res) => {
@@ -152,15 +154,15 @@ const aiRoutes = require("./routes/aiRoutes");
 app.use("/api/auth", authRoutes);
 app.use("/api/staff", staffRoutes);
 app.use("/api/public", publicRoutes);
-app.use("/api/customer",csrfProtection, userRoutes);
-app.use("/api/request-tickets",csrfProtection, requestTicketRoutes);
-app.use("/api/invoices",csrfProtection, invoiceRoutes);
+app.use("/api/customer", csrfProtection, userRoutes);
+app.use("/api/request-tickets", csrfProtection, requestTicketRoutes);
+app.use("/api/invoices", csrfProtection, invoiceRoutes);
 app.use("/api/surveys", surveyRoutes);
 app.use("/api/price-lists", priceListRoutes);
 app.use("/api/pricing", pricingRoutes);
 app.use("/api/customer/contracts", contractRoutes);
 app.use("/api/notifications", notificationRoutes);
-app.use("/api/incidents",csrfProtection, incidentRoutes);
+app.use("/api/incidents", csrfProtection, incidentRoutes);
 app.use("/api/service-ratings", serviceRatingRoutes);
 app.use("/api/ai", aiRoutes);
 
