@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const { authenticate }    = require('../middlewares/authMiddleware');
+const { authenticate, authorize } = require('../middlewares/authMiddleware');
 const { validateRating } = require('../middlewares/ratingMiddleware');
 const {
   createRating,
@@ -14,7 +14,7 @@ const {
  * @desc    Khách hàng gửi đánh giá cho đơn hoàn thành
  * @access  Private (customer)
  */
-router.post('/', authenticate, validateRating, createRating);
+router.post('/', authenticate, authorize('CUSTOMER'), validateRating, createRating);
 
 /**
  * @route   GET /api/service-ratings/invoice/:invoiceId

@@ -73,7 +73,7 @@ const createRating = async (user, payload) => {
   const invoice = await Invoice.findById(invoiceId);
   if (!invoice) throw new Error("NOT_FOUND");
 
-  if (invoice.customerId.toString() !== customerId) {
+  if (invoice.customerId.toString() !== customerId.toString()) {
     throw new Error("FORBIDDEN");
   }
 
