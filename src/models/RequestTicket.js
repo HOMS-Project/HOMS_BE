@@ -16,8 +16,15 @@ const requestTicketSchema = new mongoose.Schema({
 
   moveType: {
     type: String,
-    enum: ['FULL_HOUSE', 'SPECIFIC_ITEMS'],
+    enum: ['FULL_HOUSE', 'SPECIFIC_ITEMS', 'TRUCK_RENTAL'],
     required: true
+  },
+
+  rentalDetails: {
+    truckType: String,
+    rentalDurationHours: Number,
+    withDriver: { type: Boolean, default: false },
+    withHelper: { type: Boolean, default: false }
   },
 
   pickup: {
@@ -35,7 +42,9 @@ const requestTicketSchema = new mongoose.Schema({
   items: [{
     name: String,
     quantity: Number,
-    notes: String
+    notes: String,
+    isSpecialItem: { type: Boolean, default: false },
+    requiresManualHandling: { type: Boolean, default: false }
   }],
 
   scheduledTime: {
