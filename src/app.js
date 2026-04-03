@@ -3,56 +3,61 @@ const express = require("express");
 const http = require("http");
 const connectDB = require("./config/database");
 const errorMiddleware = require("./middlewares/errorMiddleware");
-const cors = require('cors');
+const cors = require("cors");
 const app = express();
 const { initSocket } = require("./utils/socket");
-app.set('trust proxy', 1);
-const { Server } = require('socket.io');
+app.set("trust proxy", 1);
+const { Server } = require("socket.io");
 const server = http.createServer(app);
-const helmet = require('helmet');
-const csurf = require('csurf');
+const helmet = require("helmet");
+const csurf = require("csurf");
 // Cấu hình Socket.io
 const io = new Server(server, {
   cors: {
     origin: process.env.CORS_ORIGIN || "http://localhost:3000",
     methods: ["GET", "POST"],
-    credentials: true
-  }
+    credentials: true,
+  },
 });
 initSocket(io);
 global.onlineUsers = new Map();
-const User = require('./models/User');
+const User = require("./models/User");
 
-const socketAuthMiddleware = require('./middlewares/socketAuthMiddleware');
-const { registerVideoSocketEvents } = require('./socket/videoSocket');
+const socketAuthMiddleware = require("./middlewares/socketAuthMiddleware");
+const { registerVideoSocketEvents } = require("./socket/videoSocket");
 
-const videoIo = io.of('/video-chat');
+const videoIo = io.of("/video-chat");
 videoIo.use(socketAuthMiddleware);
-videoIo.on('connection', (socket) => {
+videoIo.on("connection", (socket) => {
   registerVideoSocketEvents(videoIo, socket);
 });
 
-io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
+io.on("connection", (socket) => {
+  console.log("A user connected:", socket.id);
 
   // Khi user login/vào web, FE sẽ gửi event 'register_user' kèm userId
-  socket.on('register_user', (userId) => {
+  socket.on("register_user", (userId) => {
     (async () => {
       try {
-        const user = await User.findById(userId).select('status');
-        if (user && (user.status || '').toString().toLowerCase() === 'active') {
+        const user = await User.findById(userId).select("status");
+        if (user && (user.status || "").toString().toLowerCase() === "active") {
           global.onlineUsers.set(userId.toString(), socket.id);
           console.log(`User ${userId} registered with socket ${socket.id}`);
         } else {
-          console.log(`Socket registration blocked for user ${userId} due to inactive status`);
+          console.log(
+            `Socket registration blocked for user ${userId} due to inactive status`,
+          );
         }
       } catch (err) {
-        console.error('Error verifying user status for socket registration', err.message || err);
+        console.error(
+          "Error verifying user status for socket registration",
+          err.message || err,
+        );
       }
     })();
   });
 
-  socket.on('disconnect', () => {
+  socket.on("disconnect", () => {
     // Xóa user khỏi danh sách online khi ngắt kết nối
     for (let [userId, socketId] of global.onlineUsers.entries()) {
       if (socketId === socket.id) {
@@ -63,57 +68,73 @@ io.on('connection', (socket) => {
   });
 });
 
-const cookieParser = require('cookie-parser');
+const cookieParser = require("cookie-parser");
 connectDB();
-app.use(cors({
-  origin: process.env.CORS_ORIGIN || "http://localhost:3000",
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+    credentials: true,
+  }),
+);
 
 const requestTicketController = require("./controllers/requestTicketController");
 
 app.post(
   "/api/request-tickets/payos-webhook",
   express.raw({ type: "application/json" }),
-  requestTicketController.payosWebhook
+  requestTicketController.payosWebhook,
 );
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],                         // Mặc định chỉ chấp nhận cùng origin
-      scriptSrc: ["'self'", "https://accounts.google.com"], // Cho phép Google OAuth script
-      styleSrc: ["'self'", "'unsafe-inline'"],        // Cần unsafe-inline nếu dùng inline style
-      imgSrc: ["'self'", "data:", "https:"],           // Cho phép ảnh từ https
-      connectSrc: ["'self'", process.env.CORS_ORIGIN || "http://localhost:3000"],
-      frameSrc: ["https://accounts.google.com"],      // Google OAuth dùng iframe
-      objectSrc: ["'none'"],                          // Chặn <object>, <embed> (nguy hiểm)
-      upgradeInsecureRequests: [],                    // Tự động upgrade HTTP → HTTPS
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"], // Mặc định chỉ chấp nhận cùng origin
+        scriptSrc: ["'self'", "https://accounts.google.com"], // Cho phép Google OAuth script
+        styleSrc: ["'self'", "'unsafe-inline'"], // Cần unsafe-inline nếu dùng inline style
+        imgSrc: ["'self'", "data:", "https:"], // Cho phép ảnh từ https
+        connectSrc: [
+          "'self'",
+          process.env.CORS_ORIGIN || "http://localhost:3000",
+        ],
+        frameSrc: ["https://accounts.google.com"], // Google OAuth dùng iframe
+        objectSrc: ["'none'"], // Chặn <object>, <embed> (nguy hiểm)
+        upgradeInsecureRequests: [], // Tự động upgrade HTTP → HTTPS
+      },
     },
-  },
-  // ✅ Strict-Transport-Security (HSTS)
-  // Bắt browser luôn dùng HTTPS, không fallback về HTTP
-  // maxAge: 1 năm (tính bằng giây), includeSubDomains: áp dụng cho subdomain
-  hsts: {
-    maxAge: 31536000,     
-    includeSubDomains: true,
-    preload: true            
-  },
-  noSniff: true,
-  frameguard: { action: 'deny' },
-  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-  crossOriginEmbedderPolicy: false, 
-}));
+    // ✅ Strict-Transport-Security (HSTS)
+    // Bắt browser luôn dùng HTTPS, không fallback về HTTP
+    // maxAge: 1 năm (tính bằng giây), includeSubDomains: áp dụng cho subdomain
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    noSniff: true,
+    frameguard: { action: "deny" },
+    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    crossOriginEmbedderPolicy: false,
+  }),
+);
 app.use(express.json());
 app.use(cookieParser());
-
 const csrfProtection = csurf({
   cookie: {
     httpOnly: true,
-    sameSite: 'strict',
-    secure: process.env.NODE_ENV === 'production'
-  }
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
+  },
 });
-app.get('/api/csrf-token', csrfProtection, (req, res) => {
+
+const csrfUnlessMobileDriver = (req, res, next) => {
+  const client = (req.get("x-client") || "").toLowerCase();
+  if (client === "mobile-driver") {
+    return next();
+  }
+
+  return csrfProtection(req, res, next);
+};
+
+app.get("/api/csrf-token", csrfProtection, (req, res) => {
   res.json({ csrfToken: req.csrfToken() });
 });
 
@@ -129,7 +150,7 @@ const surveyRoutes = require("./routes/surveyRoutes");
 const priceListRoutes = require("./routes/priceListRoutes");
 const pricingRoutes = require("./routes/pricingRoutes");
 const contractRoutes = require("./routes/contractRoutes");
-const notificationRoutes = require("./routes/notificationRoutes")
+const notificationRoutes = require("./routes/notificationRoutes");
 const incidentRoutes = require("./routes/incidentRoutes");
 const serviceRatingRoutes = require("./routes/serviceRatingRoutes");
 // Admin routes
@@ -152,15 +173,15 @@ const aiRoutes = require("./routes/aiRoutes");
 app.use("/api/auth", authRoutes);
 app.use("/api/staff", staffRoutes);
 app.use("/api/public", publicRoutes);
-app.use("/api/customer",csrfProtection, userRoutes);
-app.use("/api/request-tickets",csrfProtection, requestTicketRoutes);
-app.use("/api/invoices",csrfProtection, invoiceRoutes);
+app.use("/api/customer", csrfUnlessMobileDriver, userRoutes);
+app.use("/api/request-tickets", csrfUnlessMobileDriver, requestTicketRoutes);
+app.use("/api/invoices", csrfUnlessMobileDriver, invoiceRoutes);
 app.use("/api/surveys", surveyRoutes);
 app.use("/api/price-lists", priceListRoutes);
 app.use("/api/pricing", pricingRoutes);
 app.use("/api/customer/contracts", contractRoutes);
 app.use("/api/notifications", notificationRoutes);
-app.use("/api/incidents",csrfProtection, incidentRoutes);
+app.use("/api/incidents", csrfUnlessMobileDriver, incidentRoutes);
 app.use("/api/service-ratings", serviceRatingRoutes);
 app.use("/api/ai", aiRoutes);
 
@@ -179,7 +200,7 @@ app.use("/api/admin/promotions", adminPromotionRoutes);
 
 app.use(errorMiddleware);
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
 
