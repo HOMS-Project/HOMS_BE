@@ -57,9 +57,57 @@ exports.addTrafficRule = async (req, res, next) => {
     }
 };
 
+exports.updateTrafficRule = async (req, res, next) => {
+    try {
+        const route = await adminRouteService.updateTrafficRule(req.params.id, req.params.ruleId, req.body);
+        res.status(200).json({ success: true, data: route });
+    } catch (error) {
+        if (error.message === 'Route not found' || error.message === 'Traffic rule not found') {
+            return res.status(404).json({ success: false, message: error.message });
+        }
+        next(error);
+    }
+};
+
 exports.addRoadRestriction = async (req, res, next) => {
     try {
         const route = await adminRouteService.addRoadRestriction(req.params.id, req.body);
+        res.status(200).json({ success: true, data: route });
+    } catch (error) {
+        if (error.message === 'Route not found') {
+            return res.status(404).json({ success: false, message: error.message });
+        }
+        next(error);
+    }
+};
+
+exports.updateRoadRestriction = async (req, res, next) => {
+    try {
+        const route = await adminRouteService.updateRoadRestriction(req.params.id, req.params.resId, req.body);
+        res.status(200).json({ success: true, data: route });
+    } catch (error) {
+        if (error.message === 'Route not found' || error.message === 'Road restriction not found') {
+            return res.status(404).json({ success: false, message: error.message });
+        }
+        next(error);
+    }
+};
+
+exports.deleteTrafficRule = async (req, res, next) => {
+    try {
+        const route = await adminRouteService.deleteTrafficRule(req.params.id, req.params.ruleId);
+        res.status(200).json({ success: true, data: route });
+    } catch (error) {
+        if (error.message === 'Route not found') {
+            return res.status(404).json({ success: false, message: error.message });
+        }
+        next(error);
+    }
+};
+
+exports.deleteRoadRestriction = async (req, res, next) => {
+    try {
+        const route = await adminRouteService.deleteRoadRestriction(req.params.id, req.params.resId);
         res.status(200).json({ success: true, data: route });
     } catch (error) {
         if (error.message === 'Route not found') {

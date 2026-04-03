@@ -78,6 +78,56 @@ exports.addRoadRestriction = async (routeId, restrictionData) => {
 };
 
 /**
+ * Cập nhật luật giao thông của tuyến đường
+ */
+exports.updateTrafficRule = async (routeId, ruleId, ruleData) => {
+    const route = await Route.findById(routeId);
+    if (!route) throw new Error('Route not found');
+
+    const rule = route.trafficRules.id(ruleId);
+    if (!rule) throw new Error('Traffic rule not found');
+
+    rule.set(ruleData);
+    return await route.save();
+};
+
+/**
+ * Cập nhật đoạn hạn chế của tuyến đường 
+ */
+exports.updateRoadRestriction = async (routeId, restrictionId, restrictionData) => {
+    const route = await Route.findById(routeId);
+    if (!route) throw new Error('Route not found');
+
+    const restriction = route.roadRestrictions.id(restrictionId);
+    if (!restriction) throw new Error('Road restriction not found');
+
+    restriction.set(restrictionData);
+    return await route.save();
+};
+
+/**
+ * Xóa luật giao thông khỏi tuyến đường
+ */
+exports.deleteTrafficRule = async (routeId, ruleId) => {
+    const route = await Route.findById(routeId);
+    if (!route) throw new Error('Route not found');
+
+    route.trafficRules = route.trafficRules.filter(r => r._id.toString() !== ruleId);
+    return await route.save();
+};
+
+/**
+ * Xóa đoạn đường cấm khỏi tuyến đường
+ */
+exports.deleteRoadRestriction = async (routeId, restrictionId) => {
+    const route = await Route.findById(routeId);
+    if (!route) throw new Error('Route not found');
+
+    route.roadRestrictions = route.roadRestrictions.filter(r => r._id.toString() !== restrictionId);
+    return await route.save();
+};
+
+/**
  * Xóa/Vô hiệu hóa tuyến đường
  */
 exports.deleteRoute = async (id) => {

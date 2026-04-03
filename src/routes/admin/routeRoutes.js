@@ -24,4 +24,16 @@ router.post('/:id/rules', authorize('admin', 'staff'), adminRouteController.addT
 // Route thêm hạn chế đường bộ (street level) cho 1 route cụ thể
 router.post('/:id/road-restrictions', authorize('admin', 'staff'), adminRouteController.addRoadRestriction);
 
+// Route cập nhật luật giao thông
+router.put('/:id/rules/:ruleId', authorize('admin', 'staff'), adminRouteController.updateTrafficRule);
+
+// Route cập nhật hạn chế đường bộ
+router.put('/:id/road-restrictions/:resId', authorize('admin', 'staff'), adminRouteController.updateRoadRestriction);
+
+// Route: /api/admin/routes/:id/rules/:ruleId
+router.delete('/:id/rules/:ruleId', authorize('admin', 'staff'), adminRouteController.deleteTrafficRule);
+
+// Route: /api/admin/routes/:id/road-restrictions/:resId
+router.delete('/:id/road-restrictions/:resId', authorize('admin', 'staff'), adminRouteController.deleteRoadRestriction);
+
 module.exports = router;
