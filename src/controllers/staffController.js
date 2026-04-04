@@ -7,6 +7,11 @@ const SurveyData = require("../models/SurveyData");
 const AppError = require("../utils/appErrors");
 const staffEvidenceService = require("../services/staffEvidenceService");
 
+const stripSecTag = (value) => {
+  if (typeof value !== "string") return value;
+  return value.replace(/^\s*\[SEC:[^\]]+\]\s*/i, "").trim();
+};
+
 // Helper to normalize coordinates: assuming larger number (>100) is Longitude (Vietnam)
 const normalizePoint = (coord) => {
   if (!coord) return null;
@@ -111,19 +116,20 @@ exports.getOrderDetails = async (req, res, next) => {
     const da = await DispatchAssignment.findOne({
       invoiceId,
       $or: [
-        { 'assignments.driverIds': staffId },
-        { 'assignments.staffIds': staffId }
-      ]
-    }).populate('assignments.routeId');
+        { "assignments.driverIds": staffId },
+        { "assignments.staffIds": staffId },
+      ],
+    }).populate("assignments.routeId");
 
     // Find personal assignment once and reuse it
     let personalAssignment = null;
     let routeValidation = null;
 
     if (da) {
-      personalAssignment = da.assignments.find(a =>
-        a.driverIds.some(id => id.toString() === staffId.toString()) ||
-        a.staffIds.some(id => id.toString() === staffId.toString())
+      personalAssignment = da.assignments.find(
+        (a) =>
+          a.driverIds.some((id) => id.toString() === staffId.toString()) ||
+          a.staffIds.some((id) => id.toString() === staffId.toString()),
       );
       if (personalAssignment) {
         routeValidation = personalAssignment.routeValidation;
@@ -134,6 +140,15 @@ exports.getOrderDetails = async (req, res, next) => {
     const survey = await SurveyData.findOne({
       requestTicketId: ticket._id,
     }).lean();
+
+    const ticketItems = Array.isArray(ticket.items) ? ticket.items : [];
+    const surveyItems = Array.isArray(survey?.items) ? survey.items : [];
+    const resolvedItems = (
+      ticketItems.length > 0 ? ticketItems : surveyItems
+    ).map((item) => ({
+      ...item,
+      name: stripSecTag(item?.name),
+    }));
 
     res.status(200).json({
       success: true,
@@ -146,13 +161,13 @@ exports.getOrderDetails = async (req, res, next) => {
         status: invoice.status,
         pickup: {
           ...ticket.pickup,
-          coordinates: normalizePoint(ticket.pickup?.coordinates)
+          coordinates: normalizePoint(ticket.pickup?.coordinates),
         },
         delivery: {
           ...ticket.delivery,
-          coordinates: normalizePoint(ticket.delivery?.coordinates)
+          coordinates: normalizePoint(ticket.delivery?.coordinates),
         },
-        items: ticket.items,
+        items: resolvedItems,
         scheduledTime: invoice.scheduledTime,
         customer: {
           name: customer.fullName,
@@ -161,22 +176,27 @@ exports.getOrderDetails = async (req, res, next) => {
         },
         route: personalAssignment?.routeId || invoice.routeId,
         routeValidation: routeValidation,
-        restrictions: (personalAssignment?.routeId || invoice.routeId)?.roadRestrictions?.flatMap(res =>
-          res.geometry.type === 'LineString' ? res.geometry.coordinates : [res.geometry.coordinates]
-        ).map(normalizePoint) || [],
+        restrictions:
+          (personalAssignment?.routeId || invoice.routeId)?.roadRestrictions
+            ?.flatMap((res) =>
+              res.geometry.type === "LineString"
+                ? res.geometry.coordinates
+                : [res.geometry.coordinates],
+            )
+            .map(normalizePoint) || [],
         survey: survey
           ? {
-            distanceKm: survey.distanceKm,
-            floors: survey.floors,
-            hasElevator: survey.hasElevator,
-            carryMeter: survey.carryMeter,
-            needsPacking: survey.needsPacking,
-            needsAssembling: survey.needsAssembling,
-            insuranceRequired: survey.insuranceRequired,
-            suggestedVehicle: survey.suggestedVehicle,
-            suggestedStaffCount: survey.suggestedStaffCount,
-            items: survey.items || [],
-          }
+              distanceKm: survey.distanceKm,
+              floors: survey.floors,
+              hasElevator: survey.hasElevator,
+              carryMeter: survey.carryMeter,
+              needsPacking: survey.needsPacking,
+              needsAssembling: survey.needsAssembling,
+              insuranceRequired: survey.insuranceRequired,
+              suggestedVehicle: survey.suggestedVehicle,
+              suggestedStaffCount: survey.suggestedStaffCount,
+              items: survey.items || [],
+            }
           : null,
       },
     });
@@ -417,7 +437,7 @@ exports.getProxyRoute = async (req, res, next) => {
     res.status(500).json({
       success: false,
       message: "Lỗi khi lấy thông tin lộ trình từ server điều phối.",
-      error: error.message
+      error: error.message,
     });
   }
 };
