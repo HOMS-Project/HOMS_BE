@@ -48,6 +48,32 @@ exports.createRequestTicket = async (req, res, next) => {
 };
 
 /**
+ * POST /api/request-tickets/:id/approve
+ * Head Dispatcher approves a CREATED ticket.
+ * - FULL_HOUSE: body must include { surveyorId }
+ * - SPECIFIC_ITEMS / TRUCK_RENTAL: triggers auto-assignment, no surveyorId needed
+ */
+exports.approveTicket = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { surveyorId } = req.body;
+    const approverId = req.user.userId || req.user._id || req.user.id;
+
+    if (!approverId) throw new AppError('User ID không tồn tại', 401);
+
+    const ticket = await RequestTicketService.approveTicket(id, approverId, surveyorId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Đơn hàng đã được duyệt thành công',
+      data: ticket
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * GET /api/request-tickets/:id
  * Lấy chi tiết request ticket
  */

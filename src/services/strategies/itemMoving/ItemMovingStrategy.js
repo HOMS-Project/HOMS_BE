@@ -15,17 +15,15 @@ class ItemMovingStrategy extends BaseStrategy {
   }
 
   getAllowedTransitions(currentStatus) {
-    // For Item Moving, survey steps can be lighter or skipped
-    // Could bypass SURVEYED if AI handles it straight to QUOTED.
-    // For now, keeping standard flow but allowing strict bypass if needed later.
+    // SPECIFIC_ITEMS skips survey — goes to district dispatcher review after HD approval
     const transitions = {
-      CREATED: ['WAITING_SURVEY', 'QUOTED', 'CANCELLED'],
-      WAITING_SURVEY: ['SURVEYED', 'QUOTED', 'CANCELLED'],
-      SURVEYED: ['QUOTED', 'CANCELLED'],
-      QUOTED: ['ACCEPTED', 'CANCELLED'],
-      ACCEPTED: ['CONVERTED', 'CANCELLED'],
-      CONVERTED: [],
-      CANCELLED: []
+      CREATED:           ['WAITING_REVIEW', 'CANCELLED'],
+      WAITING_REVIEW:    ['QUOTED', 'CANCELLED'],
+      ASSIGNMENT_FAILED: ['WAITING_REVIEW', 'CANCELLED'], // Head dispatcher reassigns manually
+      QUOTED:            ['ACCEPTED', 'CANCELLED'],
+      ACCEPTED:          ['CONVERTED', 'CANCELLED'],
+      CONVERTED:         [],
+      CANCELLED:         []
     };
     return transitions[currentStatus] || [];
   }

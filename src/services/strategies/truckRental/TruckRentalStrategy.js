@@ -15,13 +15,15 @@ class TruckRentalStrategy extends BaseStrategy {
   }
 
   getAllowedTransitions(currentStatus) {
-    // Truck Rental generally skips SURVEYED flow, straight to QUOTED.
+    // TRUCK_RENTAL skips survey — goes to district dispatcher review after HD approval
     const transitions = {
-      CREATED: ['QUOTED', 'CANCELLED'],
-      QUOTED: ['ACCEPTED', 'CANCELLED'],
-      ACCEPTED: ['CONVERTED', 'CANCELLED'],
-      CONVERTED: [],
-      CANCELLED: []
+      CREATED:           ['WAITING_REVIEW', 'CANCELLED'],
+      WAITING_REVIEW:    ['QUOTED', 'CANCELLED'],
+      ASSIGNMENT_FAILED: ['WAITING_REVIEW', 'CANCELLED'], // Head dispatcher reassigns manually
+      QUOTED:            ['ACCEPTED', 'CANCELLED'],
+      ACCEPTED:          ['CONVERTED', 'CANCELLED'],
+      CONVERTED:         [],
+      CANCELLED:         []
     };
     return transitions[currentStatus] || [];
   }

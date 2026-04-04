@@ -11,11 +11,105 @@ const NotificationService = require("./notificationService");
 const { getIo } = require("../utils/socket");
 const GeocodeService = require('./geocodeService');
 const StrategyFactory = require('./strategies/StrategyFactory');
+const AutoAssignmentService = require('./AutoAssignmentService');
 
 // Using strategies for transition logic now. 
 // Old STATE_TRANSITIONS moved/delegated to individual strategies.
 
 class RequestTicketService {
+  /**
+   * Head Dispatcher approves a CREATED ticket.
+   *
+   * FULL_HOUSE           → WAITING_SURVEY  (surveyor assigned, survey scheduled separately)
+   * SPECIFIC_ITEMS       → WAITING_REVIEW  (district dispatcher auto-assigned to review AI data + price)
+   * TRUCK_RENTAL         → WAITING_REVIEW  (same as SPECIFIC_ITEMS)
+   *
+   * @param {string} ticketId
+   * @param {string} approverId  - userId of the Head Dispatcher approving
+   * @param {string} [surveyorId] - required for FULL_HOUSE (picked from approve modal)
+   */
+  async approveTicket(ticketId, approverId, surveyorId) {
+    const ticket = await RequestTicket.findById(ticketId);
+    if (!ticket) throw new AppError('Request ticket không tồn tại', 404);
+    if (ticket.status !== 'CREATED') {
+      throw new AppError(`Chỉ có thể duyệt đơn ở trạng thái CREATED. Hiện tại: ${ticket.status}`, 400);
+    }
+
+    const io = getIo();
+
+    // ── FULL_HOUSE: transition to WAITING_SURVEY ───────────────────────────
+    if (ticket.moveType === 'FULL_HOUSE') {
+      if (!surveyorId) {
+        throw new AppError('Đơn chuyển nhà yêu cầu chọn nhân viên khảo sát khi duyệt', 400);
+      }
+      ticket.status = 'WAITING_SURVEY';
+      ticket.dispatcherId = surveyorId;
+      await ticket.save();
+
+      await NotificationService.createNotification(
+        {
+          userId: ticket.customerId,
+          title: 'Đơn hàng của bạn đã được xác nhận',
+          message: 'Nhân viên khảo sát đã được phân công. Vui lòng chờ lịch hẹn khảo sát.',
+          type: 'System',
+          ticketId: ticket._id
+        },
+        io
+      );
+
+      return ticket;
+    }
+
+    // ── SPECIFIC_ITEMS / TRUCK_RENTAL: WAITING_REVIEW + auto-assign district dispatcher ──
+    ticket.status = 'WAITING_REVIEW';
+    await ticket.save();
+
+    const assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
+
+    if (assignedDispatcherId) {
+      // Auto-assignment successful — district dispatcher will review AI data and quote
+      ticket.dispatcherId = assignedDispatcherId;
+      await ticket.save();
+
+      await NotificationService.createNotification(
+        {
+          userId: ticket.customerId,
+          title: 'Đơn hàng đã được tiếp nhận',
+          message: 'Yêu cầu của bạn đã được xác nhận và đang được xử lý bởi nhân viên điều phối.',
+          type: 'System',
+          ticketId: ticket._id
+        },
+        io
+      );
+    } else {
+      // Auto-assignment failed — escalate to Head Dispatcher
+      ticket.status = 'ASSIGNMENT_FAILED';
+      await ticket.save();
+
+      // Notify Head Dispatcher (admins / isGeneral dispatchers)
+      const User = require('../models/User');
+      const headDispatchers = await User.find({
+        role: 'dispatcher',
+        'dispatcherProfile.isGeneral': true
+      }).select('_id');
+
+      for (const hd of headDispatchers) {
+        await NotificationService.createNotification(
+          {
+            userId: hd._id,
+            title: `Phân công tự động thất bại — Đơn #${ticket.code}`,
+            message: 'Tất cả nhân viên điều phối đang quá tải. Vui lòng phân công thủ công.',
+            type: 'System',
+            ticketId: ticket._id
+          },
+          io
+        );
+      }
+    }
+
+    return ticket;
+  }
+
   /**
    * Tạo request ticket mới
    */

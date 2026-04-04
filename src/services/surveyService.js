@@ -77,9 +77,9 @@ await NotificationService.createNotification(
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    if (ticket.status !== 'WAITING_SURVEY') {
+    if (!['WAITING_SURVEY', 'WAITING_REVIEW'].includes(ticket.status)) {
       throw new AppError(
-        `Không thể hoàn tất khảo sát từ trạng thái ${ticket.status}`,
+        `Không thể hoàn tất từ trạng thái ${ticket.status}. Phải là WAITING_SURVEY hoặc WAITING_REVIEW`,
         400
       );
     }
@@ -215,17 +215,61 @@ await NotificationService.createNotification(
   }
 
   /**
-   * Lấy khảo sát theo request ticket
+   * Lấy khảo sát theo request ticket.
+   * For WAITING_REVIEW tickets (SPECIFIC_ITEMS / TRUCK_RENTAL): if no SurveyData exists yet,
+   * return a synthetic object built from ticket.items so the dispatcher form can pre-populate.
    */
   async getSurveyByTicket(requestTicketId) {
     const survey = await SurveyData.findOne({ requestTicketId })
       .populate('surveyorId', 'fullName email phone');
 
-    if (!survey) {
+    if (survey) return survey;
+
+    // No SurveyData — check if this is a WAITING_REVIEW ticket with AI items
+    const ticket = await RequestTicket.findById(requestTicketId);
+    if (!ticket) {
       throw new AppError('Không tìm thấy khảo sát cho ticket này', 404);
     }
 
-    return survey;
+    if (ticket.status === 'WAITING_REVIEW' && ticket.items?.length > 0) {
+      // Return a synthetic survey-like object from ticket.items + aiEstimate
+      // ticket.items now has: name, quantity, actualVolume, actualWeight, condition, notes, etc.
+      // ticket.aiEstimate has: suggestedVehicle, suggestedStaffCount, distanceKm, floors, etc.
+      const est = ticket.aiEstimate || {};
+      return {
+        _isSynthetic: true,
+        requestTicketId: ticket._id,
+        items: ticket.items.map(item => ({
+          name: (item.quantity > 1) ? `${item.name} (x${item.quantity})` : item.name,
+          itemType: 'OTHER',
+          actualVolume: item.actualVolume || 0,
+          actualWeight: item.actualWeight || 0,
+          actualDimensions: item.actualDimensions || {},
+          condition: item.condition || 'GOOD',
+          notes: item.notes || '',
+          isSpecialItem: item.isSpecialItem || false,
+          requiresManualHandling: item.requiresManualHandling || false,
+          _source: 'AI_TICKET',
+        })),
+        // Logistics estimate from AI
+        suggestedVehicle:   est.suggestedVehicle   || null,
+        suggestedStaffCount:est.suggestedStaffCount || 2,
+        estimatedHours:     est.estimatedHours      || null,
+        distanceKm:         est.distanceKm          || 0,
+        floors:             est.floors              || 0,
+        hasElevator:        est.hasElevator         || false,
+        carryMeter:         est.carryMeter          || 0,
+        needsAssembling:    est.needsAssembling     || false,
+        needsPacking:       est.needsPacking        || false,
+        insuranceRequired:  est.insuranceRequired   || false,
+        declaredValue:      est.declaredValue       || 0,
+        totalActualVolume:  est.totalActualVolume   || 0,
+        totalActualWeight:  est.totalActualWeight   || 0,
+        status: 'PENDING_REVIEW',
+      };
+    }
+
+    throw new AppError('Không tìm thấy khảo sát cho ticket này', 404);
   }
 
   /**
