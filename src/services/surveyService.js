@@ -53,16 +53,16 @@ class SurveyService {
     ticket.dispatcherId = surveyorId;
     await ticket.save();
     const io = getIo();
-await NotificationService.createNotification(
-    {
-      userId: ticket.customerId,
-      title: "Lịch khảo sát đã được xác nhận",
-      message: `Khảo sát được lên lịch vào ${schedDate.toLocaleString()}`,
-      type: "System",
-       ticketId: ticket._id 
-    },
-    io
-  );
+    await NotificationService.createNotification(
+      {
+        userId: ticket.customerId,
+        title: "Lịch khảo sát đã được xác nhận",
+        message: `Khảo sát được lên lịch vào ${schedDate.toLocaleString()}`,
+        type: "System",
+        ticketId: ticket._id
+      },
+      io
+    );
     return survey;
   }
 
@@ -222,7 +222,7 @@ await NotificationService.createNotification(
       .populate('surveyorId', 'fullName email phone');
 
     if (!survey) {
-      throw new AppError('Không tìm thấy khảo sát cho ticket này', 404);
+      return null;
     }
 
     return survey;
