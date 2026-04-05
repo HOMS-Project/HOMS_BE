@@ -58,7 +58,15 @@ exports.getUserById = async (id) => {
  * Admin tạo user mới (Đặc biệt cho nhân viên: dispatcher, driver, staff)
  */
 exports.createUser = async (userData) => {
+    // Expected incoming fields: fullName, email, phone (or phoneNumber from FE), role, password (optional)
     const { email, phone, password, role, fullName } = userData;
+
+    // Only allow admin to create staff accounts of these roles
+    const allowedRoles = ['dispatcher', 'driver', 'staff'];
+    const normalizedRole = role ? String(role).toLowerCase() : null;
+    if (!normalizedRole || !allowedRoles.includes(normalizedRole)) {
+        throw new Error('Invalid role. Allowed roles: dispatcher, driver, staff');
+    }
 
     // Kiểm tra email hoặc phone đã tồn tại chưa
     const existingUser = await User.findOne({
@@ -69,15 +77,20 @@ exports.createUser = async (userData) => {
         throw new Error('Email or phone already exists');
     }
 
+    // Use default password if not provided by FE
+    const plainPassword = password || 'User123@';
+
     // Hash password
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPassword = await bcrypt.hash(plainPassword, salt);
 
     const newUser = new User({
-        ...userData,
+        fullName,
+        email: email || null,
+        phone: phone || null,
         password: hashedPassword,
         provider: 'local',
-        role: role.toLowerCase()
+        role: normalizedRole
     });
 
     await newUser.save();
