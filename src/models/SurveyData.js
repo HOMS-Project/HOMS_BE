@@ -4,7 +4,8 @@ const surveyDataSchema = new mongoose.Schema({
   requestTicketId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'RequestTicket',
-    required: true
+    required: true,
+    unique: true
   },
 
   surveyType: {
@@ -24,6 +25,10 @@ const surveyDataSchema = new mongoose.Schema({
 
   items: [{
     name: String,
+    quantity: { type: Number, default: 1 },
+    notes: String,
+    isSpecialItem: { type: Boolean, default: false },
+    requiresManualHandling: { type: Boolean, default: false },
     actualWeight: Number,
     actualDimensions: {
       length: Number,
@@ -54,6 +59,7 @@ const surveyDataSchema = new mongoose.Schema({
   },
 
   estimatedHours: Number,
+  estimatedPrice: Number,
 
   distanceKm: Number,
   carryMeter: { type: Number, default: 0 },
