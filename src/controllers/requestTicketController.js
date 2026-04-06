@@ -12,7 +12,7 @@ const AppError = require('../utils/appErrors');
  */
 exports.createRequestTicket = async (req, res, next) => {
   try {
-    const { moveType, rentalDetails, pickup, delivery, notes, scheduledTime, items } = req.body;
+    const { moveType, rentalDetails, pickup, delivery, notes, scheduledTime, items, distanceKm } = req.body;
     const customerId = req.user.userId || req.user._id || req.user.id;
 
     if (!customerId) {
@@ -31,7 +31,8 @@ exports.createRequestTicket = async (req, res, next) => {
         delivery,
         notes,
         scheduledTime: scheduledTime ? new Date(scheduledTime) : undefined,
-        items
+        items,
+        distanceKm
       },
       customerId
     );

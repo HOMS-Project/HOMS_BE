@@ -39,49 +39,6 @@ const requestTicketSchema = new mongoose.Schema({
     coordinates: { lat: Number, lng: Number }
   },
 
-  items: [{
-    name: String,
-    quantity:  { type: Number, default: 1 },
-    notes: String,
-    isSpecialItem:          { type: Boolean, default: false },
-    requiresManualHandling: { type: Boolean, default: false },
-
-    // Rich fields (populated by AI analyzer for SPECIFIC_ITEMS / TRUCK_RENTAL)
-    actualVolume: Number,
-    actualWeight: Number,
-    actualDimensions: {
-      length: Number,
-      width:  Number,
-      height: Number
-    },
-    condition: {
-      type: String,
-      enum: ['GOOD', 'DAMAGED', 'FRAGILE'],
-      default: 'GOOD'
-    }
-  }],
-
-  /* ===== AI LOGISTICS ESTIMATE (SPECIFIC_ITEMS / TRUCK_RENTAL) ===== */
-  // Pre-filled by the AI analyzer at ticket creation; dispatcher reviews / tweaks in WAITING_REVIEW
-  aiEstimate: {
-    suggestedVehicle: {
-      type: String,
-      enum: ['500KG', '1TON', '1.5TON', '2TON']
-    },
-    suggestedStaffCount: Number,
-    estimatedHours:      Number,
-    distanceKm:          Number,
-    floors:              { type: Number, default: 0 },
-    hasElevator:         { type: Boolean, default: false },
-    needsAssembling:     { type: Boolean, default: false },
-    needsPacking:        { type: Boolean, default: false },
-    insuranceRequired:   { type: Boolean, default: false },
-    declaredValue:       Number,
-    carryMeter:          { type: Number, default: 0 },
-    totalActualVolume:   Number,
-    totalActualWeight:   Number,
-  },
-
   scheduledTime: {
     type: Date,
     required: true
