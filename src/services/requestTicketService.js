@@ -3,6 +3,7 @@
  */
 
 const RequestTicket = require('../models/RequestTicket');
+const SurveyData = require('../models/SurveyData');
 const Invoice = require("../models/Invoice")
 const AppError = require('../utils/appErrors');
 const PaymentService = require('../services/paymentService')
@@ -12,6 +13,7 @@ const { getIo } = require("../utils/socket");
 const GeocodeService = require('./geocodeService');
 const StrategyFactory = require('./strategies/StrategyFactory');
 const AutoAssignmentService = require('./AutoAssignmentService');
+const TicketStateMachine = require('./TicketStateMachine');
 
 // Using strategies for transition logic now. 
 // Old STATE_TRANSITIONS moved/delegated to individual strategies.
@@ -36,78 +38,9 @@ class RequestTicketService {
     }
 
     const io = getIo();
+    const strategy = StrategyFactory.getStrategy(ticket.moveType);
 
-    // ── FULL_HOUSE: transition to WAITING_SURVEY ───────────────────────────
-    if (ticket.moveType === 'FULL_HOUSE') {
-      if (!surveyorId) {
-        throw new AppError('Đơn chuyển nhà yêu cầu chọn nhân viên khảo sát khi duyệt', 400);
-      }
-      ticket.status = 'WAITING_SURVEY';
-      ticket.dispatcherId = surveyorId;
-      await ticket.save();
-
-      await NotificationService.createNotification(
-        {
-          userId: ticket.customerId,
-          title: 'Đơn hàng của bạn đã được xác nhận',
-          message: 'Nhân viên khảo sát đã được phân công. Vui lòng chờ lịch hẹn khảo sát.',
-          type: 'System',
-          ticketId: ticket._id
-        },
-        io
-      );
-
-      return ticket;
-    }
-
-    // ── SPECIFIC_ITEMS / TRUCK_RENTAL: WAITING_REVIEW + auto-assign district dispatcher ──
-    ticket.status = 'WAITING_REVIEW';
-    await ticket.save();
-
-    const assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
-
-    if (assignedDispatcherId) {
-      // Auto-assignment successful — district dispatcher will review AI data and quote
-      ticket.dispatcherId = assignedDispatcherId;
-      await ticket.save();
-
-      await NotificationService.createNotification(
-        {
-          userId: ticket.customerId,
-          title: 'Đơn hàng đã được tiếp nhận',
-          message: 'Yêu cầu của bạn đã được xác nhận và đang được xử lý bởi nhân viên điều phối.',
-          type: 'System',
-          ticketId: ticket._id
-        },
-        io
-      );
-    } else {
-      // Auto-assignment failed — escalate to Head Dispatcher
-      ticket.status = 'ASSIGNMENT_FAILED';
-      await ticket.save();
-
-      // Notify Head Dispatcher (admins / isGeneral dispatchers)
-      const User = require('../models/User');
-      const headDispatchers = await User.find({
-        role: 'dispatcher',
-        'dispatcherProfile.isGeneral': true
-      }).select('_id');
-
-      for (const hd of headDispatchers) {
-        await NotificationService.createNotification(
-          {
-            userId: hd._id,
-            title: `Phân công tự động thất bại — Đơn #${ticket.code}`,
-            message: 'Tất cả nhân viên điều phối đang quá tải. Vui lòng phân công thủ công.',
-            type: 'System',
-            ticketId: ticket._id
-          },
-          io
-        );
-      }
-    }
-
-    return ticket;
+    return await strategy.handleApproval(ticket, approverId, { surveyorId }, io);
   }
 
   /**
@@ -128,7 +61,6 @@ class RequestTicketService {
       code,
       customerId,
       moveType: data.moveType,
-      items: data.items || [],
       rentalDetails: data.rentalDetails || undefined,
       pickup: data.pickup,
       delivery: data.delivery,
@@ -138,6 +70,9 @@ class RequestTicketService {
     });
 
     await ticket.save();
+
+    // Delegate to strategy for post-creation operations (like creating SurveyData)
+    await strategy.handlePostCreation(ticket, data);
 
     // Enrich with districts via Goong reverse geocoding (non-blocking)
     try {
@@ -167,17 +102,11 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    // Check có thể cancel không
-    const strategy = StrategyFactory.getStrategy(ticket.moveType);
-    const allowedStatuses = strategy.getAllowedTransitions(ticket.status);
-    if (!allowedStatuses.includes('CANCELLED')) {
-      throw new AppError(`Cannot cancel from status ${ticket.status}`, 400);
-    }
+    await TicketStateMachine.transition(ticket, 'CANCELLED', {
+      userId,
+      payload: { reason }
+    });
 
-    ticket.status = 'CANCELLED';
-    ticket.notes = reason || '';
-
-    await ticket.save();
     return ticket;
   }
 
@@ -228,10 +157,9 @@ class RequestTicketService {
       throw new AppError('Ticket không tồn tại', 404);
     }
 
-    ticket.scheduledTime = selectedTime;
-    ticket.status = "WAITING_SURVEY";
-
-    await ticket.save();
+    await TicketStateMachine.transition(ticket, 'WAITING_SURVEY', {
+      payload: { scheduledTime: selectedTime }
+    });
 
     return ticket;
   }
@@ -258,20 +186,7 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    // Validate state transition
-    const strategy = StrategyFactory.getStrategy(ticket.moveType);
-    const allowedTransitions = strategy.getAllowedTransitions(ticket.status);
-    
-    if (!allowedTransitions.includes(newStatus)) {
-      throw new AppError(
-        `Cannot transition from ${ticket.status} to ${newStatus} for this service type`,
-        400
-      );
-    }
-
-    // Call strategy handler for potential custom logic updates before saving
-    await strategy.handleStatusUpdate(ticket, newStatus, userId);
-    return ticket;
+    return await TicketStateMachine.transition(ticket, newStatus, { userId });
   }
 
   /**
@@ -366,17 +281,7 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    if (ticket.status !== 'QUOTED') {
-      throw new AppError(`Không thể chấp nhận báo giá từ trạng thái ${ticket.status}. Trạng thái phải là QUOTED`, 400);
-    }
-
-    if (!ticket.pricing?.pricingDataId) {
-      throw new AppError('Ticket chưa có báo giá', 400);
-    }
-
-    ticket.pricing.acceptedAt = new Date();
-    ticket.status = 'ACCEPTED';
-    await ticket.save();
+    await TicketStateMachine.transition(ticket, 'ACCEPTED');
 
     // Sinh hợp đồng tự động
     const ContractTemplate = require('../models/ContractTemplate');
@@ -434,12 +339,7 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    if (ticket.status !== 'ACCEPTED') {
-      throw new AppError(`Không thể convert từ trạng thái ${ticket.status}. Trạng thái phải là ACCEPTED`, 400);
-    }
-
-    ticket.status = 'CONVERTED';
-    await ticket.save();
+    await TicketStateMachine.transition(ticket, 'CONVERTED');
 
     return ticket;
   }

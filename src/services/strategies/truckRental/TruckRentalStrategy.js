@@ -1,5 +1,10 @@
 const BaseStrategy = require('../BaseStrategy');
 const AppError = require('../../../utils/appErrors');
+const SurveyData = require('../../../models/SurveyData');
+const AutoAssignmentService = require('../../AutoAssignmentService');
+const NotificationService = require('../../notificationService');
+const User = require('../../../models/User');
+const TicketStateMachine = require('../../TicketStateMachine');
 
 class TruckRentalStrategy extends BaseStrategy {
   validateCreate(data) {
@@ -26,6 +31,124 @@ class TruckRentalStrategy extends BaseStrategy {
       CANCELLED:         []
     };
     return transitions[currentStatus] || [];
+  }
+
+  async handlePostCreation(ticket, data) {
+    if (data.items && data.items.length > 0) {
+      const SurveyService = require('../../surveyService');
+      const PricingCalculationService = require('../../pricingCalculationService');
+      const PriceList = require('../../../models/PriceList');
+
+      // 1. BE calculates resources based on the AI items array
+      const estimate = await SurveyService.estimateResources(
+        data.items, 
+        data.distanceKm || 0, 
+        0, 
+        false 
+      );
+
+      // 2. Try to get a Dry-Run price based on BE resources
+      let estimatedPrice = 0;
+      try {
+        const activePriceList = await PriceList.findOne({ isActive: true });
+        if (activePriceList) {
+          const mockSurveyData = {
+            // For TRUCK_RENTAL, user might pick a truckType themselves.
+            // If they do, use it; otherwise use BE's suggestion.
+            suggestedVehicle: data.rentalDetails?.truckType || estimate.suggestedVehicle,
+            suggestedStaffCount: estimate.suggestedStaffCount,
+            distanceKm: estimate.distanceKm || 0,
+            totalActualVolume: estimate.totalVolume,
+            totalActualWeight: estimate.totalWeight,
+            carryMeter: 0,
+            floors: 0,
+            hasElevator: false,
+            needsAssembling: false,
+            needsPacking: false,
+            insuranceRequired: false,
+            declaredValue: 0,
+            items: data.items,
+            // the rental hours usually required in TRUCK_RENTAL
+            estimatedHours: data.rentalDetails?.rentalDurationHours || estimate.estimatedHours || 0
+          };
+
+          // Override fallback staff for truck rental?
+          // Sometimes truck rental just wants to rent the truck
+          // but if they added items, we calculate accordingly.
+          
+          const pricingResult = await PricingCalculationService.calculatePricing(mockSurveyData, activePriceList);
+          estimatedPrice = pricingResult.totalPrice;
+        }
+      } catch (error) {
+        console.warn(`[TruckRentalStrategy] Could not calculate estimated price for ticket ${ticket._id}:`, error.message);
+      }
+
+      // 3. Save the initial SurveyData
+      const surveyData = new SurveyData({
+        requestTicketId: ticket._id,
+        surveyType: 'ONLINE',
+        status: 'COMPLETED',
+        items: data.items,
+        totalActualVolume: estimate.totalVolume,
+        totalActualWeight: estimate.totalWeight,
+        // Preference user's explicitly requested truck size if given for Rental
+        suggestedVehicle: data.rentalDetails?.truckType || estimate.suggestedVehicle,
+        suggestedStaffCount: estimate.suggestedStaffCount,
+        distanceKm: estimate.distanceKm || 0,
+        estimatedPrice: estimatedPrice
+      });
+      
+      await surveyData.save();
+    }
+  }
+
+  async handleApproval(ticket, approverId, additionalData, io) {
+    await TicketStateMachine.transition(ticket, 'WAITING_REVIEW');
+
+    const assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
+
+    if (assignedDispatcherId) {
+      // Auto-assignment successful — district dispatcher will review AI data and quote
+      ticket.dispatcherId = assignedDispatcherId;
+      await ticket.save();
+
+      await NotificationService.createNotification(
+        {
+          userId: ticket.customerId,
+          title: 'Đơn hàng đã được tiếp nhận',
+          message: 'Yêu cầu của bạn đã được xác nhận và đang được xử lý bởi nhân viên điều phối.',
+          type: 'System',
+          ticketId: ticket._id
+        },
+        io
+      );
+    } else {
+      // Auto-assignment failed — escalate to Head Dispatcher
+      await TicketStateMachine.transition(ticket, 'ASSIGNMENT_FAILED', {
+        comment: 'Auto assignment failed for requested driver/porters.'
+      });
+
+      // Notify Head Dispatcher (admins / isGeneral dispatchers)
+      const headDispatchers = await User.find({
+        role: 'dispatcher',
+        'dispatcherProfile.isGeneral': true
+      }).select('_id');
+
+      for (const hd of headDispatchers) {
+        await NotificationService.createNotification(
+          {
+            userId: hd._id,
+            title: `Phân công tự động thất bại — Đơn #${ticket.code}`,
+            message: 'Tất cả nhân viên điều phối đang quá tải. Vui lòng phân công thủ công.',
+            type: 'System',
+            ticketId: ticket._id
+          },
+          io
+        );
+      }
+    }
+
+    return ticket;
   }
 }
 
