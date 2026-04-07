@@ -40,8 +40,7 @@ const requestTicketSchema = new mongoose.Schema({
   },
 
   scheduledTime: {
-    type: Date,
-    required: true
+    type: Date
   },
 
   /* ===== QUOTE SNAPSHOT ===== */

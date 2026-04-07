@@ -106,11 +106,12 @@ app.use(helmet({
 app.use(express.json());
 app.use(cookieParser());
 
+const isProduction = process.env.NODE_ENV === 'production';
 const csrfProtection = csurf({
   cookie: {
     httpOnly: true,
-    sameSite: 'none',
-    secure: process.env.NODE_ENV === 'production'
+    sameSite: isProduction ? 'none' : 'lax', // Lax for local dev (HTTP), None for cross-site (HTTPS)
+    secure: isProduction
   }
 });
 app.get('/api/csrf-token', csrfProtection, (req, res) => {

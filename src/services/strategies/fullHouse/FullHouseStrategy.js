@@ -28,7 +28,7 @@ class FullHouseStrategy extends BaseStrategy {
   getAllowedTransitions(currentStatus) {
     const transitions = {
       CREATED: ['WAITING_SURVEY', 'CANCELLED'],
-      WAITING_SURVEY: ['SURVEYED', 'CANCELLED'],
+      WAITING_SURVEY: ['SURVEYED', 'QUOTED', 'CANCELLED'],
       SURVEYED: ['QUOTED', 'CANCELLED'],
       QUOTED: ['ACCEPTED', 'CANCELLED'],
       ACCEPTED: ['CONVERTED', 'CANCELLED'],
@@ -44,7 +44,7 @@ class FullHouseStrategy extends BaseStrategy {
     if (!surveyorId) {
       throw new AppError('Đơn chuyển nhà yêu cầu chọn nhân viên khảo sát khi duyệt', 400);
     }
-    await TicketStateMachine.transition(ticket, 'WAITING_SURVEY', { 
+    await TicketStateMachine.transition(ticket, 'WAITING_SURVEY', {
       payload: { dispatcherId: surveyorId }
     });
 

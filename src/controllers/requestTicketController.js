@@ -231,22 +231,40 @@ exports.acceptSurveyTime = async (req, res, next) => {
   }
 };
 
-// exports.rejectSurveyTime = async (req, res, next) => {
-//   try {
+exports.rejectSurveyTime = async (req, res, next) => {
+  try {
+    const ticketId = req.params.id;
+    const { proposedTime, reason } = req.body;
+    const userId = req.user.userId || req.user._id || req.user.id;
 
-//     const ticketId = req.params.id;
+    const ticket = await RequestTicketService.rejectSurveyTime(ticketId, userId, reason, proposedTime);
+    res.json({
+      success: true,
+      message: "Đã yêu cầu đổi lịch khảo sát thành công",
+      data: ticket
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
-//     await RequestTicketService.rejectSurveyTime(ticketId);
+/**
+ * PUT /api/request-tickets/:id/dispatcher-accept-time
+ */
+exports.dispatcherAcceptSurveyTime = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { selectedTime } = req.body;
 
-//     res.json({
-//       success: true,
-//       message: "Đã từ chối khảo sát và hủy ticket"
-//     });
-
-//   } catch (error) {
-//     next(error);
-//   }
-// };
+    if (!selectedTime) {
+      throw new AppError('Vui lòng chọn thời gian!', 400);
+    }
+    const result = await RequestTicketService.dispatcherAcceptTime(id, selectedTime);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
 /**
  * PUT /api/request-tickets/:id/accept-quote
  * Customer chấp nhận báo giá

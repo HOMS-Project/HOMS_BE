@@ -83,9 +83,9 @@ class SurveyService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    if (!['WAITING_SURVEY', 'WAITING_REVIEW'].includes(ticket.status)) {
+    if (!['WAITING_SURVEY', 'WAITING_REVIEW', 'SURVEYED'].includes(ticket.status)) {
       throw new AppError(
-        `Không thể hoàn tất từ trạng thái ${ticket.status}. Phải là WAITING_SURVEY hoặc WAITING_REVIEW`,
+        `Không thể hoàn tất từ trạng thái ${ticket.status}. Phải là WAITING_SURVEY, WAITING_REVIEW hoặc SURVEYED`,
         400
       );
     }
@@ -155,7 +155,7 @@ class SurveyService {
       updateData.$set.totalActualWeight = totalActualWeight;
       updateData.$set.totalActualVolume = totalActualVolume;
     }
-    
+
     if (notes) {
       updateData.$set.notes = notes;
     }
@@ -229,10 +229,22 @@ class SurveyService {
     if (!ticket) {
       throw new AppError('Không tìm thấy ticket', 404);
     }
-    
-    // This case should ideally not be reached if the flow is correct.
-    // It indicates a state inconsistency.
-    console.warn(`[getSurveyByTicket] No SurveyData found for ticket ${requestTicketId} with status ${ticket.status}. This might indicate an issue.`);
+
+    // Fallback: If ticket is in WAITING_SURVEY status but somehow missing SurveyData record,
+    // we create a "baseline" record here (Self-healing logic).
+    if (ticket.status === 'WAITING_SURVEY') {
+      console.warn(`[getSurveyByTicket] Healing: Creating missing SurveyData for ticket ${requestTicketId}`);
+      const newSurvey = new SurveyData({
+        requestTicketId: ticket._id,
+        surveyType: 'ONLINE', // Default to online for safety
+        status: 'SCHEDULED',
+        surveyorId: ticket.dispatcherId || null,
+        scheduledDate: ticket.scheduledTime || new Date()
+      });
+      await newSurvey.save();
+      return newSurvey;
+    }
+
     throw new AppError('Không tìm thấy dữ liệu khảo sát cho ticket này.', 404);
   }
 

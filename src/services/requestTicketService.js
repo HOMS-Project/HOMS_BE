@@ -49,7 +49,7 @@ class RequestTicketService {
   async createTicket(data, customerId) {
     // Evaluate strategy based on moveType
     const strategy = StrategyFactory.getStrategy(data.moveType);
-    
+
     // Validate request using specific strategy rules
     strategy.validateCreate(data);
 
@@ -163,20 +163,118 @@ class RequestTicketService {
 
     return ticket;
   }
-  //  async rejectSurveyTime(ticketId) {
+  async rejectSurveyTime(ticketId, userId, reason, proposedTime) {
+    const ticket = await RequestTicket.findById(ticketId);
+    if (!ticket) {
+      throw new AppError('Ticket không tồn tại', 404);
+    }
 
-  //   const ticket = await RequestTicket.findById(ticketId);
+    if (ticket.status !== 'WAITING_SURVEY') {
+      throw new AppError('Chỉ có thể từ chối và đổi giờ khi đơn hàng đang chờ khảo sát', 400);
+    }
 
-  //   if (!ticket) {
-  //     throw new AppError('Ticket không tồn tại', 404);
-  //   }
+    if (reason) ticket.rescheduleReason = reason;
+    if (proposedTime) {
+      ticket.proposedSurveyTimes.push(new Date(proposedTime));
+    }
 
-  //   ticket.status = "CANCEL";
+    // Xóa giờ cũ do khách không đồng ý
+    ticket.scheduledTime = null;
 
-  //   await ticket.save();
+    await ticket.save();
 
-  //   return ticket;
-  // }
+    // 1. Thông báo cho người trực tiếp phụ trách (nếu có)
+    const io = getIo();
+    const dispatcherIdsToNotify = new Set();
+
+    if (ticket.dispatcherId) {
+      dispatcherIdsToNotify.add(ticket.dispatcherId.toString());
+    }
+
+    // 2. Tìm và Thông báo cho tất cả Điều phối tổng (Head Dispatchers)
+    try {
+      const User = require('../models/User'); // Import model User
+      const headDispatchers = await User.find({
+        role: 'dispatcher',
+        'dispatcherProfile.isGeneral': true
+      }).select('_id');
+
+      headDispatchers.forEach(hd => dispatcherIdsToNotify.add(hd._id.toString()));
+    } catch (err) {
+      console.error("Lỗi khi tìm Điều phối tổng để thông báo:", err);
+    }
+
+    // Gửi thông báo hàng loạt
+    for (const dId of dispatcherIdsToNotify) {
+      await NotificationService.createNotification(
+        {
+          userId: dId,
+          title: "Khách hàng yêu cầu đổi giờ khảo sát",
+          message: `Đơn ${ticket.code} đã được khách hàng yêu cầu đổi lịch: ${reason}`,
+          type: "System",
+          ticketId: ticket._id
+        },
+        io
+      );
+    }
+    return ticket;
+  }
+
+  /**
+   * Điều phối viên chấp nhận một trong các giờ mà khách đề xuất
+   */
+  async dispatcherAcceptTime(ticketId, selectedTime) {
+    const ticket = await RequestTicket.findById(ticketId);
+    if (!ticket) {
+      throw new AppError('Ticket không tồn tại', 404);
+    }
+
+    if (ticket.status !== 'WAITING_SURVEY') {
+      throw new AppError('Chỉ có thể chốt lịch khi đơn hàng đang ở trạng thái chờ khảo sát', 400);
+    }
+
+    // 1. Chốt giờ chính thức trong Ticket
+    const officialTime = new Date(selectedTime);
+    ticket.scheduledTime = officialTime;
+
+    // 2. Cập nhật SurveyData tương ứng
+    try {
+      await SurveyData.findOneAndUpdate(
+        { requestTicketId: ticket._id },
+        { scheduledDate: officialTime },
+        { new: true }
+      );
+    } catch (err) {
+      console.warn("Không tìm thấy SurveyData để cập nhật giờ:", err.message);
+    }
+
+    // 3. Cập nhật lại chuỗi thời gian trong notes để UI (Dispatcher) hiển thị đúng
+    if (ticket.notes && ticket.notes.includes('Survey date:')) {
+      const timeStr = officialTime.toISOString();
+      ticket.notes = ticket.notes.replace(/Survey date:\s*[^\s|]+/i, `Survey date: ${timeStr}`);
+    }
+
+    // 4. Xóa danh sách đề xuất cũ
+    ticket.proposedSurveyTimes = [];
+    ticket.rescheduleReason = null;
+
+    await ticket.save();
+
+    // Thông báo cho Khách hàng
+    const io = getIo();
+    await NotificationService.createNotification(
+      {
+        userId: ticket.customerId,
+        title: "Lịch khảo sát đã được thống nhất",
+        message: `Điều phối viên đã chấp nhận giờ khảo sát bạn đề xuất: ${new Date(selectedTime).toLocaleString('vi-VN')}`,
+        type: "System",
+        ticketId: ticket._id
+      },
+      io
+    );
+
+    return ticket;
+  }
   /**
    * Cập nhật trạng thái ticket
    */

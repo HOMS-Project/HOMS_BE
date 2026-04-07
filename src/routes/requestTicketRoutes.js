@@ -17,9 +17,10 @@ router.post('/', authenticate, authorize('CUSTOMER'), requestTicketController.cr
 router.post('/:id/approve', authenticate, authorize('ADMIN', 'DISPATCHER'), requestTicketController.approveTicket);
 
 router.put('/:id/accept-survey-time', authenticate, authorize('CUSTOMER'), requestTicketController.acceptSurveyTime);
-// router.put('/:id/reject-survey-time',authenticate,authorize('CUSTOMER'),requestTicketController.rejectSurveyTime);
+router.put('/:id/reject-survey-time', authenticate, authorize('CUSTOMER'), requestTicketController.rejectSurveyTime);
 router.put('/:id/cancel', authenticate, requestTicketController.cancelRequestTicket);
 router.put('/:id/propose-time', authenticate, authorize('ADMIN', 'DISPATCHER'), requestTicketController.proposeSurveyTime);
+router.put('/:id/dispatcher-accept-time', authenticate, authorize('ADMIN', 'DISPATCHER'), requestTicketController.dispatcherAcceptSurveyTime);
 router.put('/:id/accept-quote', authenticate, authorize('CUSTOMER'), requestTicketController.acceptQuote);
 
 module.exports = router;
