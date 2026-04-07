@@ -3,6 +3,7 @@
  */
 
 const RequestTicketService = require('../services/requestTicketService');
+const InvoiceService = require('../services/invoiceService');
 const payos = require('../config/payos');
 const AppError = require('../utils/appErrors');
 
@@ -297,7 +298,7 @@ exports.createMovingDepositPayment = async (req, res, next) => {
 
     const { id } = req.params;
 
-    const result = await RequestTicketService.createMovingDepositPayment(id);
+    const result = await InvoiceService.createMovingDepositPayment(id);
 
     res.json({
       success: true,
@@ -312,7 +313,7 @@ exports.createMovingRemainingPayment = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const result = await RequestTicketService.createMovingRemainingPayment(id);
+    const result = await InvoiceService.createMovingRemainingPayment(id);
 
     res.json({
       success: true,
@@ -325,7 +326,7 @@ exports.createMovingRemainingPayment = async (req, res, next) => {
 exports.verifyPaymentStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
-    await RequestTicketService.verifyPaymentStatus(id);
+    await InvoiceService.verifyInvoicePayment(id);
 
     res.json({
       success: true,

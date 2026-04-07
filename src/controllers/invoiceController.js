@@ -41,7 +41,7 @@ exports.getInvoiceByTicket = async (req, res, next) => {
     const { ticketId } = req.params;
     const invoice = await Invoice.findOne({ requestTicketId: ticketId });
     if (!invoice) {
-      return res.status(404).json({ success: false, message: 'Invoice not found' });
+      return res.status(200).json({ success: true, data: null });
     }
     res.status(200).json({ success: true, data: invoice });
   } catch (error) {

@@ -59,16 +59,16 @@ class SurveyService {
     });
 
     const io = getIo();
-await NotificationService.createNotification(
-    {
-      userId: ticket.customerId,
-      title: "Lịch khảo sát đã được xác nhận",
-      message: `Khảo sát được lên lịch vào ${schedDate.toLocaleString()}`,
-      type: "System",
-       ticketId: ticket._id 
-    },
-    io
-  );
+    await NotificationService.createNotification(
+      {
+        userId: ticket.customerId,
+        title: "Lịch khảo sát đã được xác nhận",
+        message: `Khảo sát được lên lịch vào ${schedDate.toLocaleString()}`,
+        type: "System",
+        ticketId: ticket._id
+      },
+      io
+    );
     return survey;
   }
 

@@ -24,7 +24,11 @@ exports.getUserById = async (req, res, next) => {
 exports.createUser = async (req, res, next) => {
     try {
         // Admin creates roles like dispatcher, driver, staff
-        const newUser = await adminUserService.createUser(req.body);
+        // Normalize incoming payload: allow FE to send phoneNumber
+        const payload = { ...req.body };
+        if (payload.phoneNumber && !payload.phone) payload.phone = payload.phoneNumber;
+
+        const newUser = await adminUserService.createUser(payload);
         res.status(201).json({
             success: true,
             message: 'User created successfully',
@@ -34,13 +38,25 @@ exports.createUser = async (req, res, next) => {
         if (error.message === 'Email or phone already exists') {
             return res.status(400).json({ success: false, message: error.message });
         }
+        if (error.message && error.message.startsWith('Invalid role')) {
+            return res.status(400).json({ success: false, message: error.message });
+        }
         next(error);
     }
 };
 
 exports.updateUser = async (req, res, next) => {
     try {
-        const updatedUser = await adminUserService.updateUser(req.params.id, req.body);
+        // Normalize payload: allow FE to send phoneNumber and workingAreas
+        const payload = { ...req.body };
+        if (payload.phoneNumber && !payload.phone) payload.phone = payload.phoneNumber;
+        if (payload.workingAreas && !payload.dispatcherProfile) {
+            payload.dispatcherProfile = { workingAreas: payload.workingAreas };
+            delete payload.workingAreas;
+        }
+        if (payload.role) payload.role = String(payload.role).toLowerCase();
+
+        const updatedUser = await adminUserService.updateUser(req.params.id, payload);
         res.status(200).json({
             success: true,
             message: 'User updated successfully',
