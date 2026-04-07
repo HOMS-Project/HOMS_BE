@@ -11,6 +11,7 @@ const User = require('../models/User');
 const PriceList = require('../models/PriceList');
 const Route = require('../models/Route');
 const RequestTicket = require('../models/RequestTicket');
+const SurveyData = require('../models/SurveyData');
 const Invoice = require('../models/Invoice');
 const Vehicle = require('../models/Vehicle');
 const Incident = require('../models/Incident');
@@ -48,6 +49,7 @@ async function seedDatabase() {
     await PriceList.deleteMany({});
     await Route.deleteMany({});
     await RequestTicket.deleteMany({});
+    await SurveyData.deleteMany({});
     await Invoice.deleteMany({});
     await Vehicle.deleteMany({});
     console.log('✅ Collections cleared\n');
@@ -152,7 +154,12 @@ async function seedDatabase() {
     const tickets = await RequestTicket.create(updatedTicketData);
     console.log(`✅ Created ${tickets.length} request ticket(s)\n`);
 
-    // 6. Create Invoices
+    
+      const surveyDocs = tickets.map((t, idx) => { const mockTicket = updatedTicketData[idx]; return { requestTicketId: t._id, surveyType: mockTicket.surveyType || 'ONLINE', status: mockTicket.status === 'CREATED' ? 'SCHEDULED' : 'COMPLETED', surveyorId: mockTicket.survey?.dispatcherId || dispatcher1._id, items: t.items || [], suggestedVehicle: mockTicket.survey?.recommendedVehicles?.[0] === '500kg' ? '500KG' : '1TON', suggestedStaffCount: mockTicket.survey?.staffCount || 2, estimatedHours: 2, distanceKm: 5, floors: 0, totalActualWeight: mockTicket.survey?.estimatedWeight || 0, totalActualVolume: mockTicket.survey?.estimatedVolume || 0, notes: mockTicket.survey?.notes || '', }; });
+      await SurveyData.create(surveyDocs);
+      console.log(Created  survey data(s)\n);
+
+      // 6. Create Invoices
     console.log('📄 Creating invoices...');
     const updatedInvoiceData = invoiceData.map((inv, index) => ({
       ...inv,

@@ -3,6 +3,7 @@
  */
 
 const RequestTicket = require('../models/RequestTicket');
+const SurveyData = require('../models/SurveyData');
 const Invoice = require("../models/Invoice")
 const AppError = require('../utils/appErrors');
 const PaymentService = require('../services/paymentService')
@@ -10,40 +11,47 @@ const payos = require("../config/payos");
 const NotificationService = require("./notificationService");
 const { getIo } = require("../utils/socket");
 const GeocodeService = require('./geocodeService');
-const invoiceService = require("./invoiceService");
+const StrategyFactory = require('./strategies/StrategyFactory');
+const AutoAssignmentService = require('./AutoAssignmentService');
+const TicketStateMachine = require('./TicketStateMachine');
 
-// State transitions
-const STATE_TRANSITIONS = {
-  CREATED: ['WAITING_SURVEY', 'CANCELLED'],
-  WAITING_SURVEY: ['SURVEYED', 'CANCELLED'],
-  SURVEYED: ['QUOTED', 'CANCELLED'],
-  QUOTED: ['ACCEPTED', 'CANCELLED'],
-  ACCEPTED: ['CONVERTED', 'CANCELLED'],
-  CONVERTED: [],
-  CANCELLED: []
-};
+// Using strategies for transition logic now. 
+// Old STATE_TRANSITIONS moved/delegated to individual strategies.
 
 class RequestTicketService {
+  /**
+   * Head Dispatcher approves a CREATED ticket.
+   *
+   * FULL_HOUSE           → WAITING_SURVEY  (surveyor assigned, survey scheduled separately)
+   * SPECIFIC_ITEMS       → WAITING_REVIEW  (district dispatcher auto-assigned to review AI data + price)
+   * TRUCK_RENTAL         → WAITING_REVIEW  (same as SPECIFIC_ITEMS)
+   *
+   * @param {string} ticketId
+   * @param {string} approverId  - userId of the Head Dispatcher approving
+   * @param {string} [surveyorId] - required for FULL_HOUSE (picked from approve modal)
+   */
+  async approveTicket(ticketId, approverId, surveyorId) {
+    const ticket = await RequestTicket.findById(ticketId);
+    if (!ticket) throw new AppError('Request ticket không tồn tại', 404);
+    if (ticket.status !== 'CREATED') {
+      throw new AppError(`Chỉ có thể duyệt đơn ở trạng thái CREATED. Hiện tại: ${ticket.status}`, 400);
+    }
+
+    const io = getIo();
+    const strategy = StrategyFactory.getStrategy(ticket.moveType);
+
+    return await strategy.handleApproval(ticket, approverId, { surveyorId }, io);
+  }
+
   /**
    * Tạo request ticket mới
    */
   async createTicket(data, customerId) {
-    // Validate dữ liệu
-    if (!data.moveType || !['FULL_HOUSE', 'SPECIFIC_ITEMS'].includes(data.moveType)) {
-      throw new AppError('moveType không hợp lệ', 400);
-    }
-
-    if (!data.pickup?.address || !data.delivery?.address) {
-      throw new AppError('Pickup và delivery address không được rỗng', 400);
-    }
-
-    if (data.pickup.address === data.delivery.address) {
-      throw new AppError('Pickup và delivery phải khác nhau', 400);
-    }
-
-    if (data.moveType === 'SPECIFIC_ITEMS' && (!data.items || data.items.length === 0)) {
-      throw new AppError('SPECIFIC_ITEMS phải có ít nhất 1 item', 400);
-    }
+    // Evaluate strategy based on moveType
+    const strategy = StrategyFactory.getStrategy(data.moveType);
+    
+    // Validate request using specific strategy rules
+    strategy.validateCreate(data);
 
     // Generate code
     const count = await RequestTicket.countDocuments();
@@ -53,7 +61,7 @@ class RequestTicketService {
       code,
       customerId,
       moveType: data.moveType,
-      items: data.items || [],
+      rentalDetails: data.rentalDetails || undefined,
       pickup: data.pickup,
       delivery: data.delivery,
       scheduledTime: data.scheduledTime || null,
@@ -62,6 +70,9 @@ class RequestTicketService {
     });
 
     await ticket.save();
+
+    // Delegate to strategy for post-creation operations (like creating SurveyData)
+    await strategy.handlePostCreation(ticket, data);
 
     // Enrich with districts via Goong reverse geocoding (non-blocking)
     try {
@@ -91,16 +102,11 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    // Check có thể cancel không
-    const allowedStatuses = ['CREATED', 'WAITING_SURVEY', 'SURVEYED', 'QUOTED', 'ACCEPTED'];
-    if (!allowedStatuses.includes(ticket.status)) {
-      throw new AppError(`Cannot cancel from status ${ticket.status}`, 400);
-    }
+    await TicketStateMachine.transition(ticket, 'CANCELLED', {
+      userId,
+      payload: { reason }
+    });
 
-    ticket.status = 'CANCELLED';
-    ticket.notes = reason || '';
-
-    await ticket.save();
     return ticket;
   }
 
@@ -151,10 +157,9 @@ class RequestTicketService {
       throw new AppError('Ticket không tồn tại', 404);
     }
 
-    ticket.scheduledTime = selectedTime;
-    ticket.status = "WAITING_SURVEY";
-
-    await ticket.save();
+    await TicketStateMachine.transition(ticket, 'WAITING_SURVEY', {
+      payload: { scheduledTime: selectedTime }
+    });
 
     return ticket;
   }
@@ -181,17 +186,7 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    // Validate state transition
-    if (!STATE_TRANSITIONS[ticket.status]?.includes(newStatus)) {
-      throw new AppError(
-        `Cannot transition from ${ticket.status} to ${newStatus}`,
-        400
-      );
-    }
-
-    ticket.status = newStatus;
-    await ticket.save();
-    return ticket;
+    return await TicketStateMachine.transition(ticket, newStatus, { userId });
   }
 
   /**
@@ -286,17 +281,7 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    if (ticket.status !== 'QUOTED') {
-      throw new AppError(`Không thể chấp nhận báo giá từ trạng thái ${ticket.status}. Trạng thái phải là QUOTED`, 400);
-    }
-
-    if (!ticket.pricing?.pricingDataId) {
-      throw new AppError('Ticket chưa có báo giá', 400);
-    }
-
-    ticket.pricing.acceptedAt = new Date();
-    ticket.status = 'ACCEPTED';
-    await ticket.save();
+    await TicketStateMachine.transition(ticket, 'ACCEPTED');
 
     // Sinh hợp đồng tự động
     const ContractTemplate = require('../models/ContractTemplate');
@@ -354,12 +339,7 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    if (ticket.status !== 'ACCEPTED') {
-      throw new AppError(`Không thể convert từ trạng thái ${ticket.status}. Trạng thái phải là ACCEPTED`, 400);
-    }
-
-    ticket.status = 'CONVERTED';
-    await ticket.save();
+    await TicketStateMachine.transition(ticket, 'CONVERTED');
 
     return ticket;
   }

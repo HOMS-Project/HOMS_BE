@@ -9,6 +9,8 @@ const PricingCalculationService = require('./pricingCalculationService');
 const NotificationService = require("./notificationService");
 const { getIo } = require("../utils/socket");
 
+const TicketStateMachine = require('./TicketStateMachine');
+
 class SurveyService {
   /**
    * Lên lịch khảo sát
@@ -36,22 +38,26 @@ class SurveyService {
       throw new AppError('Ngày khảo sát phải trong tương lai', 400);
     }
 
-    // Tạo SurveyData
-    const survey = new SurveyData({
-      requestTicketId,
-      surveyType,
-      scheduledDate: schedDate,
-      surveyorId,
-      status: 'SCHEDULED',
-      notes
-    });
-
-    await survey.save();
+    // Cập nhật SurveyData đã được khởi tạo từ lúc tạo ticket
+    const survey = await SurveyData.findOneAndUpdate(
+      { requestTicketId },
+      {
+        $set: {
+          surveyType,
+          scheduledDate: schedDate,
+          surveyorId,
+          status: 'SCHEDULED',
+          notes
+        }
+      },
+      { new: true, upsert: true }
+    );
 
     // Cập nhật trạng thái ticket: CREATED -> WAITING_SURVEY
-    ticket.status = 'WAITING_SURVEY';
-    ticket.dispatcherId = surveyorId;
-    await ticket.save();
+    await TicketStateMachine.transition(ticket, 'WAITING_SURVEY', {
+      payload: { dispatcherId: surveyorId }
+    });
+
     const io = getIo();
     await NotificationService.createNotification(
       {
@@ -77,31 +83,14 @@ class SurveyService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    if (ticket.status !== 'WAITING_SURVEY') {
+    if (!['WAITING_SURVEY', 'WAITING_REVIEW'].includes(ticket.status)) {
       throw new AppError(
-        `Không thể hoàn tất khảo sát từ trạng thái ${ticket.status}`,
+        `Không thể hoàn tất từ trạng thái ${ticket.status}. Phải là WAITING_SURVEY hoặc WAITING_REVIEW`,
         400
       );
     }
 
-    // 2️⃣ Tìm survey
-    let survey = await SurveyData.findOne({
-      requestTicketId,
-      status: 'SCHEDULED'
-    });
-
-    if (!survey) {
-      // Nếu chưa có lịch khảo sát, tạo mới một đợt khảo sát online/mặc định gắn với ticket
-      survey = new SurveyData({
-        requestTicketId,
-        surveyType: 'ONLINE',
-        scheduledDate: new Date(),
-        surveyorId: userId || ticket.dispatcherId, // Fallback ngưởi dùng hiện tại
-        status: 'SCHEDULED'
-      });
-    }
-
-    // 3️⃣ Destructure đúng field mới
+    // 2️⃣ Destructure đúng field mới
     const {
       suggestedVehicle,
       suggestedStaffCount,
@@ -123,43 +112,59 @@ class SurveyService {
       throw new AppError('Thiếu dữ liệu khảo sát bắt buộc', 400);
     }
 
-    // 4️⃣ Update survey
-    survey.suggestedVehicle = suggestedVehicle;
-    survey.suggestedStaffCount = suggestedStaffCount;
-    survey.distanceKm = distanceKm;
-    survey.carryMeter = carryMeter;
-    survey.floors = floors;
-    survey.hasElevator = hasElevator;
-    survey.needsAssembling = needsAssembling;
-    survey.needsPacking = needsPacking;
-    survey.insuranceRequired = insuranceRequired;
-    survey.declaredValue = declaredValue;
-    survey.estimatedHours = estimatedHours;
+    // 3️⃣ Tính toán totals
+    let totalActualWeight = 0;
+    let totalActualVolume = 0;
+    let totalActualItems = 0;
 
     if (items && Array.isArray(items)) {
-      survey.items = items;
-      survey.totalActualItems = items.length;
-
-      let totalWeight = 0;
-      let totalVolume = 0;
-
+      totalActualItems = items.length;
       items.forEach(item => {
-        totalWeight += item.actualWeight || 0;
-        totalVolume += item.actualVolume || 0;
+        totalActualWeight += item.actualWeight || 0;
+        totalActualVolume += item.actualVolume || 0;
       });
-
-      survey.totalActualWeight = totalWeight;
-      survey.totalActualVolume = totalVolume;
     }
 
-    survey.completedDate = new Date();
-    survey.status = 'COMPLETED';
-    survey.notes = notes || survey.notes;
+    // 4️⃣ Update survey với Upsert (đảm bảo 1-to-1 relationship)
+    const updateData = {
+      $set: {
+        status: 'COMPLETED',
+        completedDate: new Date(),
+        suggestedVehicle,
+        suggestedStaffCount,
+        distanceKm,
+        carryMeter,
+        floors,
+        hasElevator,
+        needsAssembling,
+        needsPacking,
+        insuranceRequired,
+        declaredValue,
+        estimatedHours,
+      },
+      $setOnInsert: {
+        surveyType: 'ONLINE',
+        scheduledDate: new Date(),
+        surveyorId: userId || ticket.dispatcherId,
+      }
+    };
 
-    await survey.save();
+    if (items && Array.isArray(items)) {
+      updateData.$set.items = items;
+      updateData.$set.totalActualItems = totalActualItems;
+      updateData.$set.totalActualWeight = totalActualWeight;
+      updateData.$set.totalActualVolume = totalActualVolume;
+    }
+    
+    if (notes) {
+      updateData.$set.notes = notes;
+    }
 
-    // ⚠️ RELOAD survey từ DB để đảm bảo tất cả fields được persist
-    const freshSurvey = await SurveyData.findById(survey._id);
+    const freshSurvey = await SurveyData.findOneAndUpdate(
+      { requestTicketId: ticket._id },
+      updateData,
+      { new: true, upsert: true }
+    );
 
     // ========== 5️⃣ TÍNH GIÁ ==========
     const priceList = await PricingCalculationService.getActivePriceList();
@@ -179,19 +184,10 @@ class SurveyService {
       );
 
     // ========== 6️⃣ Update ticket thành QUOTED ==========
-    ticket.status = 'QUOTED';
-
-    ticket.pricing = {
-      pricingDataId: pricingData._id,
-      subtotal: pricingData.subtotal,
-      tax: pricingData.tax,
-      totalPrice: pricingData.totalPrice,
-      version: pricingData.version,
-      quotedAt: new Date(),
-      isFinalized: false
-    };
-
-    await ticket.save();
+    await TicketStateMachine.transition(ticket, 'QUOTED', {
+      userId,
+      payload: { pricing: pricingData }
+    });
 
     return {
       survey: freshSurvey,
@@ -215,17 +211,29 @@ class SurveyService {
   }
 
   /**
-   * Lấy khảo sát theo request ticket
+   * Lấy khảo sát theo request ticket.
+   * For WAITING_REVIEW tickets (SPECIFIC_ITEMS / TRUCK_RENTAL): if no SurveyData exists yet,
+   * return a synthetic object built from ticket.items so the dispatcher form can pre-populate.
    */
   async getSurveyByTicket(requestTicketId) {
     const survey = await SurveyData.findOne({ requestTicketId })
       .populate('surveyorId', 'fullName email phone');
 
-    if (!survey) {
-      return null;
+    if (survey) {
+      return survey;
     }
 
-    return survey;
+    // If no survey is found, it's an error because one should have been created with the ticket
+    // for SPECIFIC_ITEMS/TRUCK_RENTAL, or scheduled for FULL_HOUSE.
+    const ticket = await RequestTicket.findById(requestTicketId);
+    if (!ticket) {
+      throw new AppError('Không tìm thấy ticket', 404);
+    }
+    
+    // This case should ideally not be reached if the flow is correct.
+    // It indicates a state inconsistency.
+    console.warn(`[getSurveyByTicket] No SurveyData found for ticket ${requestTicketId} with status ${ticket.status}. This might indicate an issue.`);
+    throw new AppError('Không tìm thấy dữ liệu khảo sát cho ticket này.', 404);
   }
 
   /**

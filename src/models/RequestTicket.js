@@ -16,8 +16,15 @@ const requestTicketSchema = new mongoose.Schema({
 
   moveType: {
     type: String,
-    enum: ['FULL_HOUSE', 'SPECIFIC_ITEMS'],
+    enum: ['FULL_HOUSE', 'SPECIFIC_ITEMS', 'TRUCK_RENTAL'],
     required: true
+  },
+
+  rentalDetails: {
+    truckType: String,
+    rentalDurationHours: Number,
+    withDriver: { type: Boolean, default: false },
+    withHelper: { type: Boolean, default: false }
   },
 
   pickup: {
@@ -31,12 +38,6 @@ const requestTicketSchema = new mongoose.Schema({
     district: String,
     coordinates: { lat: Number, lng: Number }
   },
-
-  items: [{
-    name: String,
-    quantity: Number,
-    notes: String
-  }],
 
   scheduledTime: {
     type: Date,
@@ -65,7 +66,9 @@ const requestTicketSchema = new mongoose.Schema({
     type: String,
     enum: [
       'CREATED',
-      'WAITING_SURVEY',
+      'WAITING_REVIEW',     // SPECIFIC_ITEMS / TRUCK_RENTAL: district dispatcher reviewing AI data + pricing
+      'WAITING_SURVEY',     // FULL_HOUSE: survey scheduled, waiting for surveyor
+      'ASSIGNMENT_FAILED',  // Auto-assign of review dispatcher failed → Head Dispatcher fallback
       'SURVEYED',
       'QUOTED',
       'ACCEPTED',
@@ -88,9 +91,9 @@ const requestTicketSchema = new mongoose.Schema({
   proposedSurveyTimes: [{
     type: Date
   }],
-rescheduleReason: {
-  type: String
-},
+  rescheduleReason: {
+    type: String
+  },
   notes: String
 
 }, { timestamps: true });
