@@ -150,6 +150,16 @@ exports.getOrderDetails = async (req, res, next) => {
       name: stripSecTag(item?.name),
     }));
 
+    const timelineEntries = Array.isArray(invoice.timeline)
+      ? invoice.timeline
+      : [];
+    const pickupProofEntry = [...timelineEntries]
+      .reverse()
+      .find((entry) => entry?.status === "PICKUP_PROOF");
+    const dropoffProofEntry = [...timelineEntries]
+      .reverse()
+      .find((entry) => entry?.status === "DROPOFF_PROOF");
+
     res.status(200).json({
       success: true,
       data: {
@@ -176,6 +186,18 @@ exports.getOrderDetails = async (req, res, next) => {
         },
         route: personalAssignment?.routeId || invoice.routeId,
         routeValidation: routeValidation,
+        completionEvidence: {
+          beforeImages: invoice.completionEvidence?.beforeImages || [],
+          afterImages: invoice.completionEvidence?.afterImages || [],
+          beforeNote:
+            invoice.completionEvidence?.beforeNote ||
+            pickupProofEntry?.notes ||
+            "",
+          afterNote:
+            invoice.completionEvidence?.afterNote ||
+            dropoffProofEntry?.notes ||
+            "",
+        },
         restrictions:
           (personalAssignment?.routeId || invoice.routeId)?.roadRestrictions
             ?.flatMap((res) =>
@@ -345,6 +367,9 @@ exports.submitPickupProof = async (req, res, next) => {
     const existing = invoice.completionEvidence?.beforeImages || [];
     invoice.completionEvidence = invoice.completionEvidence || {};
     invoice.completionEvidence.beforeImages = [...existing, ...imageUrls];
+    if (note.trim()) {
+      invoice.completionEvidence.beforeNote = note.trim();
+    }
 
     // Append timeline entry for traceability
     invoice.timeline = invoice.timeline || [];
@@ -395,6 +420,9 @@ exports.submitDropoffProof = async (req, res, next) => {
     const existing = invoice.completionEvidence?.afterImages || [];
     invoice.completionEvidence = invoice.completionEvidence || {};
     invoice.completionEvidence.afterImages = [...existing, ...imageUrls];
+    if (note.trim()) {
+      invoice.completionEvidence.afterNote = note.trim();
+    }
 
     // Append timeline entry for traceability
     invoice.timeline = invoice.timeline || [];
