@@ -235,7 +235,8 @@ class PricingCalculationService {
         pricingResult.minimumChargeApplied,
       calculatedBy: userId,
       version: newVersion,
-      isApproved: false
+      isApproved: false,
+      dynamicAdjustment: pricingResult.dynamicAdjustment
     });
 
     await pricingData.save();

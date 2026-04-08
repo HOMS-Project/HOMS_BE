@@ -55,6 +55,45 @@ const pricingDataSchema = new mongoose.Schema({
 
   isApproved: { type: Boolean, default: false },
 
+  dynamicAdjustment: {
+    label: String,
+    score: Number,
+    adjustmentPercent: Number,
+    appliedAmount: Number,
+    reason: String,
+    isBlocked: { type: Boolean, default: false },
+    blockReason: String,
+    suggestAlternatives: { type: Boolean, default: false },
+    
+    // Snapshot for auditing & ML
+    recommendationSnapshot: {
+      factors: {
+        weather: Number,
+        traffic: Number,
+        demand: Number,
+        businessBoost: Number
+      },
+      alternatives: [{
+        date: String,
+        time: String,
+        score: Number,
+        label: String
+      }],
+      timestamp: { type: Date, default: Date.now }
+    },
+
+    experimentGroup: { type: String, default: 'CONTROL' },
+    
+    actualOutcome: {
+      delayMinutes: Number,
+      completionTime: Number,
+      customerRating: Number,
+      actualWeather: String,
+      actualTraffic: String,
+      notes: String
+    }
+  },
+
   notes: String
 
 }, { timestamps: true });
