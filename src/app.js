@@ -64,6 +64,7 @@ io.on('connection', (socket) => {
 });
 
 const cookieParser = require('cookie-parser');
+const path = require('path');
 connectDB();
 app.use(cors({
   origin: process.env.CORS_ORIGIN || "http://localhost:3000",
@@ -105,6 +106,9 @@ app.use(helmet({
 }));
 app.use(express.json());
 app.use(cookieParser());
+
+// Serve uploaded files (avatars etc.) from /uploads
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 const isProduction = process.env.NODE_ENV === 'production';
 const csrfProtection = csurf({
