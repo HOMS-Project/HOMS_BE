@@ -17,16 +17,41 @@ exports.getUserInfo = async (userId) => {
 
 // Cập nhật thông tin người dùng
 exports.updateUserInfo = async (userId, updateData) => {
-  const user = await User.findByIdAndUpdate(userId, updateData, {
-    new: true,
-    runValidators: true,
-  }).select("-password -otpResetPassword -otpResetExpires");
-
+  // We intentionally find the user, assign allowed fields, then save.
+  // This handles validation hooks and works whether updateData comes from
+  // JSON body or multipart/form-data (multer).
+  const user = await User.findById(userId);
   if (!user) {
     throw new AppError("Không tìm thấy người dùng", 404);
   }
 
-  return user;
+  // Whitelist updatable fields
+  const allowed = ['fullName', 'phone'];
+  let changed = false;
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(updateData, key)) {
+      // assign only if value is not undefined
+      const val = updateData[key];
+      if (typeof val !== 'undefined' && val !== null) {
+        user[key] = val;
+        changed = true;
+      }
+    }
+  }
+
+  if (!changed) {
+    // Nothing to update, simply return current user (without sensitive fields)
+    return user.toObject({ transform: (doc, ret) => { delete ret.password; delete ret.otpResetPassword; delete ret.otpResetExpires; return ret; } });
+  }
+
+  await user.save();
+
+  // Return user without sensitive fields
+  const result = user.toObject();
+  delete result.password;
+  delete result.otpResetPassword;
+  delete result.otpResetExpires;
+  return result;
 };
 
 // Thay đổi mật khẩu
@@ -86,3 +111,6 @@ exports.getStaff = async () => {
     "-password -otpResetPassword -otpResetExpires",
   );
 };
+
+// Note: avatar upload/update functionality removed per request.
+// If you later want to re-enable avatar updates, re-implement an updateAvatar(userId, avatarUrl) function here.

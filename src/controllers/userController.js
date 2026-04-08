@@ -33,6 +33,10 @@ exports.updateUserInfo = async (req, res, next) => {
     }
 };
 
+// Upload / change avatar
+// Avatar upload/change handler removed. Avatar-related operations are disabled.
+// If you need to re-enable, re-add the route and implement the handler here.
+
 // Thay đổi mật khẩu
 exports.changePassword = async (req, res, next) => {
     try {

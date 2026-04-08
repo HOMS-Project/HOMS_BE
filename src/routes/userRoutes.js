@@ -3,6 +3,13 @@ const userController = require("../controllers/userController");
 const { verifyToken } = require("../middlewares/authMiddleware");
 
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+
+// Default parser for non-file multipart (FormData without files)
+const upload = multer();
+
+// Avatar upload functionality removed. If re-enabling, re-add multer storage and route.
 
 // Áp dụng middleware xác thực cho tất cả routes
 router.use(verifyToken);
@@ -20,7 +27,10 @@ router.get("/drivers", userController.getDrivers);
 router.get("/staff", userController.getStaff);
 
 // Cập nhật thông tin user
-router.put("/personal-info", userController.updateUserInfo);
+// Accept multipart/form-data (from FE using FormData) as well as JSON
+router.put("/personal-info", upload.none(), userController.updateUserInfo);
+
+// Avatar upload route removed
 
 // Đổi mật khẩu
 router.put("/change-password", userController.changePassword);
