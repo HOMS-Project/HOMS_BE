@@ -51,12 +51,32 @@ const dispatchAssignmentSchema = new mongoose.Schema({
       isValid: Boolean,
       violations: [String],        // Danh sách vi phạm (cấm xe, quá tải, etc.)
       warnings: [String],          // Cảnh báo (giờ cao điểm, thời tiết)
+      restrictedSegments: [{
+        roadName: String,
+        restrictionType: String,
+        severity: String,
+        description: String
+      }],
       notes: String
     },
 
+    // Lịch sử đổi lộ trình của tài xế
+    routeDeviations: [{
+      routeId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Route'
+      },
+      reason: String,
+      note: String,
+      reportedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+
     status: {
       type: String,
-      enum: ['PENDING', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
+      enum: ['PENDING', 'CONFIRMED', 'ACCEPTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
       default: 'PENDING'
     },
 

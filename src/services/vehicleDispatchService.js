@@ -145,8 +145,9 @@ class VehicleDispatchService {
 
         for (const vehicle of vehicles) {
           // Kiểm tra tuyến đường
+          const targetRouteId = dispatchData.routeId || invoice.routeId;
           const validation = await RouteValidationService.validateRoute(
-            invoice.routeId,
+            targetRouteId,
             {
               vehicleType: need.vehicleType,
               totalWeight: dispatchData.totalWeight,
@@ -188,7 +189,7 @@ class VehicleDispatchService {
               need.vehicleType,
               dispatchData.totalWeight
             ),
-            routeId: invoice.routeId,
+            routeId: targetRouteId,
             routeValidation: validation,
             status: 'PENDING',
             assignedAt: new Date()
@@ -209,6 +210,9 @@ class VehicleDispatchService {
 
       // Cập nhật invoice
       invoice.dispatchAssignmentId = assignment._id;
+      if (dispatchData.routeId) {
+        invoice.routeId = dispatchData.routeId;
+      }
       invoice.status = 'ASSIGNED';
       await invoice.save();
 

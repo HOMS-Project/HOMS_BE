@@ -3,6 +3,7 @@
  */
 
 const RequestTicket = require('../models/RequestTicket');
+const SurveyData = require('../models/SurveyData');
 const Invoice = require("../models/Invoice")
 const AppError = require('../utils/appErrors');
 const PaymentService = require('../services/paymentService')
@@ -10,39 +11,47 @@ const payos = require("../config/payos");
 const NotificationService = require("./notificationService");
 const { getIo } = require("../utils/socket");
 const GeocodeService = require('./geocodeService');
+const StrategyFactory = require('./strategies/StrategyFactory');
+const AutoAssignmentService = require('./AutoAssignmentService');
+const TicketStateMachine = require('./TicketStateMachine');
 
-// State transitions
-const STATE_TRANSITIONS = {
-  CREATED: ['WAITING_SURVEY', 'CANCELLED'],
-  WAITING_SURVEY: ['SURVEYED', 'CANCELLED'],
-  SURVEYED: ['QUOTED', 'CANCELLED'],
-  QUOTED: ['ACCEPTED', 'CANCELLED'],
-  ACCEPTED: ['CONVERTED', 'CANCELLED'],
-  CONVERTED: [],
-  CANCELLED: []
-};
+// Using strategies for transition logic now. 
+// Old STATE_TRANSITIONS moved/delegated to individual strategies.
 
 class RequestTicketService {
+  /**
+   * Head Dispatcher approves a CREATED ticket.
+   *
+   * FULL_HOUSE           → WAITING_SURVEY  (surveyor assigned, survey scheduled separately)
+   * SPECIFIC_ITEMS       → WAITING_REVIEW  (district dispatcher auto-assigned to review AI data + price)
+   * TRUCK_RENTAL         → WAITING_REVIEW  (same as SPECIFIC_ITEMS)
+   *
+   * @param {string} ticketId
+   * @param {string} approverId  - userId of the Head Dispatcher approving
+   * @param {string} [surveyorId] - required for FULL_HOUSE (picked from approve modal)
+   */
+  async approveTicket(ticketId, approverId, surveyorId) {
+    const ticket = await RequestTicket.findById(ticketId);
+    if (!ticket) throw new AppError('Request ticket không tồn tại', 404);
+    if (ticket.status !== 'CREATED') {
+      throw new AppError(`Chỉ có thể duyệt đơn ở trạng thái CREATED. Hiện tại: ${ticket.status}`, 400);
+    }
+
+    const io = getIo();
+    const strategy = StrategyFactory.getStrategy(ticket.moveType);
+
+    return await strategy.handleApproval(ticket, approverId, { surveyorId }, io);
+  }
+
   /**
    * Tạo request ticket mới
    */
   async createTicket(data, customerId) {
-    // Validate dữ liệu
-    if (!data.moveType || !['FULL_HOUSE', 'SPECIFIC_ITEMS'].includes(data.moveType)) {
-      throw new AppError('moveType không hợp lệ', 400);
-    }
+    // Evaluate strategy based on moveType
+    const strategy = StrategyFactory.getStrategy(data.moveType);
 
-    if (!data.pickup?.address || !data.delivery?.address) {
-      throw new AppError('Pickup và delivery address không được rỗng', 400);
-    }
-
-    if (data.pickup.address === data.delivery.address) {
-      throw new AppError('Pickup và delivery phải khác nhau', 400);
-    }
-
-    if (data.moveType === 'SPECIFIC_ITEMS' && (!data.items || data.items.length === 0)) {
-      throw new AppError('SPECIFIC_ITEMS phải có ít nhất 1 item', 400);
-    }
+    // Validate request using specific strategy rules
+    strategy.validateCreate(data);
 
     // Generate code
     const count = await RequestTicket.countDocuments();
@@ -52,7 +61,7 @@ class RequestTicketService {
       code,
       customerId,
       moveType: data.moveType,
-      items: data.items || [],
+      rentalDetails: data.rentalDetails || undefined,
       pickup: data.pickup,
       delivery: data.delivery,
       scheduledTime: data.scheduledTime || null,
@@ -61,6 +70,9 @@ class RequestTicketService {
     });
 
     await ticket.save();
+
+    // Delegate to strategy for post-creation operations (like creating SurveyData)
+    await strategy.handlePostCreation(ticket, data);
 
     // Enrich with districts via Goong reverse geocoding (non-blocking)
     try {
@@ -90,16 +102,11 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    // Check có thể cancel không
-    const allowedStatuses = ['CREATED', 'WAITING_SURVEY', 'SURVEYED', 'QUOTED', 'ACCEPTED'];
-    if (!allowedStatuses.includes(ticket.status)) {
-      throw new AppError(`Cannot cancel from status ${ticket.status}`, 400);
-    }
+    await TicketStateMachine.transition(ticket, 'CANCELLED', {
+      userId,
+      payload: { reason }
+    });
 
-    ticket.status = 'CANCELLED';
-    ticket.notes = reason || '';
-
-    await ticket.save();
     return ticket;
   }
 
@@ -150,27 +157,124 @@ class RequestTicketService {
       throw new AppError('Ticket không tồn tại', 404);
     }
 
-    ticket.scheduledTime = selectedTime;
-    ticket.status = "WAITING_SURVEY";
-
-    await ticket.save();
+    await TicketStateMachine.transition(ticket, 'WAITING_SURVEY', {
+      payload: { scheduledTime: selectedTime }
+    });
 
     return ticket;
   }
-  //  async rejectSurveyTime(ticketId) {
+  async rejectSurveyTime(ticketId, userId, reason, proposedTime) {
+    const ticket = await RequestTicket.findById(ticketId);
+    if (!ticket) {
+      throw new AppError('Ticket không tồn tại', 404);
+    }
 
-  //   const ticket = await RequestTicket.findById(ticketId);
+    if (ticket.status !== 'WAITING_SURVEY') {
+      throw new AppError('Chỉ có thể từ chối và đổi giờ khi đơn hàng đang chờ khảo sát', 400);
+    }
 
-  //   if (!ticket) {
-  //     throw new AppError('Ticket không tồn tại', 404);
-  //   }
+    if (reason) ticket.rescheduleReason = reason;
+    if (proposedTime) {
+      ticket.proposedSurveyTimes.push(new Date(proposedTime));
+    }
 
-  //   ticket.status = "CANCEL";
+    // Xóa giờ cũ do khách không đồng ý
+    ticket.scheduledTime = null;
 
-  //   await ticket.save();
+    await ticket.save();
 
-  //   return ticket;
-  // }
+    // 1. Thông báo cho người trực tiếp phụ trách (nếu có)
+    const io = getIo();
+    const dispatcherIdsToNotify = new Set();
+
+    if (ticket.dispatcherId) {
+      dispatcherIdsToNotify.add(ticket.dispatcherId.toString());
+    }
+
+    // 2. Tìm và Thông báo cho tất cả Điều phối tổng (Head Dispatchers)
+    try {
+      const User = require('../models/User'); // Import model User
+      const headDispatchers = await User.find({
+        role: 'dispatcher',
+        'dispatcherProfile.isGeneral': true
+      }).select('_id');
+
+      headDispatchers.forEach(hd => dispatcherIdsToNotify.add(hd._id.toString()));
+    } catch (err) {
+      console.error("Lỗi khi tìm Điều phối tổng để thông báo:", err);
+    }
+
+    // Gửi thông báo hàng loạt
+    for (const dId of dispatcherIdsToNotify) {
+      await NotificationService.createNotification(
+        {
+          userId: dId,
+          title: "Khách hàng yêu cầu đổi giờ khảo sát",
+          message: `Đơn ${ticket.code} đã được khách hàng yêu cầu đổi lịch: ${reason}`,
+          type: "System",
+          ticketId: ticket._id
+        },
+        io
+      );
+    }
+    return ticket;
+  }
+
+  /**
+   * Điều phối viên chấp nhận một trong các giờ mà khách đề xuất
+   */
+  async dispatcherAcceptTime(ticketId, selectedTime) {
+    const ticket = await RequestTicket.findById(ticketId);
+    if (!ticket) {
+      throw new AppError('Ticket không tồn tại', 404);
+    }
+
+    if (ticket.status !== 'WAITING_SURVEY') {
+      throw new AppError('Chỉ có thể chốt lịch khi đơn hàng đang ở trạng thái chờ khảo sát', 400);
+    }
+
+    // 1. Chốt giờ chính thức trong Ticket
+    const officialTime = new Date(selectedTime);
+    ticket.scheduledTime = officialTime;
+
+    // 2. Cập nhật SurveyData tương ứng
+    try {
+      await SurveyData.findOneAndUpdate(
+        { requestTicketId: ticket._id },
+        { scheduledDate: officialTime },
+        { new: true }
+      );
+    } catch (err) {
+      console.warn("Không tìm thấy SurveyData để cập nhật giờ:", err.message);
+    }
+
+    // 3. Cập nhật lại chuỗi thời gian trong notes để UI (Dispatcher) hiển thị đúng
+    if (ticket.notes && ticket.notes.includes('Survey date:')) {
+      const timeStr = officialTime.toISOString();
+      ticket.notes = ticket.notes.replace(/Survey date:\s*[^\s|]+/i, `Survey date: ${timeStr}`);
+    }
+
+    // 4. Xóa danh sách đề xuất cũ
+    ticket.proposedSurveyTimes = [];
+    ticket.rescheduleReason = null;
+
+    await ticket.save();
+
+    // Thông báo cho Khách hàng
+    const io = getIo();
+    await NotificationService.createNotification(
+      {
+        userId: ticket.customerId,
+        title: "Lịch khảo sát đã được thống nhất",
+        message: `Điều phối viên đã chấp nhận giờ khảo sát bạn đề xuất: ${new Date(selectedTime).toLocaleString('vi-VN')}`,
+        type: "System",
+        ticketId: ticket._id
+      },
+      io
+    );
+
+    return ticket;
+  }
   /**
    * Cập nhật trạng thái ticket
    */
@@ -180,17 +284,7 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    // Validate state transition
-    if (!STATE_TRANSITIONS[ticket.status]?.includes(newStatus)) {
-      throw new AppError(
-        `Cannot transition from ${ticket.status} to ${newStatus}`,
-        400
-      );
-    }
-
-    ticket.status = newStatus;
-    await ticket.save();
-    return ticket;
+    return await TicketStateMachine.transition(ticket, newStatus, { userId });
   }
 
   /**
@@ -285,17 +379,7 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    if (ticket.status !== 'QUOTED') {
-      throw new AppError(`Không thể chấp nhận báo giá từ trạng thái ${ticket.status}. Trạng thái phải là QUOTED`, 400);
-    }
-
-    if (!ticket.pricing?.pricingDataId) {
-      throw new AppError('Ticket chưa có báo giá', 400);
-    }
-
-    ticket.pricing.acceptedAt = new Date();
-    ticket.status = 'ACCEPTED';
-    await ticket.save();
+    await TicketStateMachine.transition(ticket, 'ACCEPTED');
 
     // Sinh hợp đồng tự động
     const ContractTemplate = require('../models/ContractTemplate');
@@ -353,12 +437,7 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    if (ticket.status !== 'ACCEPTED') {
-      throw new AppError(`Không thể convert từ trạng thái ${ticket.status}. Trạng thái phải là ACCEPTED`, 400);
-    }
-
-    ticket.status = 'CONVERTED';
-    await ticket.save();
+    await TicketStateMachine.transition(ticket, 'CONVERTED');
 
     return ticket;
   }
@@ -375,7 +454,6 @@ class RequestTicketService {
 
     const orderCode = Number(`${Date.now()}${Math.floor(Math.random() * 100)}`);
 
-
     ticket.paymentOrderCode = orderCode;
     ticket.paymentType = "SURVEY_DEPOSIT";
     await ticket.save();
@@ -389,134 +467,34 @@ class RequestTicketService {
 
     return { checkoutUrl };
   }
-  async createMovingDepositPayment(ticketId) {
-    console.log("ticketId received:", ticketId);
-    console.log("type:", typeof ticketId);
-    const invoice = await Invoice.findOne({
-      requestTicketId: ticketId
-    });
-
-    if (!invoice) {
-      throw new Error("Invoice not found for this ticket");
-    }
-
-    const depositAmount = Math.floor(invoice.priceSnapshot.totalPrice * 0.5);
-
-    const orderCode = Number(`${Date.now()}${Math.floor(Math.random() * 100)}`);
-
-    invoice.paymentOrderCode = orderCode;
-
-    await invoice.save();
-
-    const checkoutUrl = await PaymentService.createPayosPayment({
-      orderCode,
-      amount: depositAmount,
-      ticket: { code: invoice.code, _id: invoice.requestTicketId },
-      paymentType: "MOVING_DEPOSIT"
-    });
-
-    return { checkoutUrl };
-
-  }
 
   async handlePayosWebhook(payload) {
-
     const webhookData = PaymentService.verifyWebhook(payload);
-
     if (!webhookData) return;
 
     const { orderCode } = webhookData;
-
     const paymentInfo = await payos.paymentRequests.get(orderCode);
-
     if (paymentInfo.status !== "PAID") return;
 
-    /*
-    =====================
-    1. CHECK SURVEY PAYMENT
-    =====================
-    */
-
-    const ticket = await RequestTicket.findOne({
-      paymentOrderCode: orderCode
-    });
-
+    // 1. CHECK SURVEY PAYMENT
+    const ticket = await RequestTicket.findOne({ paymentOrderCode: orderCode });
     if (ticket && ticket.paymentType === "SURVEY_DEPOSIT") {
-
-      if (ticket.isSurveyPaid) {
-        console.log("Duplicate survey webhook");
-        return;
-      }
-
+      if (ticket.isSurveyPaid) return;
       ticket.isSurveyPaid = true;
-
       await ticket.save();
-
       return;
     }
 
-    /*
-    =====================
-    2. CHECK MOVING DEPOSIT
-    =====================
-    */
-
-    const invoice = await Invoice.findOne({
-      paymentOrderCode: orderCode,
-      paymentStatus: "UNPAID"
-    });
-
-    if (invoice) {
-
-      if (invoice.paymentStatus !== "UNPAID") {
-        console.log("Duplicate deposit webhook");
-        return;
-      }
-      const depositAmount = paymentInfo.amount;
-      invoice.paidAmount += depositAmount;
-      invoice.remainingAmount =
-        invoice.priceSnapshot.totalPrice - invoice.paidAmount;
-
-      invoice.paymentStatus =
-        invoice.remainingAmount <= 0 ? "PAID" : "PARTIAL";
-
-      invoice.status = "CONFIRMED"
-      await invoice.save();
-
-      return;
-    }
-
+    // 2. DELEGATE TO INVOICE SERVICE FOR OTHER PAYMENTS
+    await invoiceService.handleInvoicePaymentWebhook(orderCode, paymentInfo);
   }
 
   /**
-   * Manual fallback verification for the frontend PaymentSuccess
-   * Since local env lacks webhooks, frontend explicitly calls this to check the PayOS status.
+   * Manual fallback verification - Delegated to InvoiceService
    */
   async verifyPaymentStatus(ticketId) {
-    if (!ticketId || ticketId === "undefined" || ticketId === "null") return;
-
-    const invoice = await Invoice.findOne({ requestTicketId: ticketId, paymentStatus: "UNPAID" });
-    if (!invoice || !invoice.paymentOrderCode) {
-      return; // Already paid or no invoice found
-    }
-
-    try {
-      const paymentInfo = await payos.paymentRequests.get(invoice.paymentOrderCode);
-      if (paymentInfo.status === "PAID") {
-        const depositAmount = paymentInfo.amount;
-        invoice.paidAmount += depositAmount;
-        invoice.remainingAmount = invoice.priceSnapshot.totalPrice - invoice.paidAmount;
-
-        invoice.paymentStatus = invoice.remainingAmount <= 0 ? "PAID" : "PARTIAL";
-        invoice.status = "CONFIRMED";
-        await invoice.save();
-      }
-    } catch (e) {
-      console.error("Manual verifyPaymentStatus failed:", e);
-    }
+    return await invoiceService.verifyInvoicePayment(ticketId);
   }
-};
+}
 
-
-
-module.exports = new RequestTicketService();  
+module.exports = new RequestTicketService();

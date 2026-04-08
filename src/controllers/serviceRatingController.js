@@ -1,62 +1,9 @@
-const ServiceRating = require('../models/ServiceRating');
-const Invoice = require('../models/Invoice');
-const User = require('../models/User');
-const Vehicle = require('../models/Vehicle');
+const ratingService = require('../services/ratingService');
 
 /* ─────────────────────────────────────────────────────────
    Helper: Tính và cập nhật average rating cho driver / vehicle
 ───────────────────────────────────────────────────────── */
-const recalcAverages = async ({ driverId, vehicleId }) => {
-  // Average cho driver
-  if (driverId) {
-    const agg = await ServiceRating.aggregate([
-      { $match: { driverId: driverId } },
-      {
-        $group: {
-          _id: null,
-          avgRating:    { $avg: '$rating' },
-          avgClean:     { $avg: '$categories.cleanliness' },
-          avgProf:      { $avg: '$categories.professionalism' },
-          avgPunctual:  { $avg: '$categories.punctuality' },
-          totalCount:   { $sum: 1 },
-        },
-      },
-    ]);
-    if (agg.length > 0) {
-      await User.findByIdAndUpdate(driverId, {
-        $set: {
-          'ratingStats.average':       parseFloat(agg[0].avgRating.toFixed(2)),
-          'ratingStats.cleanliness':   parseFloat(agg[0].avgClean?.toFixed(2) || 0),
-          'ratingStats.professionalism': parseFloat(agg[0].avgProf?.toFixed(2) || 0),
-          'ratingStats.punctuality':   parseFloat(agg[0].avgPunctual?.toFixed(2) || 0),
-          'ratingStats.totalRatings':  agg[0].totalCount,
-        },
-      });
-    }
-  }
 
-  // Average cho vehicle
-  if (vehicleId) {
-    const aggV = await ServiceRating.aggregate([
-      { $match: { vehicleId: vehicleId } },
-      {
-        $group: {
-          _id: null,
-          avgRating:   { $avg: '$rating' },
-          totalCount:  { $sum: 1 },
-        },
-      },
-    ]);
-    if (aggV.length > 0) {
-      await Vehicle.findByIdAndUpdate(vehicleId, {
-        $set: {
-          'ratingStats.average':      parseFloat(aggV[0].avgRating.toFixed(2)),
-          'ratingStats.totalRatings': aggV[0].totalCount,
-        },
-      });
-    }
-  }
-};
 
 /* ─────────────────────────────────────────────────────────
    POST /api/service-ratings
@@ -65,57 +12,34 @@ const recalcAverages = async ({ driverId, vehicleId }) => {
 ───────────────────────────────────────────────────────── */
 const createRating = async (req, res) => {
   try {
-    const customerId = req.user.userId || req.user.id;
-    const {
-      invoiceId,
-      driverId,
-      vehicleId,
-      rating,
-      categories,
-      comment,
-      images,
-      quickTags,
-    } = req.body;
-
-    // Tạo bản ghi rating
-    const newRating = await ServiceRating.create({
-      invoiceId,
-      customerId,
-      driverId:  driverId  || undefined,
-      vehicleId: vehicleId || undefined,
-      rating,
-      categories: {
-        cleanliness:     categories?.cleanliness     || undefined,
-        professionalism: categories?.professionalism || undefined,
-        punctuality:     categories?.punctuality     || undefined,
-      },
-      comment,
-      images:    images    || [],
-      quickTags: quickTags || [],
-    });
-
-    // Post-save: Đánh dấu Invoice đã được đánh giá
-    await Invoice.findByIdAndUpdate(invoiceId, { $set: { isRated: true } });
-
-    // Tính lại averages (async, không block response)
-    recalcAverages({
-      driverId:  driverId  ? driverId  : null,
-      vehicleId: vehicleId ? vehicleId : null,
-    }).catch((err) => console.error('[recalcAverages]', err));
+    const data = await ratingService.createRating(req.user, req.body);
 
     return res.status(201).json({
       success: true,
-      message: 'Cảm ơn bạn đã đánh giá dịch vụ!',
-      data: newRating,
+      message: "Cảm ơn bạn đã đánh giá dịch vụ!",
+      data,
     });
+
   } catch (err) {
     console.error('[createRating]', err);
-    return res.status(500).json({
+
+    const map = {
+      NOT_FOUND: [404, "Không tìm thấy hóa đơn"],
+      FORBIDDEN: [403, "Bạn không có quyền"],
+      NOT_COMPLETED: [400, "Đơn chưa hoàn thành"],
+      NOT_PAID: [400, "Chưa thanh toán đủ"],
+      ALREADY_RATED: [400, "Đã đánh giá rồi"],
+    };
+
+    const [status, message] = map[err.message] || [500, "Lỗi server"];
+
+    return res.status(status).json({
       success: false,
-      message: 'Lỗi server khi lưu đánh giá.',
+      message,
     });
   }
 };
+
 
 /* ─────────────────────────────────────────────────────────
    GET /api/service-ratings/invoice/:invoiceId
@@ -123,19 +47,14 @@ const createRating = async (req, res) => {
 ───────────────────────────────────────────────────────── */
 const getRatingByInvoice = async (req, res) => {
   try {
-    const { invoiceId } = req.params;
-    const rating = await ServiceRating.findOne({ invoiceId })
-      .populate('driverId', 'fullName avatar')
-      .populate('vehicleId', 'licensePlate type');
+    const data = await ratingService.getRatingByInvoice(req.params.invoiceId);
 
-    if (!rating) {
-      return res.status(404).json({ success: false, message: 'Chưa có đánh giá.' });
-    }
-
-    return res.json({ success: true, data: rating });
+    return res.json({ success: true, data });
   } catch (err) {
-    console.error('[getRatingByInvoice]', err);
-    return res.status(500).json({ success: false, message: 'Lỗi server.' });
+    return res.status(404).json({
+      success: false,
+      message: "Chưa có đánh giá",
+    });
   }
 };
 
@@ -145,27 +64,24 @@ const getRatingByInvoice = async (req, res) => {
 ───────────────────────────────────────────────────────── */
 const getRatingsByDriver = async (req, res) => {
   try {
-    const { driverId } = req.params;
-    const { page = 1, limit = 10 } = req.query;
+    const { page, limit } = req.query;
 
-    const [ratings, total] = await Promise.all([
-      ServiceRating.find({ driverId })
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(Number(limit))
-        .populate('customerId', 'fullName avatar')
-        .populate('invoiceId', 'code'),
-      ServiceRating.countDocuments({ driverId }),
-    ]);
+    const result = await ratingService.getRatingsByDriver(
+      req.params.driverId,
+      page,
+      limit
+    );
 
     return res.json({
       success: true,
-      data: ratings,
-      pagination: { total, page: Number(page), limit: Number(limit) },
+      data: result.ratings,
+      pagination: result.pagination,
     });
   } catch (err) {
-    console.error('[getRatingsByDriver]', err);
-    return res.status(500).json({ success: false, message: 'Lỗi server.' });
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server",
+    });
   }
 };
 

@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const invoiceSchema = new mongoose.Schema({
-  code: { type: String, unique: true },
+  code: { type: String, unique: true, index: true },
 
   requestTicketId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -56,6 +56,7 @@ const invoiceSchema = new mongoose.Schema({
       'DRAFT',
       'CONFIRMED',
       'ASSIGNED',
+      'ACCEPTED',
       'IN_PROGRESS',
       'COMPLETED',
       'CANCELLED'

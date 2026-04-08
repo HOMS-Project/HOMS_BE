@@ -36,10 +36,9 @@ const validateRating = async (req, res, next) => {
       });
     }
 
-    // 3. Kiểm tra quyền sở hữu — customerId lấy từ RequestTicket liên kết
-    
-    const customerId = req.user?.userId;
-    if (customerId && customerId  !== requesterId?.toString()) {
+    // 3. Kiểm tra quyền sở hữu — customerId lấy từ Invoice
+    const customerId = invoice.customerId.toString();
+    if (customerId !== requesterId?.toString()) {
       return res.status(403).json({
         success: false,
         message: 'Bạn không có quyền đánh giá đơn hàng này.',

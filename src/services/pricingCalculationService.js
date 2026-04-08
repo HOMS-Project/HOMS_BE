@@ -305,9 +305,8 @@ class PricingCalculationService {
         isFinalized: false
       };
 
-      ticket.status = 'QUOTED';
-
-      await ticket.save({ session });
+      const TicketStateMachine = require('./TicketStateMachine');
+      await TicketStateMachine.transition(ticket, 'QUOTED', { session });
 
       await session.commitTransaction();
       session.endSession();

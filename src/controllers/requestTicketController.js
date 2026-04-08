@@ -3,6 +3,7 @@
  */
 
 const RequestTicketService = require('../services/requestTicketService');
+const InvoiceService = require('../services/invoiceService');
 const payos = require('../config/payos');
 const AppError = require('../utils/appErrors');
 
@@ -12,7 +13,7 @@ const AppError = require('../utils/appErrors');
  */
 exports.createRequestTicket = async (req, res, next) => {
   try {
-    const { moveType, pickup, delivery, notes, scheduledTime } = req.body;
+    const { moveType, rentalDetails, pickup, delivery, notes, scheduledTime, items, distanceKm } = req.body;
     const customerId = req.user.userId || req.user._id || req.user.id;
 
     if (!customerId) {
@@ -26,10 +27,13 @@ exports.createRequestTicket = async (req, res, next) => {
     const ticket = await RequestTicketService.createTicket(
       {
         moveType,
+        rentalDetails,
         pickup,
         delivery,
         notes,
-        scheduledTime: scheduledTime ? new Date(scheduledTime) : undefined
+        scheduledTime: scheduledTime ? new Date(scheduledTime) : undefined,
+        items,
+        distanceKm
       },
       customerId
     );
@@ -40,6 +44,32 @@ exports.createRequestTicket = async (req, res, next) => {
       data: ticket
     });
 
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/request-tickets/:id/approve
+ * Head Dispatcher approves a CREATED ticket.
+ * - FULL_HOUSE: body must include { surveyorId }
+ * - SPECIFIC_ITEMS / TRUCK_RENTAL: triggers auto-assignment, no surveyorId needed
+ */
+exports.approveTicket = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { surveyorId } = req.body;
+    const approverId = req.user.userId || req.user._id || req.user.id;
+
+    if (!approverId) throw new AppError('User ID không tồn tại', 401);
+
+    const ticket = await RequestTicketService.approveTicket(id, approverId, surveyorId);
+
+    res.status(200).json({
+      success: true,
+      message: 'Đơn hàng đã được duyệt thành công',
+      data: ticket
+    });
   } catch (error) {
     next(error);
   }
@@ -201,22 +231,40 @@ exports.acceptSurveyTime = async (req, res, next) => {
   }
 };
 
-// exports.rejectSurveyTime = async (req, res, next) => {
-//   try {
+exports.rejectSurveyTime = async (req, res, next) => {
+  try {
+    const ticketId = req.params.id;
+    const { proposedTime, reason } = req.body;
+    const userId = req.user.userId || req.user._id || req.user.id;
 
-//     const ticketId = req.params.id;
+    const ticket = await RequestTicketService.rejectSurveyTime(ticketId, userId, reason, proposedTime);
+    res.json({
+      success: true,
+      message: "Đã yêu cầu đổi lịch khảo sát thành công",
+      data: ticket
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
-//     await RequestTicketService.rejectSurveyTime(ticketId);
+/**
+ * PUT /api/request-tickets/:id/dispatcher-accept-time
+ */
+exports.dispatcherAcceptSurveyTime = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { selectedTime } = req.body;
 
-//     res.json({
-//       success: true,
-//       message: "Đã từ chối khảo sát và hủy ticket"
-//     });
-
-//   } catch (error) {
-//     next(error);
-//   }
-// };
+    if (!selectedTime) {
+      throw new AppError('Vui lòng chọn thời gian!', 400);
+    }
+    const result = await RequestTicketService.dispatcherAcceptTime(id, selectedTime);
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};
 /**
  * PUT /api/request-tickets/:id/accept-quote
  * Customer chấp nhận báo giá
@@ -268,7 +316,7 @@ exports.createMovingDepositPayment = async (req, res, next) => {
 
     const { id } = req.params;
 
-    const result = await RequestTicketService.createMovingDepositPayment(id);
+    const result = await InvoiceService.createMovingDepositPayment(id);
 
     res.json({
       success: true,
@@ -279,11 +327,24 @@ exports.createMovingDepositPayment = async (req, res, next) => {
     next(error);
   }
 };
+exports.createMovingRemainingPayment = async (req, res, next) => {
+  try {
+    const { id } = req.params;
 
+    const result = await InvoiceService.createMovingRemainingPayment(id);
+
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 exports.verifyPaymentStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
-    await RequestTicketService.verifyPaymentStatus(id);
+    await InvoiceService.verifyInvoicePayment(id);
 
     res.json({
       success: true,

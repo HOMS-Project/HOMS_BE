@@ -1,6 +1,7 @@
 const Contract = require('../models/Contract');
 const InvoiceService = require('../services/invoiceService');
 const adminContractService = require('../services/admin/contractService');
+const ContractService = require('../services/admin/contractService')
 
 exports.getContractByTicket = async (req, res, next) => {
     try {
@@ -88,5 +89,87 @@ exports.signContractCustomer = async (req, res, next) => {
             return res.status(400).json({ success: false, message: error.message });
         }
         next(error);
+    }
+};
+exports.getMyContracts = async (req, res, next) => {
+    try {
+        // customerId LUÔN từ token — không bao giờ từ query/body (chống IDOR)
+        const customerId = req.user.userId || req.user._id;
+        const { page = 1, limit = 10, status, search } = req.query;
+ 
+        const result = await ContractService.getMyContracts(customerId, {
+            page,
+            limit,
+            status,
+            search,
+        });
+ 
+        return res.status(200).json({
+            success: true,
+            data: result.contracts,
+            pagination: result.pagination,
+            stats: result.stats,
+        });
+    } catch (err) {
+        next(err);
+    }
+};
+ 
+// ─── NEW: Lấy chi tiết một hợp đồng (chỉ của customer đang đăng nhập) ────────
+ 
+exports.getContractDetail = async (req, res, next) => {
+    try {
+        const customerId = req.user.userId || req.user._id;
+        const { contractId } = req.params;
+ 
+        const contract = await ContractService.getContractDetail(contractId, customerId);
+ 
+        return res.status(200).json({ success: true, data: contract });
+    } catch (err) {
+        const status = err.statusCode || 500;
+        return res.status(status).json({
+            success: false,
+            message: err.message || 'Lỗi máy chủ, vui lòng thử lại.',
+        });
+    }
+};
+ 
+// ─── NEW: Tải xuống hợp đồng dạng HTML hoặc DOCX ─────────────────────────────
+ 
+exports.downloadContract = async (req, res, next) => {
+    try {
+        const customerId = req.user.userId || req.user._id;
+        const { contractId } = req.params;
+        const { format = 'html' } = req.query; // ?format=html | ?format=docx
+ 
+        // Bảo mật: kiểm tra hợp đồng thuộc về customer này trước khi cho tải
+        await ContractService.getContractDetail(contractId, customerId);
+ 
+        if (format === 'docx') {
+            const { filename, buffer } = await ContractService.getContractDocx(contractId);
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+            res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+            return res.send(buffer);
+        }
+        if (format === 'pdf') {
+  const { filename, buffer } = await ContractService.getContractPdf(contractId);
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+  return res.send(buffer);
+}
+ 
+        // Mặc định: HTML
+        const { filename, html } = await ContractService.getContractFile(contractId);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+        return res.send(html);
+    } catch (err) {
+        const status = err.statusCode || 500;
+        return res.status(status).json({
+            success: false,
+            message: err.message || 'Lỗi khi tải hợp đồng.',
+        });
     }
 };

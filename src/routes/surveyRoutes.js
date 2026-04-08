@@ -32,18 +32,18 @@ router.put(
   surveyController.completeSurvey
 );
 
+// GET /api/surveys/ticket/:ticketId - Lấy khảo sát của ticket (must be before /:surveyId)
+router.get(
+  '/ticket/:ticketId',
+  authenticate,
+  surveyController.getSurveyByTicket
+);
+
 // GET /api/surveys/:surveyId - Lấy chi tiết khảo sát
 router.get(
   '/:surveyId',
   authenticate,
   surveyController.getSurvey
-);
-
-// GET /api/surveys/ticket/:ticketId - Lấy khảo sát của ticket
-router.get(
-  '/ticket/:ticketId',
-  authenticate,
-  surveyController.getSurveyByTicket
 );
 
 module.exports = router;

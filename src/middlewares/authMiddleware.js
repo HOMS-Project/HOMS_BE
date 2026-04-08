@@ -52,15 +52,16 @@ const authorize = (...roles) => {
     console.log("USER ROLE:", req.user?.role);
     console.log("ALLOWED:", roles);
 
-    if (!req.user) {
+    if (!req.user || !req.user.role) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
 
     const userRole = req.user.role.toUpperCase();
+    const allowedRoles = roles.map(r => (typeof r === 'string' ? r.toUpperCase() : r));
 
-    if (!roles.map(r => r.toUpperCase()).includes(userRole)) {
+    if (!allowedRoles.includes(userRole)) {
       return res.status(403).json({
-        message: 'Forbidden: Bạn không có quyền truy cập'
+        message: `Forbidden: Role ${userRole} is not authorized`
       });
     }
 

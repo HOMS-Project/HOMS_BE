@@ -35,6 +35,17 @@ const routeSchema = new mongoose.Schema({
       "CAM_LE"
     ]
   },
+  district: { // New field for street-based organization
+    type: String,
+    enum: [
+      "HAI_CHAU",
+      "THANH_KHE",
+      "SON_TRA",
+      "NGU_HANH_SON",
+      "LIEN_CHIEU",
+      "CAM_LE"
+    ]
+  },
 
   // OLD (keep for compatibility)
   // districts: [String],
@@ -92,6 +103,37 @@ const routeSchema = new mongoose.Schema({
     default: 0
   },
 
+  /* ===== ROAD RESTRICTIONS (Street Level) ===== */
+  roadRestrictions: [
+    {
+      roadName: String,
+      geometry: {
+        type: {
+          type: String,
+          enum: ['LineString', 'Point'],
+          default: 'LineString'
+        },
+        coordinates: {
+          type: [[Number]] // [lng, lat]
+        }
+      },
+      restrictionType: {
+        type: String,
+        enum: ['CLOSED', 'CONSTRUCTION', 'ACCIDENT', 'HEAVY_TRAFFIC', 'TRUCK_BAN', 'OTHER']
+      },
+      severity: {
+        type: String,
+        enum: ['WARN', 'AVOID'],
+        default: 'WARN'
+      },
+      description: String,
+      isActive: {
+        type: Boolean,
+        default: true
+      }
+    }
+  ],
+
   notes: String,
 
   isActive: {
@@ -102,7 +144,7 @@ const routeSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 /* ===== INDEXES - faster query time for route ===== */
-routeSchema.index({ area: 1, fromDistrict: 1, toDistrict: 1 });
+routeSchema.index({ area: 1, district: 1, name: 1 });
 routeSchema.index({ code: 1 });
 
 module.exports = mongoose.model("Route", routeSchema);

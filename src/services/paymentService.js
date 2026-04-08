@@ -1,27 +1,30 @@
-    const payos = require("../config/payos");
-    exports.createPayosPayment = async ({ orderCode, amount, ticket,paymentType }) => {
+const payos = require("../config/payos");
+exports.createPayosPayment = async ({ orderCode, amount, ticket, paymentType }) => {
 
-    const FE = process.env.FRONTEND_URL || "http://localhost:3000";
+  const FE = process.env.FRONTEND_URL || "http://localhost:3000";
 
-    let description = "";
-     if (paymentType === "SURVEY_DEPOSIT") {
+  let description = "";
+  if (paymentType === "SURVEY_DEPOSIT") {
     description = `Dat coc KS ${ticket.code}`;
   }
-if (paymentType === "MOVING_DEPOSIT") {
+  if (paymentType === "MOVING_DEPOSIT") {
     description = `Dat coc don ${ticket.code}`;
   }
-    const body = {
-        orderCode,
-        amount: 2000, //Number(amount) 
-       description: description.substring(0, 25),
-        returnUrl: `${FE}/payment/success?ticketId=${ticket._id}`,
-        cancelUrl: `${FE}/payment/cancel?ticketId=${ticket._id}`
-    };
+  if (paymentType === "MOVING_REMAINING") {
+  description = `Thanh toan don ${ticket.code}`;
+}
+  const body = {
+    orderCode,
+    amount: 2000, //Number(amount) 
+    description: description.substring(0, 25),
+    returnUrl: `${FE}/payment/success?ticketId=${ticket._id}&type=${paymentType}`,
+    cancelUrl: `${FE}/payment/cancel?ticketId=${ticket._id}&type=${paymentType}`
+  };
 
-   const paymentLink = await payos.paymentRequests.create(body);
+  const paymentLink = await payos.paymentRequests.create(body);
 
-    return paymentLink.checkoutUrl;
-    };
+  return paymentLink.checkoutUrl;
+};
 
 
 exports.verifyWebhook = (payload) => {
