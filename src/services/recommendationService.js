@@ -1,4 +1,6 @@
 const SystemConfigService = require('./systemConfigService');
+const moment = require('moment');
+const RequestTicket = require('../models/RequestTicket');
 
 class RecommendationService {
   constructor() {
@@ -19,14 +21,100 @@ class RecommendationService {
     return config?.baseCapacity || 5;
   }
 
-  // ... (getWeatherScore and getTrafficScore remains largely the same logic, but using config values) ...
+  // Weather score based on simple heuristics (can be upgraded to real API)
+  async getWeatherScore(date, location) {
+    const timeKey = moment(date).format('YYYY-MM-DD_HH');
+    const locKey = typeof location === 'object' ? `${location.lat},${location.lng}` : location;
+    const cacheKey = `${locKey}_${timeKey}`;
+
+    if (this.weatherCache.has(cacheKey)) {
+        const cached = this.weatherCache.get(cacheKey);
+        if (Date.now() - cached.timestamp < this.CACHE_TTL) {
+            return cached.data;
+        }
+    }
+
+    // MVP Simulated Weather (until real API integration)
+    // Factoring in hot/cold temperatures and seasonal rains based on Vietnamese climate
+    const hour = moment(date).hour();
+    const month = moment(date).month() + 1; // 1-12
+    
+    let score = 0;
+    let isBlocked = false;
+    let blockReason = null;
+    let weatherReason = null;
+
+    const isHotSeason = month >= 4 && month <= 8;
+    const isRainySeason = month >= 9 && month <= 12;
+
+    if (hour >= 11 && hour <= 14) {
+        // Extreme midday heat constraint
+        score = isHotSeason ? -60 : -30;
+        weatherReason = isHotSeason 
+            ? 'Nắng nóng gay gắt giữa trưa, gây mệt mỏi và rủi ro cho hàng hóa quá nhiệt' 
+            : 'Trưa chiều khá nóng, có thể làm giảm tiến độ vận chuyển';
+    } else if (hour >= 6 && hour <= 9) {
+        // Cool morning (Bonus)
+        score = 30;
+        weatherReason = 'Thời tiết sáng sớm mát mẻ, đặc biệt lý tưởng để chuyển đồ';
+    } else if (hour >= 15 && hour <= 18 && isRainySeason) {
+        // High likelihood of afternoon downpours in rainy season
+        score = -50;
+        weatherReason = 'Rủi ro cao có mưa rào chiều tối mùa mưa, dễ gây ướt/hư hỏng đồ đạc';
+    } else if (hour >= 19) {
+        score = 10;
+        weatherReason = 'Nhiệt độ dịu mát vào ban đêm';
+    }
+
+    const weatherData = {
+      score,
+      isBlocked,
+      blockReason,
+      weatherReason,
+      suggestAlternatives: score < -30
+    };
+
+    this.weatherCache.set(cacheKey, { timestamp: Date.now(), data: weatherData });
+
+    return weatherData;
+  }
+
+  // Traffic score based on time-of-day, weekday/weekend and distance
+  getTrafficScore(date, distanceKm = 0) {
+    const d = moment(date);
+    const dayName = d.format('dddd');
+    const hour = d.hour();
+    const isWeekend = dayName === 'Saturday' || dayName === 'Sunday';
+
+    let baseScore = 0;
+    
+    if (dayName === 'Monday') baseScore -= 30; // Monday is generally extremely busy
+    else if (dayName === 'Friday') baseScore -= 20;
+
+    // Rush hours on weekdays are terrible for moving locally
+    if (!isWeekend && ((hour >= 7 && hour < 9) || (hour >= 17 && hour < 19))) {
+        baseScore -= 60; // Massive peak traffic penalty
+    } else if (isWeekend) {
+        baseScore -= 10; // Weekend traffic is generally mixed, no extreme peaks
+    } else {
+        baseScore += 30; // Weekday off-peak is great
+    }
+
+    // Distance multiplier: longer distance in bad traffic = exponentially worse score. Min multiplier is 1.
+    const distanceFactor = Math.max(1, Math.min(3, (Number(distanceKm) || 1) / 8));
+    
+    return baseScore * distanceFactor;
+  }
 
   async getDemandScore(date) {
     try {
         const hour = moment(date).hour();
-        let slotRange = { start: 0, end: 12 };
-        if (hour >= 12 && hour < 17) slotRange = { start: 12, end: 17 };
-        else if (hour >= 17) slotRange = { start: 17, end: 24 };
+        let slotRange = { start: 7, end: 11 };
+        
+        if (hour < 7) slotRange = { start: 0, end: 7 };
+        else if (hour >= 11 && hour < 15) slotRange = { start: 11, end: 15 };
+        else if (hour >= 15 && hour < 19) slotRange = { start: 15, end: 19 };
+        else if (hour >= 19) slotRange = { start: 19, end: 24 };
 
         const startOfSlot = moment(date).set({ hour: slotRange.start, minute: 0, second: 0 }).toDate();
         const endOfSlot = moment(date).set({ hour: slotRange.end, minute: 0, second: 0 }).toDate();
@@ -58,23 +146,50 @@ class RecommendationService {
     return 0;
   }
 
+  normalizeScore(score, min = -100, max = 100) {
+    return Math.max(min, Math.min(max, score));
+  }
+
   async calculateRecommendation(date, location, distanceKm, experimentGroup = 'CONTROL') {
     const weatherData = await this.getWeatherScore(date, location);
     const trafficScore = this.getTrafficScore(date, distanceKm);
     const demandScore = await this.getDemandScore(date);
     const businessBoost = await this.getBusinessIntentBoost(date);
 
+    // Normalize factor scores to ensure consistent scaling (-100 to 100)
+    const normWeather = this.normalizeScore(weatherData.score);
+    const normTraffic = this.normalizeScore(trafficScore);
+    const normDemand = this.normalizeScore(demandScore);
+
     // 🔬 A/B Testing: Group B might use different weights
     let currentWeights = this.weights;
     if (experimentGroup === 'GROUP_B') {
-        currentWeights = { weather: 0.3, traffic: 0.4, demand: 0.3 };
+        currentWeights = { weather: 0.2, traffic: 0.6, demand: 0.2 };
     }
 
-    const rawScore = (weatherData.score * currentWeights.weather) + 
-                     (trafficScore * currentWeights.traffic) + 
-                     (demandScore * currentWeights.demand);
+    const rawScore = (normWeather * currentWeights.weather) + 
+                     (normTraffic * currentWeights.traffic) + 
+                     (normDemand * currentWeights.demand);
+
+    let penalty = 0;
+    const reasons = [];
+
+    // 🚨 Dominant Factor Hard Penalty Layer
+    // If ANY single metric is critically bad (<= -80), it penalizes the total drastically 
+    // ensuring positive factors can't mathematically rescue a "disaster" time.
+    const worstFactor = Math.min(normWeather, normTraffic, normDemand);
     
-    const totalScore = rawScore + businessBoost;
+    if (moment(date).format('dddd') !== 'Saturday' && moment(date).format('dddd') !== 'Sunday' && moment(date).hour() >= 7 && moment(date).hour() < 9) {
+        penalty -= 50; 
+        reasons.push('Nguy cơ kẹt xe rủi ro cực cao vào giờ cao điểm các ngày trong tuần');
+    } else if (worstFactor <= -80) {
+        penalty -= 40;
+        reasons.push('Thời gian không khuyến nghị do điều kiện vô cùng bất lợi (kẹt xe/thời tiết/kín lịch)');
+    } else if (worstFactor <= -50) {
+        penalty -= 20;
+    }
+    
+    const totalScore = rawScore + businessBoost + penalty;
 
     let label = 'NORMAL';
     if (weatherData.isBlocked) label = 'BAD';
@@ -82,14 +197,29 @@ class RecommendationService {
     else if (totalScore > 10) label = 'GOOD';
     else if (totalScore < -10) label = 'BAD';
 
+    if (weatherData.weatherReason && penalty === 0) {
+        // If we have a specific descriptive string from the weather module, use it
+        reasons.push(weatherData.weatherReason);
+    } else {
+        // Fallbacks
+        if (normWeather > 10) reasons.push('Thời tiết thuận lợi');
+        else if (normWeather < -10 && worstFactor > -80) reasons.push('Thời tiết có thể bất lợi do nóng/lạnh hoặc mưa dầm');
+    }
+
+    if (normTraffic > 10) reasons.push('Đường thông thoáng, ít kẹt xe');
+    else if (normTraffic < -10 && worstFactor > -80 && penalty === 0) reasons.push('Có thể kẹt xe trên tuyến đường');
+
+    if (normDemand > 50) reasons.push('Biểu phí vận chuyển tối ưu thời điểm này');
+    else if (normDemand < -50 && worstFactor > -80) reasons.push('Giờ cao điểm dịch vụ, lịch xe khá kẹt');
+
     return {
       date: moment(date).format('YYYY-MM-DD'),
       time: moment(date).format('HH:mm'),
       score: Math.round(totalScore),
       factors: {
-        weather: Math.round(weatherData.score),
-        traffic: Math.round(trafficScore),
-        demand: Math.round(demandScore),
+        weather: Math.round(normWeather),
+        traffic: Math.round(normTraffic),
+        demand: Math.round(normDemand),
         businessBoost,
         weights: currentWeights
       },
@@ -97,7 +227,7 @@ class RecommendationService {
       isBlocked: weatherData.isBlocked || false,
       blockReason: weatherData.blockReason || null,
       suggestAlternatives: weatherData.suggestAlternatives || false,
-      reasons: [] // Simplified for logic brevity, but uses similar logic as before
+      reasons 
     };
   }
 
@@ -107,23 +237,34 @@ class RecommendationService {
 
     const primary = await this.calculateRecommendation(scheduledDate, location, distanceKm, experimentGroup);
     
-    let alternatives = [];
+    // Suggest alternatives (must be at least 2 days from now to match Frontend minimum booking constraint)
+    const minDateConstraint = moment().add(2, 'days').startOf('day');
     const timeSlots = [9, 14, 19];
+    const alternativePromises = [];
+
     for (let day = 0; day <= 2; day++) {
         for (let slotHour of timeSlots) {
             const testDate = moment(scheduledDate).add(day, 'days').set({ hour: slotHour, minute: 0 }).toDate();
-            if (moment(testDate).isSame(scheduledDate, 'hour') || moment(testDate).isBefore(new Date())) continue;
-            const alt = await this.calculateRecommendation(testDate, location, distanceKm, experimentGroup);
-            if (!alt.isBlocked && alt.score > 10) {
-                alternatives.push({
-                    date: moment(testDate).format('YYYY-MM-DD'),
-                    time: moment(testDate).format('HH:mm'),
-                    score: alt.score,
-                    label: alt.label
-                });
-            }
+            
+            // Cannot be the same hour and must be in the future based on constraints
+            if (moment(testDate).isSame(scheduledDate, 'hour') || moment(testDate).isBefore(minDateConstraint)) continue;
+            
+            alternativePromises.push(
+                this.calculateRecommendation(testDate, location, distanceKm, experimentGroup)
+                    .then(alt => alt)
+            );
         }
     }
+
+    const results = await Promise.all(alternativePromises);
+
+    let alternatives = results.filter(alt => !alt.isBlocked && alt.score > 10)
+        .map(alt => ({
+            date: alt.date,
+            time: alt.time,
+            score: alt.score,
+            label: alt.label
+        }));
 
     alternatives.sort((a, b) => b.score - a.score);
     alternatives = alternatives.slice(0, 3);
@@ -135,3 +276,5 @@ class RecommendationService {
     };
   }
 }
+
+module.exports = new RecommendationService();
