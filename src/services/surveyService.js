@@ -190,7 +190,7 @@ class SurveyService {
 
     // 5.3 Apply Dynamic Adjustments
     const finalPricingResult = recommendation 
-      ? PricingAdjustmentService.applyAdjustments(basePricing, recommendation)
+      ? await PricingAdjustmentService.applyAdjustments(basePricing, recommendation)
       : basePricing;
 
     const pricingData = await PricingCalculationService.createPricingData(
