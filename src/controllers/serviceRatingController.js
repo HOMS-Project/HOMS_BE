@@ -85,4 +85,22 @@ const getRatingsByDriver = async (req, res) => {
   }
 };
 
-module.exports = { createRating, getRatingByInvoice, getRatingsByDriver };
+/* ─────────────────────────────────────────────────────────
+   GET /api/public/ratings
+   Lấy rating tốt để hiển thị trên Landing Page
+───────────────────────────────────────────────────────── */
+const getPublicRatings = async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const data = await ratingService.getPublicRatings(limit);
+
+    return res.json({ success: true, data });
+  } catch (err) {
+    return res.status(500).json({
+      success: false,
+      message: "Lỗi server",
+    });
+  }
+};
+
+module.exports = { createRating, getRatingByInvoice, getRatingsByDriver, getPublicRatings };

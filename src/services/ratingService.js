@@ -146,8 +146,18 @@ const getRatingsByDriver = async (driverId, page = 1, limit = 10) => {
   };
 };
 
+/* ───────────────────────────────────────── */
+const getPublicRatings = async (limit = 10) => {
+  const ratings = await ServiceRating.find({ rating: { $gte: 4 } })
+    .sort({ createdAt: -1 })
+    .limit(Number(limit))
+    .populate('customerId', 'fullName avatar');
+  return ratings;
+};
+
 module.exports = {
   createRating,
   getRatingByInvoice,
   getRatingsByDriver,
+  getPublicRatings,
 };

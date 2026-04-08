@@ -503,6 +503,18 @@ class InvoiceService {
       console.error("[InvoiceService] Manual verifyPaymentStatus failed:", e);
     }
   }
+
+  /**
+   * Lấy danh sách các đơn hàng hoàn thành gần đây (Public hiển thị Landing Page)
+   */
+  async getRecentCompleted(limit = 5) {
+    return await Invoice.find({ status: 'COMPLETED' })
+      .sort({ updatedAt: -1 })
+      .limit(Number(limit))
+      .populate('customerId', 'fullName')
+      .populate('requestTicketId', 'pickup delivery')
+      .select('status updatedAt customerId requestTicketId');
+  }
 }
 
 module.exports = new InvoiceService();
