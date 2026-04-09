@@ -10,6 +10,7 @@ async function listVehicles(req, res, next) {
   }
 }
 
+
 async function createVehicle(req, res, next) {
   try {
     // Expecting body: { plateNumber, vehicleType, loadCapacity }
