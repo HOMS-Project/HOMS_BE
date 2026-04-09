@@ -5,6 +5,9 @@ const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
 const path = require('path');
 const mongoose = require('mongoose');
+const { sendOtp, verifyOtp } = require('../otpService');
+const AppError = require('../../utils/appErrors')
+const { encryptContract } = require('../../utils/contractEncryption');
 /**
  * Tạo Contract Template mới
  */
@@ -175,6 +178,7 @@ exports.getContractFile = async (contractId) => {
   const contract = await Contract.findById(contractId)
     .populate('customerId', 'fullName email phone')
     .populate('requestTicketId')
+    .populate('adminSignature.signedBy', 'fullName')
     .populate('templateId', 'title');
   if (!contract) throw new Error('Contract not found');
 
@@ -183,44 +187,92 @@ exports.getContractFile = async (contractId) => {
   const contractNumber = contract.contractNumber || contract._id;
   const customerName = contract.customerId?.fullName || '';
   const createdAt = contract.createdAt ? contract.createdAt.toISOString().slice(0,10) : '';
+  const customerSigBlock = contract.customerSignature?.signatureImageThumb
+    ? `<img src="${contract.customerSignature.signatureImageThumb}"
+            style="max-width:220px; max-height:90px; border:1px solid #ddd; border-radius:4px;" />`
+    : '<div style="border-bottom:1px solid #000; width:220px; height:60px;"></div>';
 
-  const html = `<!doctype html>
+  const adminSigBlock = contract.adminSignature?.signatureImage
+    ? `<img src="${contract.adminSignature.signatureImage}"
+            style="max-width:220px; max-height:90px; border:1px solid #ddd; border-radius:4px;" />`
+    : '<div style="border-bottom:1px solid #000; width:220px; height:60px; background:#f9f9f9;"><p style="color:#aaa;font-size:12px;text-align:center;padding-top:20px;">Chờ ký</p></div>';
+
+  const customerSignedAt = contract.customerSignature?.signedAt
+    ? new Date(contract.customerSignature.signedAt).toLocaleString('vi-VN') : '—';
+  const adminSignedAt = contract.adminSignature?.signedAt
+    ? new Date(contract.adminSignature.signedAt).toLocaleString('vi-VN') : '—';
+   const html = `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
   <title>${title} - ${contractNumber}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <style>
-    body { font-family: Arial, Helvetica, sans-serif; color:#222; line-height:1.5; padding:20px }
-    .header { text-align:center; margin-bottom:18px }
-    .meta { margin-bottom:12px; background:#f8f8f8; padding:10px; border-radius:6px }
-    .content { margin-top:12px }
+    body { font-family: "Times New Roman", serif; color:#222; line-height:1.6; padding:30px; max-width:800px; margin:0 auto; }
+    .header { text-align:center; margin-bottom:24px; }
+    .meta { margin-bottom:16px; background:#f8f8f8; padding:12px 16px; border-radius:6px; font-size:14px; }
+    .meta div { margin-bottom:4px; }
+    .content { margin:20px 0; border-top:1px solid #eee; border-bottom:1px solid #eee; padding:20px 0; }
+    .signature-section {
+      display: flex; justify-content: space-between;
+      margin-top: 48px; gap: 32px;
+    }
+    .sig-box {
+      flex: 1; text-align: center;
+      border: 1px solid #e0e0e0; border-radius: 8px;
+      padding: 20px 16px;
+    }
+    .sig-title { font-weight: bold; font-size: 14px; margin-bottom: 12px; text-transform: uppercase; }
+    .sig-name  { margin-top: 12px; font-weight: 600; font-size: 14px; }
+    .sig-date  { color: #888; font-size: 12px; margin-top: 4px; }
+    .hash-box  { margin-top: 32px; font-size: 11px; color: #aaa; word-break: break-all; border-top: 1px dashed #eee; padding-top: 12px; }
   </style>
 </head>
 <body>
   <div class="header">
-    <h2>${title}</h2>
-    <div><strong>Mã hợp đồng:</strong> ${contractNumber}</div>
+    <p style="font-weight:bold;font-size:15px;">CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</p>
+    <p style="text-decoration:underline;font-weight:bold;">Độc lập - Tự do - Hạnh phúc</p>
+    <h2 style="margin-top:16px;">${title.toUpperCase()}</h2>
+    <p style="color:#666;font-style:italic;">Số: ${contractNumber}</p>
   </div>
+
   <div class="meta">
-    <div><strong>Khách hàng:</strong> ${customerName}</div>
+    <div><strong>Khách hàng (Bên B):</strong> ${customerName}</div>
     <div><strong>Ngày tạo:</strong> ${createdAt}</div>
+    <div><strong>Trạng thái:</strong> ${contract.status}</div>
+    ${contract.depositDeadline ? `<div><strong>Hạn đặt cọc:</strong> ${new Date(contract.depositDeadline).toLocaleString('vi-VN')}</div>` : ''}
   </div>
+
   <div class="content">
     ${contract.content || '<p>(Không có nội dung)</p>'}
   </div>
-  <hr />
-  <div style="margin-top:18px">
-    <div><strong>Trạng thái:</strong> ${contract.status || ''}</div>
+
+  <!-- ── PHẦN CHỮ KÝ ── -->
+  <div class="signature-section">
+    <div class="sig-box">
+      <div class="sig-title">Bên A — Đại diện HOMS</div>
+      ${adminSigBlock}
+      <div class="sig-name">${contract.adminSignature?.signedByName || 'HOMS Vận Chuyển'}</div>
+      <div class="sig-date">Ký lúc: ${adminSignedAt}</div>
+    </div>
+
+    <div class="sig-box">
+      <div class="sig-title">Bên B — Khách hàng</div>
+      ${customerSigBlock}
+      <div class="sig-name">${customerName}</div>
+      <div class="sig-date">Ký lúc: ${customerSignedAt}</div>
+    </div>
   </div>
-  
+
+  ${contract.contentHash ? `
+  <div class="hash-box">
+    🔒 Mã xác thực toàn vẹn (SHA-256): ${contract.contentHash}
+  </div>` : ''}
 </body>
 </html>`;
 
-  const filename = `${(contractNumber || 'contract').toString().replace(/\s+/g,'_')}.html`;
+  const filename = `${contractNumber.replace(/\s+/g, '_')}.html`;
   return { filename, html };
 };
-
 /**
  * Trả về buffer file .docx được chuyển từ HTML (yêu cầu package html-docx-js)
  */
@@ -312,6 +364,7 @@ exports.getMyContracts = async (customerId, options = {}) => {
     _id: contractId,
     customerId
   })
+   .select('+customerSignature.signatureImage')
     .populate('templateId', 'title description')
     .populate('requestTicketId', 'ticketNumber createdAt')
     .populate('adminSignature.signedBy', 'fullName email')
@@ -349,69 +402,236 @@ exports.getMyContracts = async (customerId, options = {}) => {
 }
 exports.getContractPdf = async (contractId) => {
   const contract = await Contract.findById(contractId)
+   .select('+customerSignature.signatureImage')
     .populate('customerId', 'fullName email phone')
     .populate('templateId', 'title')
     .lean();
-
   if (!contract) throw new Error('Contract not found');
 
   const doc = new PDFDocument({ size: 'A4', margin: 50 });
-
   const buffers = [];
   doc.on('data', buffers.push.bind(buffers));
 
   return new Promise((resolve, reject) => {
     doc.on('end', () => resolve({
-      filename: `contract-${contractId}.pdf`,
+       filename: `contract-${(contract.contractNumber || contractId).replace(/[^\w\-]/g, '_')}.pdf`,
       buffer: Buffer.concat(buffers),
     }));
     doc.on('error', reject);
-
 
     const fontPath     = path.join(__dirname, '../../fonts/Roboto-Regular.ttf');
     const fontBoldPath = path.join(__dirname, '../../fonts/Roboto-Bold.ttf');
     doc.registerFont('Roboto', fontPath);
     doc.registerFont('Roboto-Bold', fontBoldPath);
+    const W = doc.page.width - 100;
 
-    const W = doc.page.width - 100; 
-
-
-    doc.font('Roboto-Bold').fontSize(18)
+    // ── Tiêu đề ─────────────────────────────────────────────
+    doc.font('Roboto-Bold').fontSize(16)
        .text(contract.templateId?.title || 'HỢP ĐỒNG', { align: 'center', width: W });
-
+    doc.moveDown(0.3);
+    doc.font('Roboto').fontSize(11)
+       .text(`Số: ${contract.contractNumber}`, { align: 'center', width: W });
+    doc.moveDown(0.5);
+    doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).stroke();
     doc.moveDown(0.5);
 
-    const lx = 50;
-    doc.moveTo(lx, doc.y).lineTo(doc.page.width - lx, doc.y).stroke();
-    doc.moveDown(0.5);
-
-
-    doc.font('Roboto-Bold').fontSize(11).text('Mã hợp đồng: ', { continued: true, width: W });
-    doc.font('Roboto').text(contract.contractNumber || '');
-
-    doc.font('Roboto-Bold').fontSize(11).text('Khách hàng: ', { continued: true, width: W });
-    doc.font('Roboto').text(contract.customerId?.fullName || '');
-
-    doc.font('Roboto-Bold').fontSize(11).text('Ngày tạo: ', { continued: true, width: W });
-    doc.font('Roboto').text(new Date(contract.createdAt).toLocaleDateString('vi-VN'));
-
-    doc.font('Roboto-Bold').fontSize(11).text('Trạng thái: ', { continued: true, width: W });
-    doc.font('Roboto').text(contract.status || '');
-
-    doc.moveDown(0.5);
-    doc.moveTo(lx, doc.y).lineTo(doc.page.width - lx, doc.y).stroke();
+    // ── Meta ─────────────────────────────────────────────────
+    const metaItems = [
+      ['Khách hàng (Bên B)', contract.customerId?.fullName || ''],
+      ['Ngày tạo',           new Date(contract.createdAt).toLocaleDateString('vi-VN')],
+      ['Trạng thái',         contract.status],
+    ];
+    if (contract.depositDeadline) {
+      metaItems.push(['Hạn đặt cọc', new Date(contract.depositDeadline).toLocaleString('vi-VN')]);
+    }
+    metaItems.forEach(([label, val]) => {
+      doc.font('Roboto-Bold').fontSize(11).text(`${label}: `, { continued: true, width: W });
+      doc.font('Roboto').text(val);
+    });
+    doc.moveDown(1);
+    doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).stroke();
     doc.moveDown(1);
 
-
+    // ── Nội dung ─────────────────────────────────────────────
     const plainText = htmlToPlainText(contract.content || 'Không có nội dung');
-
     doc.font('Roboto').fontSize(12)
-       .text(plainText, {
-         width: W,
-         align: 'justify',
-         lineGap: 4,
-       });
+       .text(plainText, { width: W, align: 'justify', lineGap: 4 });
+    doc.moveDown(2);
+
+    // ── Phần chữ ký ──────────────────────────────────────────
+    doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).stroke();
+    doc.moveDown(1);
+    doc.font('Roboto-Bold').fontSize(13)
+       .text('CHỮ KÝ CÁC BÊN', { align: 'center', width: W });
+    doc.moveDown(1);
+
+    const sigY = doc.y;
+    const leftX  = 60;
+    const rightX = doc.page.width / 2 + 20;
+    const boxW   = doc.page.width / 2 - 80;
+
+    // Bên A
+    doc.font('Roboto-Bold').fontSize(11)
+       .text('BÊN A — ĐẠI DIỆN HOMS', leftX, sigY, { width: boxW, align: 'center' });
+
+    // Bên B
+    doc.font('Roboto-Bold').fontSize(11)
+       .text('BÊN B — KHÁCH HÀNG', rightX, sigY, { width: boxW, align: 'center' });
+
+    doc.moveDown(0.5);
+    const imgY = doc.y;
+
+    // Chèn ảnh chữ ký nếu có
+    const tryEmbedSignature = (base64Img, x, y, w) => {
+      if (!base64Img) {
+        // Vẽ ô trống
+        doc.rect(x, y, w, 70).stroke();
+        doc.font('Roboto').fontSize(10)
+           .fillColor('#aaa')
+           .text('(Chưa ký)', x, y + 28, { width: w, align: 'center' });
+        doc.fillColor('#000');
+        return;
+      }
+      try {
+        // Tách phần data từ base64 data URL
+        const base64Data = base64Img.includes(',') ? base64Img.split(',')[1] : base64Img;
+        const imgBuffer  = Buffer.from(base64Data, 'base64');
+        doc.image(imgBuffer, x, y, { width: w, height: 70, fit: [w, 70] });
+      } catch {
+        doc.rect(x, y, w, 70).stroke();
+      }
+    };
+  const customerSig =
+      contract.customerSignature?.signatureImageThumb ||
+      contract.customerSignature?.signatureImage;
+     tryEmbedSignature(contract.adminSignature?.signatureImage, leftX, imgY, boxW);
+    tryEmbedSignature(customerSig, rightX, imgY, boxW);
+    doc.y = imgY + 80;
+
+    // Tên + ngày ký
+    const adminSignedAt     = contract.adminSignature?.signedAt
+      ? new Date(contract.adminSignature.signedAt).toLocaleString('vi-VN') : '—';
+    const customerSignedAt = contract.customerSignature?.signedAt
+      ? new Date(contract.customerSignature.signedAt).toLocaleString('vi-VN') : '—';
+
+    doc.font('Roboto-Bold').fontSize(10)
+       .text(contract.adminSignature?.signedByName || 'HOMS Vận Chuyển', leftX, doc.y, { width: boxW, align: 'center' });
+    doc.font('Roboto-Bold').fontSize(10)
+       .text(contract.customerId?.fullName || '', rightX, doc.y - doc.currentLineHeight(), { width: boxW, align: 'center' });
+
+    doc.moveDown(0.3);
+    doc.font('Roboto').fontSize(9).fillColor('#888')
+       .text(`Ký lúc: ${adminSignedAt}`, leftX, doc.y, { width: boxW, align: 'center' });
+    doc.font('Roboto').fontSize(9)
+       .text(`Ký lúc: ${customerSignedAt}`, rightX, doc.y - doc.currentLineHeight(), { width: boxW, align: 'center' });
+    doc.fillColor('#000');
+
+    // ── Hash xác thực ─────────────────────────────────────────
+    if (contract.contentHash) {
+      doc.moveDown(2);
+      doc.font('Roboto').fontSize(8).fillColor('#bbb')
+         .text(`Mã xác thực (SHA-256): ${contract.contentHash}`, 50, doc.y, { width: W, align: 'center' });
+    }
 
     doc.end();
   });
+};
+exports.requestSignOtp = async (contractId) => {
+  const contract = await Contract.findById(contractId)
+    .populate('customerId', 'fullName email');
+
+  if (!contract) {
+    throw new AppError('Hợp đồng không tồn tại', 404);
+  }
+
+  if (!['DRAFT', 'SENT'].includes(contract.status)) {
+    throw new AppError('Hợp đồng không ở trạng thái có thể ký', 400);
+  }
+
+  const { email, fullName } = contract.customerId;
+
+  const { expiresAt } = await sendOtp(
+    'CONTRACT_SIGN',
+    contract._id.toString(),
+    email,
+    fullName
+  );
+
+  return {
+    message: `Mã OTP đã gửi đến ${email}`,
+    expiresAt
+  };
+};
+
+exports.signContracts = async (contractId, data) => {
+  const { signatureImage, otp, ipAddress } = data;
+
+  if (!signatureImage) {
+    throw new AppError('Thiếu chữ ký', 400);
+  }
+
+  if (!otp) {
+    throw new AppError('Thiếu mã OTP', 400);
+  }
+
+  const contract = await Contract.findById(contractId)
+    .populate('customerId', 'fullName email');
+
+  if (!contract) {
+    throw new AppError('Hợp đồng không tồn tại', 404);
+  }
+   if (contract.status === 'SIGNED') {
+    throw new AppError('Hợp đồng đã được ký trước đó', 400);
+  }
+
+
+  try {
+    await verifyOtp('CONTRACT_SIGN', contract._id.toString(), otp);
+  } catch (err) {
+    throw new AppError(err.message, 400);
+  }
+ const signedAt  = new Date();
+  const contentHash = require('crypto')
+    .createHash('sha256')
+    .update(contract.content)
+    .digest('hex');
+ const signedPayload = JSON.stringify({
+    contractNumber: contract.contractNumber,
+    content:        contract.content,
+    signatureImage,                        
+    signedAt:       signedAt.toISOString(),
+    ipAddress:      ipAddress || 'unknown',
+    signerName:     contract.customerId?.fullName,
+    signerEmail:    contract.customerId?.email,
+    contentHash
+  });
+  const { encryptedData, iv, authTag } = encryptContract(signedPayload);
+    const signatureImageThumb = signatureImage;
+    const deadlineHours = contract.depositDeadlineHours || 48;
+  const depositDeadline = new Date(signedAt.getTime() + deadlineHours * 60 * 60 * 1000);
+  contract.customerSignature = {
+    signatureImage:      signatureImage,      
+    signatureImageThumb: signatureImageThumb, 
+    signedAt,
+    ipAddress: ipAddress || 'unknown'
+  };
+  contract.encryptedSignedData = encryptedData;
+  contract.encryptionIv        = iv;
+  contract.encryptionAuthTag   = authTag;
+  contract.contentHash         = contentHash;
+  contract.depositDeadline     = depositDeadline;
+  contract.status              = 'SIGNED';
+  contract.signedAt            = signedAt; 
+  await contract.save();
+  try {
+    const InvoiceService = require('../invoiceService');
+    await InvoiceService.createInvoiceFromTicket(contract.requestTicketId);
+    console.log(`[Contract ${contractId}] Invoice created after signing`);
+  } catch (invoiceErr) {
+    console.warn(`[Contract ${contractId}] Invoice creation skipped:`, invoiceErr.message);
+  }
+  return {
+    message: 'Ký hợp đồng thành công',
+     depositDeadline
+  };
 };
