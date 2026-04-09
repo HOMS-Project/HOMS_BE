@@ -30,6 +30,13 @@ const applyPromotion = async (req, res) => {
   const ticket = await RequestTicket.findById(requestTicketId);
     if (!ticket) return res.status(404).json({ success: false, message: 'Yêu cầu chuyển không tồn tại' });
 
+    // Disallow applying promotions to orders that are already paid or partially paid.
+    // Find related invoice (if any) and check paymentStatus.
+    const relatedInvoice = await Invoice.findOne({ requestTicketId: ticket._id });
+    if (relatedInvoice && relatedInvoice.paymentStatus && relatedInvoice.paymentStatus !== 'UNPAID') {
+      return res.status(400).json({ success: false, message: 'Khuyến mãi chỉ áp dụng cho đơn chưa thanh toán' });
+    }
+
     // Only owner or admin may apply promotion
     if (req.user && req.user.role && req.user.role.toLowerCase() !== 'admin') {
       const uid = (req.user._id || req.user.userId).toString();
@@ -143,10 +150,16 @@ const getAvailablePromotions = async (req, res) => {
       return true;
     });
 
-    // if requestTicketId provided, further filter by minOrderAmount and applicableAreas/services
+    // if requestTicketId provided, further filter by minOrderAmount and applicableServices/services
     if (requestTicketId) {
       const ticket = await RequestTicket.findById(requestTicketId).lean();
       if (ticket) {
+        // If an invoice exists and is PAID or PARTIAL, do not return any promotions for this ticket.
+        const invoice = await Invoice.findOne({ requestTicketId: ticket._id }).lean();
+        if (invoice && invoice.paymentStatus && invoice.paymentStatus !== 'UNPAID') {
+          return res.json({ success: true, data: [] });
+        }
+
         const totalPrice = Number(ticket.pricing?.totalPrice || 0);
         const pickupDistrict = ticket.pickup?.district;
         const deliveryDistrict = ticket.delivery?.district;
