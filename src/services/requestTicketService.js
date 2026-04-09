@@ -14,6 +14,7 @@ const GeocodeService = require('./geocodeService');
 const StrategyFactory = require('./strategies/StrategyFactory');
 const AutoAssignmentService = require('./AutoAssignmentService');
 const TicketStateMachine = require('./TicketStateMachine');
+const Contract = require('../models/Contract');
 
 // Using strategies for transition logic now. 
 // Old STATE_TRANSITIONS moved/delegated to individual strategies.
@@ -306,6 +307,36 @@ class RequestTicketService {
 
     return ticket;
   }
+async _attachContractStatus(tickets) {
+  const relevantIds = tickets
+    .filter(t => ['ACCEPTED', 'CONVERTED'].includes(t.status || (t.toObject ? t.toObject().status : '')))
+    .map(t => t._id || t.id);
+if (relevantIds.length === 0) {
+    return tickets.map(t => {
+      const plain = t.toObject ? t.toObject() : t;
+      plain.contract = null;
+      return plain;
+    });
+  }
+    const contracts = await Contract.find({
+    requestTicketId: { $in: relevantIds }
+  }).select('requestTicketId status signedAt depositDeadline customerSignature.signedAt').lean();
+   const contractMap = {};
+  contracts.forEach(c => {
+    contractMap[c.requestTicketId.toString()] = {
+      _id:             c._id,
+      status:          c.status,
+      signedAt:        c.signedAt ?? c.customerSignature?.signedAt ?? null,
+      depositDeadline: c.depositDeadline
+    };
+  });
+
+    return tickets.map(t => {
+    const plain = t.toObject ? t.toObject() : { ...t };
+    plain.contract = contractMap[plain._id.toString()] || null;
+    return plain;
+  });
+}
 
   /**
    * Lấy list tickets
@@ -365,8 +396,8 @@ class RequestTicketService {
       .sort({ createdAt: -1 })
       .limit(filters.limit || 20)
       .skip(filters.skip || 0);
+    return await this._attachContractStatus(tickets);
 
-    return tickets;
   }
 
   /**

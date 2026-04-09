@@ -31,10 +31,11 @@ const contractSchema = new mongoose.Schema({
 
     // Chữ ký điện tử
     customerSignature: {
-        signatureImage: String, // URL/Base64 của hình ảnh chữ ký
-        signedAt: Date,
-        ipAddress: String
-    },
+    signatureImage: { type: String, select: false }, // base64, ẩn khỏi query thường
+    signatureImageThumb: String,                     // thumbnail nhỏ để render UI (không mã hóa)
+    signedAt: Date,
+    ipAddress: String
+  },
 
     adminSignature: {
         signatureImage: String,
@@ -42,13 +43,22 @@ const contractSchema = new mongoose.Schema({
         signedBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User'
-        }
+        },
+          signedByName: String 
     },
+  encryptedSignedData: { type: String, select: false },
+  encryptionIv:        { type: String, select: false },
+  encryptionAuthTag:   { type: String, select: false },
+  contentHash:         String, 
+
+  // Deadline đặt cọc
+  depositDeadline: Date,       // null nếu chưa ký; set khi ký xong
+  depositDeadlineHours: { type: Number, default: 48 }, 
 
     validFrom: Date,
     validUntil: Date,
 
     notes: String
 }, { timestamps: true });
-
+contractSchema.index({ status: 1, depositDeadline: 1 });
 module.exports = mongoose.model('Contract', contractSchema);
