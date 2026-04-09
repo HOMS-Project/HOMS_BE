@@ -13,5 +13,7 @@ router.get('/ticket/:ticketId', contractController.getContractByTicket);
 
 // Khách hàng đồng ý ký hợp đồng
 router.post('/:id/sign', contractController.signContractCustomer);
-
+// routes/contractRoutes.js
+router.post('/:id/request-otp',authorize('CUSTOMER'), contractController.requestSignOtp);
+router.post('/:id/signs', authorize('CUSTOMER'),   contractController.signContract);
 module.exports = router;
