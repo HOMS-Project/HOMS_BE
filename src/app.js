@@ -121,7 +121,8 @@ app.get('/api/csrf-token', csrfProtection, (req, res) => {
 app.get("/", (req, res) => {
   res.send("HOMS Backend is running 🚚");
 });
-
+const { startContractDepositExpiryJob } = require('./jobs/contractDepositExpiry');
+startContractDepositExpiryJob();
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const requestTicketRoutes = require("./routes/requestTicketRoutes");
