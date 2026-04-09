@@ -11,6 +11,17 @@ async function listVehicles(req, res, next) {
 }
 
 
+async function getDashboard(req, res, next) {
+  try {
+    const stats = await vehicleService.getDashboard();
+    // FE expects response in res.data.data (adminVehicleService.getDashboard uses res.data?.data)
+    return res.json({ success: true, data: stats });
+  } catch (err) {
+    next(err);
+  }
+}
+
+
 async function createVehicle(req, res, next) {
   try {
     // Expecting body: { plateNumber, vehicleType, loadCapacity }
@@ -54,9 +65,22 @@ async function deleteVehicle(req, res, next) {
   }
 }
 
+async function getAssignmentsForVehicle(req, res, next) {
+  try {
+    const { id } = req.params; // vehicleId (VCL-...)
+    const { start, end } = req.query; // optional ISO dates
+    const stats = await vehicleService.getAssignmentsForVehicle(id, start, end);
+    return res.json({ success: true, data: stats });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   listVehicles,
   createVehicle,
   updateVehicle,
   deleteVehicle,
+  getAssignmentsForVehicle,
+  getDashboard,
 };
