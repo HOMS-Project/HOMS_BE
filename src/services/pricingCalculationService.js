@@ -28,9 +28,73 @@ class PricingCalculationService {
   /* =====================================================
      2️⃣ MAIN CALCULATION (NO DB SAVE HERE)
   ===================================================== */
-  async calculatePricing(surveyData, priceList) {
+  async calculatePricing(surveyData, priceList, moveType = null) {
     if (!surveyData) {
       throw new AppError('Thiếu dữ liệu khảo sát', 400);
+    }
+
+    if (moveType === 'TRUCK_RENTAL') {
+      const {
+        suggestedVehicle,
+        rentalDurationHours = null,
+        estimatedHours = null,
+        withDriver = null,
+        suggestedStaffCount = 1,
+        distanceKm = 0
+      } = surveyData;
+
+      const duration = rentalDurationHours || estimatedHours || 1;
+      const driverIncluded = withDriver !== null ? withDriver : (suggestedStaffCount > 1);
+
+      const vehicleConfig = priceList.vehiclePricing?.find(
+        v => v.vehicleType === suggestedVehicle
+      );
+
+      if (!vehicleConfig) {
+        throw new AppError(`Không tìm thấy thông tin giá cho xe ${suggestedVehicle}`, 400);
+      }
+
+      // TRUCK_RENTAL simple pricing: (basePerHour * duration) + (driverFee * duration) + possible distance fee if defined
+      const truckRentalFee = (vehicleConfig.pricePerHour || 0) * duration;
+      
+      let driverFee = 0;
+      if (driverIncluded) {
+        const laborConfig = priceList.laborCost || {};
+        driverFee = ((laborConfig.pricePerHourPerPerson || 0) * duration) + (laborConfig.basePricePerPerson || 0);
+      }
+
+      // Optionally calculate distance if they drove and we charge per km, but typically rental is purely time-based.
+      // We will include basic KM fee if standard in your model, else it defaults to 0.
+      let kmFee = 0;
+      if (distanceKm > 0 && vehicleConfig.limitKm) {
+        kmFee = vehicleConfig.basePriceForFirstXKm +
+          (Math.max(0, distanceKm - vehicleConfig.limitKm) * (vehicleConfig.pricePerNextKm || 0));
+      }
+
+      const total = truckRentalFee + driverFee + kmFee;
+
+      return {
+        subtotal: total,
+        tax: Math.round(total * 0.08), // Assuming 8% VAT
+        totalPrice: Math.round(total * 1.08),
+        isFinalized: false,
+        breakdown: {
+          transportTierFee: 0,
+          vehicleFee: truckRentalFee + kmFee,
+          laborFee: driverFee,
+          itemServiceFee: 0,
+          movingSurcharge: 0,
+          carryFee: 0,
+          stairsFee: 0,
+          weekendFee: 0,
+          peakHourFee: 0,
+          additionalServicesFee: 0,
+          packingFee: 0,
+          assemblingFee: 0,
+          insuranceFee: 0
+        },
+        depositAmount: Math.round(total * 0.3) // Example 30% deposit
+      };
     }
 
     const {
