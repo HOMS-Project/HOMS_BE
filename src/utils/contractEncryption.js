@@ -15,7 +15,7 @@ function encryptContract(plainText) {
   let encrypted = cipher.update(plainText, 'utf8', 'hex');
   encrypted += cipher.final('hex');
 
-  const authTag = cipher.getAuthTag(); 
+  const authTag = cipher.getAuthTag();
 
   return {
     encryptedData: encrypted,
