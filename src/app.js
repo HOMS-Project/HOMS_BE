@@ -14,8 +14,10 @@ const csurf = require('csurf');
 // Cấu hình Socket.io
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || "http://localhost:3000",
-    methods: ["GET", "POST"],
+    origin: function (origin, callback) {
+      callback(null, origin || true);
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     credentials: true
   }
 });
@@ -67,7 +69,9 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 connectDB();
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+  origin: function (origin, callback) {
+    callback(null, origin || true);
+  },
   credentials: true
 }));
 
@@ -85,7 +89,7 @@ app.use(helmet({
       scriptSrc: ["'self'", "https://accounts.google.com"], // Cho phép Google OAuth script
       styleSrc: ["'self'", "'unsafe-inline'"],        // Cần unsafe-inline nếu dùng inline style
       imgSrc: ["'self'", "data:", "https:"],           // Cho phép ảnh từ https
-      connectSrc: ["'self'", process.env.CORS_ORIGIN || "http://localhost:3000"],
+      connectSrc: ["'self'", "*"],                     // Allow API calls to dynamically matching origins on Vercel
       frameSrc: ["https://accounts.google.com"],      // Google OAuth dùng iframe
       objectSrc: ["'none'"],                          // Chặn <object>, <embed> (nguy hiểm)
       upgradeInsecureRequests: [],                    // Tự động upgrade HTTP → HTTPS
@@ -104,18 +108,26 @@ app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   crossOriginEmbedderPolicy: false,
 }));
-app.use(express.json());
+// Increase body size limits to allow uploading template-level signature images
+// NOTE: storing large base64 blobs in JSON is not ideal for production. Prefer using
+// presigned uploads or multipart/form-data endpoints. This increase is a short-term
+// convenience to avoid 413 errors when admins save templates with embedded signatures.
+app.use(express.json({ limit: '12mb' }));
+app.use(express.urlencoded({ extended: true, limit: '12mb' }));
 app.use(cookieParser());
 
 // Serve uploaded files (avatars etc.) from /uploads
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
-const isProduction = process.env.NODE_ENV === 'production';
+// Determine if deployed on a cloud provider like Vercel or Render
+const isCloudHosted = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1' || process.env.RENDER === 'true';
+const useSecureCookies = isCloudHosted || process.env.USE_SECURE_COOKIES === 'true';
+
 const csrfProtection = csurf({
   cookie: {
     httpOnly: true,
-    sameSite: isProduction ? 'none' : 'lax', // Lax for local dev (HTTP), None for cross-site (HTTPS)
-    secure: isProduction
+    sameSite: useSecureCookies ? 'none' : 'lax', // Lax for local dev (HTTP), None for cross-site (HTTPS)
+    secure: useSecureCookies
   }
 });
 app.get('/api/csrf-token', csrfProtection, (req, res) => {
@@ -151,6 +163,7 @@ const adminInvoiceRoutes = require("./routes/admin/invoiceRoutes");
 const adminRatingRoutes = require("./routes/admin/ratingRoutes");
 const adminPromotionRoutes = require("./routes/admin/promotionRoutes");
 const adminMaintenanceRoutes = require("./routes/admin/maintenanceRoutes");
+const adminAiRoutes = require("./routes/admin/adminAiRoutes");
 const staffRoutes = require("./routes/staffRoutes");
 const uploadRoutes = require("./routes/uploads");
 const publicRoutes = require("./routes/publicRoutes");
@@ -186,6 +199,7 @@ app.use("/api/admin/invoices", adminInvoiceRoutes);
 app.use("/api/admin/ratings", adminRatingRoutes);
 app.use("/api/admin/promotions", adminPromotionRoutes);
 app.use("/api/admin/maintenances", adminMaintenanceRoutes);
+app.use("/api/admin/ai", adminAiRoutes);
 
 app.use(errorMiddleware);
 const PORT = process.env.PORT || 5000;

@@ -19,7 +19,7 @@ router.get('/recent-orders', async (req, res) => {
   try {
     const data = await invoiceService.getRecentCompleted(5);
     res.json({ success: true, data });
-  } catch(err) {
+  } catch (err) {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });

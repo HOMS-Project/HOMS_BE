@@ -31,7 +31,10 @@ const contractSchema = new mongoose.Schema({
 
     // Chữ ký điện tử
     customerSignature: {
-    signatureImage: { type: String, select: false }, // base64, ẩn khỏi query thường
+            // Trả về chuỗi base64 của chữ ký khách hàng để frontend có thể hiển thị.
+            // Lưu ý: trường này trước đó được ẩn khỏi các truy vấn mặc định (select: false).
+            // Bỏ `select: false` để API trả dữ liệu chữ ký khi cần (ví dụ trong chi tiết hợp đồng).
+            signatureImage: { type: String }, // base64
     signatureImageThumb: String,                     // thumbnail nhỏ để render UI (không mã hóa)
     signedAt: Date,
     ipAddress: String
@@ -39,21 +42,22 @@ const contractSchema = new mongoose.Schema({
 
     adminSignature: {
         signatureImage: String,
+        signatureImageThumb: String,
         signedAt: Date,
         signedBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User'
         },
-          signedByName: String 
+        signedByName: String
     },
-  encryptedSignedData: { type: String, select: false },
-  encryptionIv:        { type: String, select: false },
-  encryptionAuthTag:   { type: String, select: false },
-  contentHash:         String, 
+    encryptedSignedData: { type: String, select: false },
+    encryptionIv: { type: String, select: false },
+    encryptionAuthTag: { type: String, select: false },
+    contentHash: String,
 
-  // Deadline đặt cọc
-  depositDeadline: Date,       // null nếu chưa ký; set khi ký xong
-  depositDeadlineHours: { type: Number, default: 48 }, 
+    // Deadline đặt cọc
+    depositDeadline: Date,       // null nếu chưa ký; set khi ký xong
+    depositDeadlineHours: { type: Number, default: 48 },
 
     validFrom: Date,
     validUntil: Date,
