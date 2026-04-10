@@ -42,6 +42,9 @@ const requestTicketSchema = new mongoose.Schema({
   scheduledTime: {
     type: Date
   },
+  endTime: {
+    type: Date
+  },
 
   /* ===== QUOTE SNAPSHOT ===== */
   pricing: {

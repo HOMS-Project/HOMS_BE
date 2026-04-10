@@ -1,7 +1,7 @@
 /**
  * AutoAssignmentService
  *
- * Assigns a district dispatcher to review a ticket (SPECIFIC_ITEMS / TRUCK_RENTAL)
+ * Assigns a district dispatcher to review a ticket (FULL_HOUSE / SPECIFIC_ITEMS / TRUCK_RENTAL)
  * after the Head Dispatcher approves it. Uses cascading load-balanced district matching.
  *
  * Cascading strategy:

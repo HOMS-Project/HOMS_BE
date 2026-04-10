@@ -20,8 +20,11 @@ exports.createRequestTicket = async (req, res, next) => {
       throw new AppError('User ID không tồn tại', 401);
     }
 
-    if (!moveType || !pickup?.address || !delivery?.address) {
-      throw new AppError('Thiếu dữ liệu bắt buộc', 400);
+    if (!moveType || !pickup?.address) {
+      throw new AppError('Thiếu thông tin điểm đi (pickup)', 400);
+    }
+    if (moveType !== 'TRUCK_RENTAL' && !delivery?.address) {
+      throw new AppError('Thiếu dữ liệu điểm đến (delivery)', 400);
     }
 
     const ticket = await RequestTicketService.createTicket(

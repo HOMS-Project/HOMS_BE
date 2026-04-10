@@ -17,6 +17,9 @@ class TruckRentalStrategy extends BaseStrategy {
     if (!data.rentalDetails?.rentalDurationHours || data.rentalDetails.rentalDurationHours <= 0) {
       throw new AppError('Dịch vụ thuê xe yêu cầu thời gian thuê (rentalDurationHours) hợp lệ', 400);
     }
+    if (!data.scheduledTime) {
+      throw new AppError('Yêu cầu chọn thời gian bắt đầu thuê (scheduledTime)', 400);
+    }
   }
 
   getAllowedTransitions(currentStatus) {
@@ -34,6 +37,14 @@ class TruckRentalStrategy extends BaseStrategy {
   }
 
   async handlePostCreation(ticket, data) {
+    // TRUCK_RENTAL logic: Auto-calculate and save endTime based on duration
+    if (ticket.scheduledTime && data.rentalDetails?.rentalDurationHours) {
+      const startTime = new Date(ticket.scheduledTime);
+      const endTime = new Date(startTime.getTime() + (data.rentalDetails.rentalDurationHours * 60 * 60 * 1000));
+      ticket.endTime = endTime;
+      await ticket.save();
+    }
+
     if (data.items && data.items.length > 0) {
       const SurveyService = require('../../surveyService');
       const PricingCalculationService = require('../../pricingCalculationService');
@@ -69,14 +80,16 @@ class TruckRentalStrategy extends BaseStrategy {
             declaredValue: 0,
             items: data.items,
             // the rental hours usually required in TRUCK_RENTAL
-            estimatedHours: data.rentalDetails?.rentalDurationHours || estimate.estimatedHours || 0
+            estimatedHours: data.rentalDetails?.rentalDurationHours || estimate.estimatedHours || 0,
+            rentalDurationHours: data.rentalDetails?.rentalDurationHours || 1,
+            withDriver: data.rentalDetails?.withDriver || false
           };
 
           // Override fallback staff for truck rental?
           // Sometimes truck rental just wants to rent the truck
           // but if they added items, we calculate accordingly.
           
-          const pricingResult = await PricingCalculationService.calculatePricing(mockSurveyData, activePriceList);
+          const pricingResult = await PricingCalculationService.calculatePricing(mockSurveyData, activePriceList, 'TRUCK_RENTAL');
           estimatedPrice = pricingResult.totalPrice;
         }
       } catch (error) {

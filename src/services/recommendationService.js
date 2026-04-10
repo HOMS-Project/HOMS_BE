@@ -150,67 +150,156 @@ class RecommendationService {
     return Math.max(min, Math.min(max, score));
   }
 
-  async calculateRecommendation(date, location, distanceKm, experimentGroup = 'CONTROL') {
+  async calculateRecommendation(date, location, distanceKm, experimentGroup = 'CONTROL', moveType = 'FULL_HOUSE', rentalDetails = null) {
     const weatherData = await this.getWeatherScore(date, location);
     const trafficScore = this.getTrafficScore(date, distanceKm);
-    const demandScore = await this.getDemandScore(date);
+    let demandScore = await this.getDemandScore(date);
     const businessBoost = await this.getBusinessIntentBoost(date);
+
+    // TRUCK_RENTAL Availability logic
+    let availabilityScore = 0;
+    let isAvailabilityBlocked = false;
+    let availabilityBlockReason = null;
+
+    if (moveType === 'TRUCK_RENTAL') {
+      try {
+        const truckType = rentalDetails?.truckType || '1TON'; // fallback
+        const rentalHrs = rentalDetails?.rentalDurationHours || 1;
+        const startTime = moment(date).toDate();
+        const endTime = moment(date).add(rentalHrs, 'hours').toDate();
+
+        // 1. Get Fleet Size (mocked/static for now per phase 1.3 deferred)
+        // Use generic capacity as fleet size or explicit map
+        const fleetMap = { '500KG': 5, '1TON': 5, '1.5TON': 3, '2TON': 2 };
+        const totalFleet = fleetMap[truckType] || 5;
+
+        // 2. Count overlapping active bookings
+        const RequestTicket = require('../models/RequestTicket');
+        const overlappingBookings = await RequestTicket.countDocuments({
+          'rentalDetails.truckType': truckType,
+          status: { $in: ['ACCEPTED', 'CONVERTED', 'IN_PROGRESS'] }, // Adjust based on your valid active statuses
+          scheduledTime: { $lt: endTime },
+          endTime: { $gt: startTime } // The new field
+        });
+
+        const availableTrucks = totalFleet - overlappingBookings;
+        
+        if (availableTrucks <= 0) {
+          availabilityScore = -100;
+          isAvailabilityBlocked = true;
+          availabilityBlockReason = 'Hết xe trong khung giờ này';
+        } else {
+          availabilityScore = 50 + (availableTrucks * 10); // positive score for having trucks
+          if (availabilityScore > 100) availabilityScore = 100;
+        }
+      } catch (err) {
+        console.error('Lỗi tính availabilityScore:', err);
+      }
+    }
 
     // Normalize factor scores to ensure consistent scaling (-100 to 100)
     const normWeather = this.normalizeScore(weatherData.score);
     const normTraffic = this.normalizeScore(trafficScore);
     const normDemand = this.normalizeScore(demandScore);
+    const normAvailability = this.normalizeScore(availabilityScore);
 
-    // 🔬 A/B Testing: Group B might use different weights
+    // 🔬 A/B Testing & Flow type Weights
     let currentWeights = this.weights;
-    if (experimentGroup === 'GROUP_B') {
-        currentWeights = { weather: 0.2, traffic: 0.6, demand: 0.2 };
+    if (moveType === 'TRUCK_RENTAL') {
+      currentWeights = { weather: 0.1, traffic: 0.2, demand: 0.4, availability: 0.3 };
+    } else if (experimentGroup === 'GROUP_B') {
+      currentWeights = { weather: 0.2, traffic: 0.6, demand: 0.2 };
     }
 
-    const rawScore = (normWeather * currentWeights.weather) + 
-                     (normTraffic * currentWeights.traffic) + 
-                     (normDemand * currentWeights.demand);
+    let rawScore = 0;
+    if (moveType === 'TRUCK_RENTAL') {
+      rawScore = (normWeather * currentWeights.weather) + 
+                 (normTraffic * currentWeights.traffic) + 
+                 (normDemand * currentWeights.demand) +
+                 (normAvailability * currentWeights.availability);
+    } else {
+      rawScore = (normWeather * currentWeights.weather) + 
+                 (normTraffic * currentWeights.traffic) + 
+                 (normDemand * currentWeights.demand);
+    }
 
     let penalty = 0;
     const reasons = [];
 
     // 🚨 Dominant Factor Hard Penalty Layer
-    // If ANY single metric is critically bad (<= -80), it penalizes the total drastically 
-    // ensuring positive factors can't mathematically rescue a "disaster" time.
-    const worstFactor = Math.min(normWeather, normTraffic, normDemand);
+    let worstFactor = Math.min(normWeather, normTraffic, normDemand);
+    if (moveType === 'TRUCK_RENTAL') {
+       worstFactor = Math.min(normWeather, normTraffic, normDemand, normAvailability);
+    }
     
-    if (moment(date).format('dddd') !== 'Saturday' && moment(date).format('dddd') !== 'Sunday' && moment(date).hour() >= 7 && moment(date).hour() < 9) {
-        penalty -= 50; 
-        reasons.push('Nguy cơ kẹt xe rủi ro cực cao vào giờ cao điểm các ngày trong tuần');
-    } else if (worstFactor <= -80) {
-        penalty -= 40;
-        reasons.push('Thời gian không khuyến nghị do điều kiện vô cùng bất lợi (kẹt xe/thời tiết/kín lịch)');
-    } else if (worstFactor <= -50) {
-        penalty -= 20;
+    // Penalties adjusted for TRUCK_RENTAL
+    const isMorningRush = moment(date).format('dddd') !== 'Saturday' && moment(date).format('dddd') !== 'Sunday' && moment(date).hour() >= 7 && moment(date).hour() < 9;
+    
+    if (moveType === 'TRUCK_RENTAL') {
+      if (isMorningRush) {
+         penalty -= 10; // Softer penalty
+         reasons.push('Đường phố có thể đông đúc giờ cao điểm');
+      } else if (worstFactor <= -80) {
+         penalty -= 20; 
+         reasons.push('Thời gian thuê chưa tối ưu do nhu cầu cao hoặc kẹt xe');
+      }
+    } else {
+      if (isMorningRush) {
+          penalty -= 50; 
+          reasons.push('Nguy cơ kẹt xe rủi ro cực cao vào giờ cao điểm các ngày trong tuần');
+      } else if (worstFactor <= -80) {
+          penalty -= 40;
+          reasons.push('Thời gian không khuyến nghị do điều kiện vô cùng bất lợi (kẹt xe/thời tiết/kín lịch)');
+      } else if (worstFactor <= -50) {
+          penalty -= 20;
+      }
     }
     
     const totalScore = rawScore + businessBoost + penalty;
 
     let label = 'NORMAL';
-    if (weatherData.isBlocked) label = 'BAD';
-    else if (totalScore > 30) label = 'BEST';
-    else if (totalScore > 10) label = 'GOOD';
-    else if (totalScore < -10) label = 'BAD';
-
-    if (weatherData.weatherReason && penalty === 0) {
-        // If we have a specific descriptive string from the weather module, use it
-        reasons.push(weatherData.weatherReason);
+    if (moveType === 'TRUCK_RENTAL') {
+      // Adjusted labeling for TRUCK_RENTAL
+      if (isAvailabilityBlocked) label = 'BAD';
+      else if (totalScore > 30) label = 'BEST';
+      else if (totalScore > 10) label = 'GOOD';
+      else if (totalScore < -20) label = 'BAD'; // lower threshold for BAD since traffic matters less
     } else {
-        // Fallbacks
-        if (normWeather > 10) reasons.push('Thời tiết thuận lợi');
-        else if (normWeather < -10 && worstFactor > -80) reasons.push('Thời tiết có thể bất lợi do nóng/lạnh hoặc mưa dầm');
+      if (weatherData.isBlocked) label = 'BAD';
+      else if (totalScore > 30) label = 'BEST';
+      else if (totalScore > 10) label = 'GOOD';
+      else if (totalScore < -10) label = 'BAD';
     }
 
-    if (normTraffic > 10) reasons.push('Đường thông thoáng, ít kẹt xe');
-    else if (normTraffic < -10 && worstFactor > -80 && penalty === 0) reasons.push('Có thể kẹt xe trên tuyến đường');
+    if (moveType === 'TRUCK_RENTAL') {
+        if (normAvailability > 10) reasons.push('Còn nhiều xe trống');
+        if (normDemand > 10) reasons.push('Giá thuê tốt (ít nhu cầu cạnh tranh)');
+        if (normDemand < -50) reasons.push('Nhu cầu thuê xe cao, có thể giá tăng nhẹ');
+    } else {
+        if (weatherData.weatherReason && penalty === 0) {
+            reasons.push(weatherData.weatherReason);
+        } else {
+            if (normWeather > 10) reasons.push('Thời tiết thuận lợi');
+            else if (normWeather < -10 && worstFactor > -80) reasons.push('Thời tiết có thể bất lợi do nóng/lạnh hoặc mưa dầm');
+        }
 
-    if (normDemand > 50) reasons.push('Biểu phí vận chuyển tối ưu thời điểm này');
-    else if (normDemand < -50 && worstFactor > -80) reasons.push('Giờ cao điểm dịch vụ, lịch xe khá kẹt');
+        if (normTraffic > 10) reasons.push('Đường thông thoáng, ít kẹt xe');
+        else if (normTraffic < -10 && worstFactor > -80 && penalty === 0) reasons.push('Có thể kẹt xe trên tuyến đường');
+
+        if (normDemand > 50) reasons.push('Biểu phí vận chuyển tối ưu thời điểm này');
+        else if (normDemand < -50 && worstFactor > -80) reasons.push('Giờ cao điểm dịch vụ, lịch xe khá kẹt');
+    }
+
+    let finalIsBlocked = false;
+    let finalBlockReason = null;
+
+    if (moveType === 'TRUCK_RENTAL') {
+      finalIsBlocked = isAvailabilityBlocked; // DON'T block on weather/traffic
+      finalBlockReason = availabilityBlockReason;
+    } else {
+      finalIsBlocked = weatherData.isBlocked || false;
+      finalBlockReason = weatherData.blockReason || null;
+    }
 
     return {
       date: moment(date).format('YYYY-MM-DD'),
@@ -220,22 +309,23 @@ class RecommendationService {
         weather: Math.round(normWeather),
         traffic: Math.round(normTraffic),
         demand: Math.round(normDemand),
+        availability: moveType === 'TRUCK_RENTAL' ? Math.round(normAvailability) : undefined,
         businessBoost,
         weights: currentWeights
       },
       label,
-      isBlocked: weatherData.isBlocked || false,
-      blockReason: weatherData.blockReason || null,
-      suggestAlternatives: weatherData.suggestAlternatives || false,
-      reasons 
+      isBlocked: finalIsBlocked,
+      blockReason: finalBlockReason,
+      suggestAlternatives: moveType === 'TRUCK_RENTAL' ? finalIsBlocked : (weatherData.suggestAlternatives || false),
+      reasons
     };
   }
 
-  async getRecommendations(scheduledDate, location, distanceKm = 10) {
+  async getRecommendations(scheduledDate, location, distanceKm = 10, moveType = 'FULL_HOUSE', rentalDetails = null) {
     // 🧬 Assign Experiment Group (50/50 split)
     const experimentGroup = Math.random() > 0.5 ? 'GROUP_B' : 'CONTROL';
 
-    const primary = await this.calculateRecommendation(scheduledDate, location, distanceKm, experimentGroup);
+    const primary = await this.calculateRecommendation(scheduledDate, location, distanceKm, experimentGroup, moveType, rentalDetails);
     
     // Suggest alternatives (must be at least 2 days from now to match Frontend minimum booking constraint)
     const minDateConstraint = moment().add(2, 'days').startOf('day');
@@ -250,7 +340,7 @@ class RecommendationService {
             if (moment(testDate).isSame(scheduledDate, 'hour') || moment(testDate).isBefore(minDateConstraint)) continue;
             
             alternativePromises.push(
-                this.calculateRecommendation(testDate, location, distanceKm, experimentGroup)
+                this.calculateRecommendation(testDate, location, distanceKm, experimentGroup, moveType, rentalDetails)
                     .then(alt => alt)
             );
         }

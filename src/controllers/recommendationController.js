@@ -7,7 +7,7 @@ const RecommendationService = require('../services/recommendationService');
  */
 exports.getBestMovingTime = async (req, res, next) => {
   try {
-    const { scheduledDate, pickupAddress, distanceKm } = req.body || {};
+    const { scheduledDate, pickupAddress, distanceKm, moveType, rentalDetails } = req.body || {};
 
     if (!scheduledDate || !pickupAddress || distanceKm == null) {
       return res.status(400).json({
@@ -36,7 +36,9 @@ exports.getBestMovingTime = async (req, res, next) => {
     const recommendation = await RecommendationService.getRecommendations(
       parsedDate,
       pickupAddress,
-      distance
+      distance,
+      moveType,
+      rentalDetails
     );
 
     return res.status(200).json({

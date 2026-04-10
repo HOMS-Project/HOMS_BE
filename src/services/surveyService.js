@@ -110,8 +110,12 @@ class SurveyService {
     } = surveyData;
 
     // Validate
-    if (!suggestedVehicle || suggestedStaffCount == null || distanceKm == null) {
+    if (!suggestedVehicle || suggestedStaffCount == null) {
       throw new AppError('Thiếu dữ liệu khảo sát bắt buộc', 400);
+    }
+
+    if (ticket.moveType !== 'TRUCK_RENTAL' && distanceKm == null) {
+      throw new AppError('Thiếu khoảng cách vận chuyển', 400);
     }
 
     // 3️⃣ Tính toán totals
@@ -174,7 +178,8 @@ class SurveyService {
     // 5.1 Calculate Base Pricing
     const basePricing = await PricingCalculationService.calculatePricing(
       freshSurvey,
-      priceList
+      priceList,
+      ticket.moveType
     );
 
     // 5.2 Get Recommendations (Weighted Score + Time Slot + Distance Factor)
