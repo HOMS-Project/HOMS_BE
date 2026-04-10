@@ -8,12 +8,21 @@ exports.getContractByTicket = async (req, res, next) => {
         const { ticketId } = req.params;
         const customerId = req.user.userId || req.user._id || req.user.id;
         
-        const contract = await Contract.findOne({ requestTicketId: ticketId, customerId: customerId });
+        // Try to load the contract and its template (we may fallback to template-level adminSignature)
+        const contract = await Contract.findOne({ requestTicketId: ticketId, customerId: customerId })
+          .populate('templateId')
+          .lean();
         
-        if (!contract) {
+    if (!contract) {
             return res.status(404).json({ success: false, message: 'Không tìm thấy hợp đồng nào cho yêu cầu này' });
         }
-        res.status(200).json({ success: true, data: contract });
+    // If the contract doesn't have an adminSignature embedded (was created before template had one),
+    // fall back to template.adminSignature for display only (do not mutate DB here).
+    if ((!contract.adminSignature || !contract.adminSignature.signatureImage) && contract.templateId && contract.templateId.adminSignature) {
+      contract.adminSignature = contract.templateId.adminSignature;
+    }
+
+    res.status(200).json({ success: true, data: contract });
     } catch (error) {
         next(error);
     }

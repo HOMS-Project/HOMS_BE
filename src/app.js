@@ -104,7 +104,12 @@ app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   crossOriginEmbedderPolicy: false,
 }));
-app.use(express.json());
+// Increase body size limits to allow uploading template-level signature images
+// NOTE: storing large base64 blobs in JSON is not ideal for production. Prefer using
+// presigned uploads or multipart/form-data endpoints. This increase is a short-term
+// convenience to avoid 413 errors when admins save templates with embedded signatures.
+app.use(express.json({ limit: '12mb' }));
+app.use(express.urlencoded({ extended: true, limit: '12mb' }));
 app.use(cookieParser());
 
 // Serve uploaded files (avatars etc.) from /uploads
