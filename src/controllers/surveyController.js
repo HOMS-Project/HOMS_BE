@@ -99,10 +99,6 @@ exports.completeSurvey = async (req, res, next) => {
       throw new AppError('Thiếu số nhân viên đề xuất', 400);
     }
 
-    if (surveyData?.distanceKm === undefined) {
-      throw new AppError('Thiếu khoảng cách vận chuyển', 400);
-    }
-
     // ✅ Gọi service
     const result = await SurveyService.completeSurvey(
       ticketId,
