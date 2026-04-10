@@ -4,27 +4,22 @@ const adminContractService = require('../services/admin/contractService');
 const ContractService = require('../services/admin/contractService')
 const { sendOtp, verifyOtp } = require('../services/otpService');
 exports.getContractByTicket = async (req, res, next) => {
-    try {
-        const { ticketId } = req.params;
-        const customerId = req.user.userId || req.user._id || req.user.id;
-        
-        // Try to load the contract and its template (we may fallback to template-level adminSignature)
-        const contract = await Contract.findOne({ requestTicketId: ticketId, customerId: customerId })
-          .populate('templateId')
-          .lean();
-        
+  try {
+    const { ticketId } = req.params;
+    const customerId = req.user.userId || req.user._id || req.user.id;
+
+    // Try to load the contract and its template (we may fallback to template-level adminSignature)
+    const contract = await Contract.findOne({ requestTicketId: ticketId, customerId: customerId })
+      .populate('templateId')
+      .lean();
+
     if (!contract) {
-            return res.status(404).json({ success: false, message: 'Không tìm thấy hợp đồng nào cho yêu cầu này' });
-        }
+      return res.status(404).json({ success: false, message: 'Không tìm thấy hợp đồng nào cho yêu cầu này' });
+    }
     // If the contract doesn't have an adminSignature embedded (was created before template had one),
     // fall back to template.adminSignature for display only (do not mutate DB here).
     if ((!contract.adminSignature || !contract.adminSignature.signatureImage) && contract.templateId && contract.templateId.adminSignature) {
       contract.adminSignature = contract.templateId.adminSignature;
-    }
-
-    res.status(200).json({ success: true, data: contract });
-    } catch (error) {
-        next(error);
     }
 
     res.status(200).json({ success: true, data: contract });
