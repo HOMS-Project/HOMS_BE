@@ -315,13 +315,15 @@ const storeRefreshToken = async (user, refreshToken) => {
     .update(refreshToken)
     .digest('hex');
 
-  user.refreshTokens.push({
-    token: hashed,
-    createdAt: new Date(),
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+  await User.findByIdAndUpdate(user._id, {
+    $push: {
+      refreshTokens: {
+        token: hashed,
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      }
+    }
   });
-
-  await user.save();
 };
 exports.logoutUser = async (refreshToken) => {
   if (!refreshToken) {
@@ -334,17 +336,10 @@ exports.logoutUser = async (refreshToken) => {
     .update(refreshToken)
     .digest("hex");
 console.log("Hashed:", hashed);
-  const user = await User.findOne({
-    "refreshTokens.token": hashed,
-  });
-  if (!user) {
-    return true;
-  }
-  user.refreshTokens = user.refreshTokens.filter(
-    (t) => t.token !== hashed
+  await User.updateOne(
+    { "refreshTokens.token": hashed },
+    { $pull: { refreshTokens: { token: hashed } } }
   );
-
-  await user.save();
 
   return true;
 };

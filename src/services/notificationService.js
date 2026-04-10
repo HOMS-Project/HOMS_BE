@@ -2,13 +2,14 @@ const Notification = require("../models/Notification");
 
 class NotificationService {
 
-  static async createNotification({ userId, title, message, type }, io) {
+  static async createNotification({ userId, title, message, type, ticketId }, io) {
 
     const notification = await Notification.create({
       userId,
       title,
       message,
-      type
+      type,
+      ticketId
     });
 
     const socketId = global.onlineUsers.get(userId.toString());

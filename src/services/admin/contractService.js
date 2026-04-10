@@ -243,7 +243,7 @@ exports.getContractFile = async (contractId) => {
   const title = contract.templateId?.title || 'Hợp đồng';
   const contractNumber = contract.contractNumber || contract._id;
   const customerName = contract.customerId?.fullName || '';
-  const createdAt = contract.createdAt ? contract.createdAt.toISOString().slice(0,10) : '';
+  const createdAt = contract.createdAt ? contract.createdAt.toISOString().slice(0, 10) : '';
   const customerSigBlock = contract.customerSignature?.signatureImageThumb
     ? `<img src="${contract.customerSignature.signatureImageThumb}"
             style="max-width:220px; max-height:90px; border:1px solid #ddd; border-radius:4px;" />`
@@ -258,7 +258,7 @@ exports.getContractFile = async (contractId) => {
     ? new Date(contract.customerSignature.signedAt).toLocaleString('vi-VN') : '—';
   const adminSignedAt = contract.adminSignature?.signedAt
     ? new Date(contract.adminSignature.signedAt).toLocaleString('vi-VN') : '—';
-   const html = `<!doctype html>
+  const html = `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -367,7 +367,7 @@ exports.getContractDocx = async (contractId) => {
     throw new Error('html-docx-js did not expose a usable API (asBuffer/asBlob/function)');
   }
 
-  const outFilename = (filename || 'contract') .toString().replace(/\.html?$/i, '') + '.docx';
+  const outFilename = (filename || 'contract').toString().replace(/\.html?$/i, '') + '.docx';
   return { filename: outFilename, buffer: docxBuffer };
 };
 exports.getMyContracts = async (customerId, options = {}) => {
@@ -383,16 +383,16 @@ exports.getMyContracts = async (customerId, options = {}) => {
   if (search?.trim()) {
     filter.contractNumber = { $regex: search.trim(), $options: 'i' };
   }
- const statsAgg = await Contract.aggregate([
+  const statsAgg = await Contract.aggregate([
     { $match: { customerId } },
     { $group: { _id: '$status', count: { $sum: 1 } } },
   ]);
   const stats = { total: 0, signed: 0, pending: 0, expired: 0 };
   statsAgg.forEach(({ _id, count }) => {
     stats.total += count;
-    if (_id === 'SIGNED')               stats.signed  = count;
+    if (_id === 'SIGNED') stats.signed = count;
     if (_id === 'SENT' || _id === 'DRAFT') stats.pending += count;
-    if (_id === 'EXPIRED')              stats.expired = count;
+    if (_id === 'EXPIRED') stats.expired = count;
   });
 
   const [contracts, total] = await Promise.all([
@@ -410,12 +410,12 @@ exports.getMyContracts = async (customerId, options = {}) => {
   return {
     contracts,
     pagination: { total, page: Number(page), limit: Number(limit) },
-      stats, 
+    stats,
   };
 };
 
 
- exports.getContractDetail = async (contractId, customerId) => {
+exports.getContractDetail = async (contractId, customerId) => {
   const contract = await Contract.findOne({
     _id: contractId,
     customerId
@@ -432,6 +432,9 @@ exports.getMyContracts = async (customerId, options = {}) => {
     err.statusCode = 404;
     throw err;
   }
+  if ((!contract.adminSignature || !contract.adminSignature.signatureImage) && contract.templateId && contract.templateId.adminSignature) {
+    contract.adminSignature = contract.templateId.adminSignature;
+  }
 
   // If this contract doesn't include an adminSignature image (older contracts),
   // fall back to the template's adminSignature for display only (do not persist).
@@ -442,7 +445,7 @@ exports.getMyContracts = async (customerId, options = {}) => {
   return contract;
 };
 
- function htmlToPlainText(html = '') {
+function htmlToPlainText(html = '') {
   return html
     .replace(/<\/?(p|div|section|article|header|footer|blockquote)\b[^>]*>/gi, '\n')
     .replace(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/gi, (_, inner) =>
@@ -465,7 +468,7 @@ exports.getMyContracts = async (customerId, options = {}) => {
 }
 exports.getContractPdf = async (contractId) => {
   const contract = await Contract.findById(contractId)
-   .select('+customerSignature.signatureImage')
+    .select('+customerSignature.signatureImage')
     .populate('customerId', 'fullName email phone')
     // populate template adminSignature so PDF can render admin signature even when it's stored on the template
     .populate('templateId', 'title adminSignature')
@@ -483,12 +486,12 @@ exports.getContractPdf = async (contractId) => {
 
   return new Promise((resolve, reject) => {
     doc.on('end', () => resolve({
-       filename: `contract-${(contract.contractNumber || contractId).replace(/[^\w\-]/g, '_')}.pdf`,
+      filename: `contract-${(contract.contractNumber || contractId).replace(/[^\w\-]/g, '_')}.pdf`,
       buffer: Buffer.concat(buffers),
     }));
     doc.on('error', reject);
 
-    const fontPath     = path.join(__dirname, '../../fonts/Roboto-Regular.ttf');
+    const fontPath = path.join(__dirname, '../../fonts/Roboto-Regular.ttf');
     const fontBoldPath = path.join(__dirname, '../../fonts/Roboto-Bold.ttf');
     doc.registerFont('Roboto', fontPath);
     doc.registerFont('Roboto-Bold', fontBoldPath);
@@ -496,10 +499,10 @@ exports.getContractPdf = async (contractId) => {
 
     // ── Tiêu đề ─────────────────────────────────────────────
     doc.font('Roboto-Bold').fontSize(16)
-       .text(contract.templateId?.title || 'HỢP ĐỒNG', { align: 'center', width: W });
+      .text(contract.templateId?.title || 'HỢP ĐỒNG', { align: 'center', width: W });
     doc.moveDown(0.3);
     doc.font('Roboto').fontSize(11)
-       .text(`Số: ${contract.contractNumber}`, { align: 'center', width: W });
+      .text(`Số: ${contract.contractNumber}`, { align: 'center', width: W });
     doc.moveDown(0.5);
     doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).stroke();
     doc.moveDown(0.5);
@@ -507,8 +510,8 @@ exports.getContractPdf = async (contractId) => {
     // ── Meta ─────────────────────────────────────────────────
     const metaItems = [
       ['Khách hàng (Bên B)', contract.customerId?.fullName || ''],
-      ['Ngày tạo',           new Date(contract.createdAt).toLocaleDateString('vi-VN')],
-      ['Trạng thái',         contract.status],
+      ['Ngày tạo', new Date(contract.createdAt).toLocaleDateString('vi-VN')],
+      ['Trạng thái', contract.status],
     ];
     if (contract.depositDeadline) {
       metaItems.push(['Hạn đặt cọc', new Date(contract.depositDeadline).toLocaleString('vi-VN')]);
@@ -524,28 +527,28 @@ exports.getContractPdf = async (contractId) => {
     // ── Nội dung ─────────────────────────────────────────────
     const plainText = htmlToPlainText(contract.content || 'Không có nội dung');
     doc.font('Roboto').fontSize(12)
-       .text(plainText, { width: W, align: 'justify', lineGap: 4 });
+      .text(plainText, { width: W, align: 'justify', lineGap: 4 });
     doc.moveDown(2);
 
     // ── Phần chữ ký ──────────────────────────────────────────
     doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).stroke();
     doc.moveDown(1);
     doc.font('Roboto-Bold').fontSize(13)
-       .text('CHỮ KÝ CÁC BÊN', { align: 'center', width: W });
+      .text('CHỮ KÝ CÁC BÊN', { align: 'center', width: W });
     doc.moveDown(1);
 
     const sigY = doc.y;
-    const leftX  = 60;
+    const leftX = 60;
     const rightX = doc.page.width / 2 + 20;
-    const boxW   = doc.page.width / 2 - 80;
+    const boxW = doc.page.width / 2 - 80;
 
     // Bên A
     doc.font('Roboto-Bold').fontSize(11)
-       .text('BÊN A — ĐẠI DIỆN HOMS', leftX, sigY, { width: boxW, align: 'center' });
+      .text('BÊN A — ĐẠI DIỆN HOMS', leftX, sigY, { width: boxW, align: 'center' });
 
     // Bên B
     doc.font('Roboto-Bold').fontSize(11)
-       .text('BÊN B — KHÁCH HÀNG', rightX, sigY, { width: boxW, align: 'center' });
+      .text('BÊN B — KHÁCH HÀNG', rightX, sigY, { width: boxW, align: 'center' });
 
     doc.moveDown(0.5);
     const imgY = doc.y;
@@ -556,24 +559,24 @@ exports.getContractPdf = async (contractId) => {
         // Vẽ ô trống
         doc.rect(x, y, w, 70).stroke();
         doc.font('Roboto').fontSize(10)
-           .fillColor('#aaa')
-           .text('(Chưa ký)', x, y + 28, { width: w, align: 'center' });
+          .fillColor('#aaa')
+          .text('(Chưa ký)', x, y + 28, { width: w, align: 'center' });
         doc.fillColor('#000');
         return;
       }
       try {
         // Tách phần data từ base64 data URL
         const base64Data = base64Img.includes(',') ? base64Img.split(',')[1] : base64Img;
-        const imgBuffer  = Buffer.from(base64Data, 'base64');
+        const imgBuffer = Buffer.from(base64Data, 'base64');
         doc.image(imgBuffer, x, y, { width: w, height: 70, fit: [w, 70] });
       } catch {
         doc.rect(x, y, w, 70).stroke();
       }
     };
-  const customerSig =
+    const customerSig =
       contract.customerSignature?.signatureImageThumb ||
       contract.customerSignature?.signatureImage;
-     tryEmbedSignature(contract.adminSignature?.signatureImage, leftX, imgY, boxW);
+    tryEmbedSignature(contract.adminSignature?.signatureImage, leftX, imgY, boxW);
     tryEmbedSignature(customerSig, rightX, imgY, boxW);
    // move cursor below signature images
    doc.y = imgY + 80;
@@ -604,7 +607,7 @@ exports.getContractPdf = async (contractId) => {
     if (contract.contentHash) {
       doc.moveDown(2);
       doc.font('Roboto').fontSize(8).fillColor('#bbb')
-         .text(`Mã xác thực (SHA-256): ${contract.contentHash}`, 50, doc.y, { width: W, align: 'center' });
+        .text(`Mã xác thực (SHA-256): ${contract.contentHash}`, 50, doc.y, { width: W, align: 'center' });
     }
 
     doc.end();
@@ -656,7 +659,7 @@ exports.signContracts = async (contractId, data) => {
   if (!contract) {
     throw new AppError('Hợp đồng không tồn tại', 404);
   }
-   if (contract.status === 'SIGNED') {
+  if (contract.status === 'SIGNED') {
     throw new AppError('Hợp đồng đã được ký trước đó', 400);
   }
 
@@ -666,24 +669,24 @@ exports.signContracts = async (contractId, data) => {
   } catch (err) {
     throw new AppError(err.message, 400);
   }
- const signedAt  = new Date();
+  const signedAt = new Date();
   const contentHash = require('crypto')
     .createHash('sha256')
     .update(contract.content)
     .digest('hex');
- const signedPayload = JSON.stringify({
+  const signedPayload = JSON.stringify({
     contractNumber: contract.contractNumber,
-    content:        contract.content,
-    signatureImage,                        
-    signedAt:       signedAt.toISOString(),
-    ipAddress:      ipAddress || 'unknown',
-    signerName:     contract.customerId?.fullName,
-    signerEmail:    contract.customerId?.email,
+    content: contract.content,
+    signatureImage,
+    signedAt: signedAt.toISOString(),
+    ipAddress: ipAddress || 'unknown',
+    signerName: contract.customerId?.fullName,
+    signerEmail: contract.customerId?.email,
     contentHash
   });
   const { encryptedData, iv, authTag } = encryptContract(signedPayload);
-    const signatureImageThumb = signatureImage;
-    const deadlineHours = contract.depositDeadlineHours || 48;
+  const signatureImageThumb = signatureImage;
+  const deadlineHours = contract.depositDeadlineHours || 48;
   const depositDeadline = new Date(signedAt.getTime() + deadlineHours * 60 * 60 * 1000);
     // If contract lacks adminSignature but template provides one, persist it into contract
     if ((!contract.adminSignature || !contract.adminSignature.signatureImage) && contract.templateId && contract.templateId.adminSignature) {
@@ -696,18 +699,18 @@ exports.signContracts = async (contractId, data) => {
       };
     }
   contract.customerSignature = {
-    signatureImage:      signatureImage,      
-    signatureImageThumb: signatureImageThumb, 
+    signatureImage: signatureImage,
+    signatureImageThumb: signatureImageThumb,
     signedAt,
     ipAddress: ipAddress || 'unknown'
   };
   contract.encryptedSignedData = encryptedData;
-  contract.encryptionIv        = iv;
-  contract.encryptionAuthTag   = authTag;
-  contract.contentHash         = contentHash;
-  contract.depositDeadline     = depositDeadline;
-  contract.status              = 'SIGNED';
-  contract.signedAt            = signedAt; 
+  contract.encryptionIv = iv;
+  contract.encryptionAuthTag = authTag;
+  contract.contentHash = contentHash;
+  contract.depositDeadline = depositDeadline;
+  contract.status = 'SIGNED';
+  contract.signedAt = signedAt;
   await contract.save();
   try {
     const InvoiceService = require('../invoiceService');
@@ -718,6 +721,6 @@ exports.signContracts = async (contractId, data) => {
   }
   return {
     message: 'Ký hợp đồng thành công',
-     depositDeadline
+    depositDeadline
   };
 };

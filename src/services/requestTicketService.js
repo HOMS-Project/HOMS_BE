@@ -162,6 +162,21 @@ class RequestTicketService {
       payload: { scheduledTime: selectedTime }
     });
 
+    // Thông báo cho điều phối viên (nếu đã có) khi khách hàng chốt lịch khảo sát
+    if (ticket.dispatcherId) {
+      const io = getIo();
+      await NotificationService.createNotification(
+        {
+          userId: ticket.dispatcherId,
+          title: "Lịch khảo sát được chấp nhận",
+          message: `Khách hàng đã chấp nhận lịch khảo sát: ${new Date(selectedTime).toLocaleString('vi-VN')} cho đơn ${ticket.code}`,
+          type: "System",
+          ticketId: ticket._id
+        },
+        io
+      );
+    }
+
     return ticket;
   }
   async rejectSurveyTime(ticketId, userId, reason, proposedTime) {

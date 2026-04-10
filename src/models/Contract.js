@@ -50,14 +50,14 @@ const contractSchema = new mongoose.Schema({
         },
         signedByName: String
     },
-  encryptedSignedData: { type: String, select: false },
-  encryptionIv:        { type: String, select: false },
-  encryptionAuthTag:   { type: String, select: false },
-  contentHash:         String, 
+    encryptedSignedData: { type: String, select: false },
+    encryptionIv: { type: String, select: false },
+    encryptionAuthTag: { type: String, select: false },
+    contentHash: String,
 
-  // Deadline đặt cọc
-  depositDeadline: Date,       // null nếu chưa ký; set khi ký xong
-  depositDeadlineHours: { type: Number, default: 48 }, 
+    // Deadline đặt cọc
+    depositDeadline: Date,       // null nếu chưa ký; set khi ký xong
+    depositDeadlineHours: { type: Number, default: 48 },
 
     validFrom: Date,
     validUntil: Date,
