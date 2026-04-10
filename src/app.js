@@ -119,12 +119,15 @@ app.use(cookieParser());
 // Serve uploaded files (avatars etc.) from /uploads
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
-const isProduction = process.env.NODE_ENV === 'production';
+// Determine if deployed on a cloud provider like Vercel or Render
+const isCloudHosted = process.env.NODE_ENV === 'production' || process.env.VERCEL === '1' || process.env.RENDER === 'true';
+const useSecureCookies = isCloudHosted || process.env.USE_SECURE_COOKIES === 'true';
+
 const csrfProtection = csurf({
   cookie: {
     httpOnly: true,
-    sameSite: isProduction ? 'none' : 'lax', // Lax for local dev (HTTP), None for cross-site (HTTPS)
-    secure: isProduction
+    sameSite: useSecureCookies ? 'none' : 'lax', // Lax for local dev (HTTP), None for cross-site (HTTPS)
+    secure: useSecureCookies
   }
 });
 app.get('/api/csrf-token', csrfProtection, (req, res) => {
