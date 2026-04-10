@@ -88,6 +88,10 @@ exports.generateContract = async (data, adminId) => {
     status: 'DRAFT'
   });
 
+  // If the template provides an admin signature image, copy it to the new contract
+  // and treat it as an existing admin-side signature. This means the contract is
+  // considered signed by admin already (so its status will reflect one-side-signed)
+  // — when the customer signs later the contract will become fully SIGNED.
   if (template.adminSignature && (template.adminSignature.signatureImage || template.adminSignature.signatureImageThumb)) {
     newContract.adminSignature = {
       signatureImage: template.adminSignature.signatureImage || template.adminSignature.signatureImageThumb,
@@ -121,6 +125,7 @@ exports.getContracts = async (query = {}) => {
   const baseQuery = Contract.find(mongoQuery)
     .populate('customerId', 'fullName email phone')
     .populate('requestTicketId', 'status serviceType scheduledTime')
+    // include template's adminSignature so we can fallback to it for display when contract lacks adminSignature
     .populate('templateId', 'title adminSignature')
     .sort({ createdAt: -1 });
 
@@ -157,6 +162,7 @@ exports.getContracts = async (query = {}) => {
  * Lấy một hợp đồng theo id (dùng cho chi tiết)
  */
 exports.getContractById = async (id) => {
+  // Populate template so we can fallback to template-level adminSignature when contract doesn't have one
   const contract = await Contract.findById(id)
     .populate('customerId', 'fullName email phone')
     .populate('requestTicketId')
@@ -177,6 +183,7 @@ exports.getContractById = async (id) => {
  * Cập nhật chữ ký điện tử
  */
 exports.signContract = async (contractId, signData, user) => {
+  // populate templateId so we can copy template.adminSignature into the contract when needed
   const contract = await Contract.findById(contractId).populate('templateId');
   if (!contract) throw new Error('Contract not found');
 
@@ -191,6 +198,8 @@ exports.signContract = async (contractId, signData, user) => {
       signedBy: user.id
     };
   } else { // customer
+    // If adminSignature is missing on the contract but the template provides one,
+    // persist the template adminSignature into the contract so it's stored permanently.
     if ((!contract.adminSignature || !contract.adminSignature.signatureImage) && contract.templateId && contract.templateId.adminSignature) {
       const tplSig = contract.templateId.adminSignature;
       contract.adminSignature = {
@@ -208,11 +217,11 @@ exports.signContract = async (contractId, signData, user) => {
     };
   }
 
-  // Nếu cả 2 bên đã ký (hoặc tuỳ logic doanh nghiệp, ở đây ví dụ admin ký là SIGNED)
+  // If both sides now have signatures, mark as SIGNED
   if (contract.adminSignature?.signatureImage && contract.customerSignature?.signatureImage) {
     contract.status = 'SIGNED';
   } else {
-    contract.status = 'SENT'; // Chỉ mới 1 bên ký
+    contract.status = 'SENT'; // Only one side signed
   }
 
   await contract.save();
@@ -411,7 +420,8 @@ exports.getContractDetail = async (contractId, customerId) => {
     _id: contractId,
     customerId
   })
-    .select('+customerSignature.signatureImage')
+   .select('+customerSignature.signatureImage')
+    // populate adminSignature on template so we can fallback to it for display if contract lacks adminSignature
     .populate('templateId', 'title description adminSignature')
     .populate('requestTicketId', 'ticketNumber createdAt')
     .populate('adminSignature.signedBy', 'fullName email')
@@ -422,6 +432,12 @@ exports.getContractDetail = async (contractId, customerId) => {
     err.statusCode = 404;
     throw err;
   }
+  if ((!contract.adminSignature || !contract.adminSignature.signatureImage) && contract.templateId && contract.templateId.adminSignature) {
+    contract.adminSignature = contract.templateId.adminSignature;
+  }
+
+  // If this contract doesn't include an adminSignature image (older contracts),
+  // fall back to the template's adminSignature for display only (do not persist).
   if ((!contract.adminSignature || !contract.adminSignature.signatureImage) && contract.templateId && contract.templateId.adminSignature) {
     contract.adminSignature = contract.templateId.adminSignature;
   }
@@ -454,10 +470,12 @@ exports.getContractPdf = async (contractId) => {
   const contract = await Contract.findById(contractId)
     .select('+customerSignature.signatureImage')
     .populate('customerId', 'fullName email phone')
+    // populate template adminSignature so PDF can render admin signature even when it's stored on the template
     .populate('templateId', 'title adminSignature')
     .lean();
   if (!contract) throw new Error('Contract not found');
 
+  // If contract doesn't include adminSignature image but template has one, attach it for PDF rendering
   if ((!contract.adminSignature || !contract.adminSignature.signatureImage) && contract.templateId && contract.templateId.adminSignature) {
     contract.adminSignature = contract.templateId.adminSignature;
   }
@@ -560,32 +578,30 @@ exports.getContractPdf = async (contractId) => {
       contract.customerSignature?.signatureImage;
     tryEmbedSignature(contract.adminSignature?.signatureImage, leftX, imgY, boxW);
     tryEmbedSignature(customerSig, rightX, imgY, boxW);
-    doc.y = imgY + 80;
+   // move cursor below signature images
+   doc.y = imgY + 80;
 
-    // Tên + ngày ký (only render customer's signed time)
-    const customerSignedAt = contract.customerSignature?.signedAt
-      ? new Date(contract.customerSignature.signedAt).toLocaleString('vi-VN') : '—';
+   // Tên + ngày ký (only render customer's signed time)
+   const customerSignedAt = contract.customerSignature?.signedAt
+    ? new Date(contract.customerSignature.signedAt).toLocaleString('vi-VN') : '—';
 
+   // Use explicit Y positions to avoid overlapping text when rendered into PDF
+   const nameY = doc.y + 6;       // space between image and names
+   const signedAtY = nameY + 16;  // space between name and signedAt
 
+   doc.font('Roboto-Bold').fontSize(10)
+     .text(contract.adminSignature?.signedByName || 'HOMS Vận Chuyển', leftX, nameY, { width: boxW, align: 'center' });
 
-    // Use explicit Y positions to avoid overlapping text when rendered into PDF
-    const nameY = doc.y + 6;       // space between image and names
-    const signedAtY = nameY + 16;  // space between name and signedAt
+   doc.font('Roboto-Bold').fontSize(10)
+     .text(contract.customerId?.fullName || '', rightX, nameY, { width: boxW, align: 'center' });
 
+   // customer's signed time sits below their name
+   doc.font('Roboto').fontSize(9)
+     .text(`Ký lúc: ${customerSignedAt}`, rightX, signedAtY, { width: boxW, align: 'center' });
 
-    doc.font('Roboto-Bold').fontSize(10)
-      .text(contract.adminSignature?.signedByName || 'HOMS Vận Chuyển', leftX, nameY, { width: boxW, align: 'center' });
-
-    doc.font('Roboto-Bold').fontSize(10)
-      .text(contract.customerId?.fullName || '', rightX, nameY, { width: boxW, align: 'center' });
-
-    // customer's signed time sits below their name
-    doc.font('Roboto').fontSize(9)
-      .text(`Ký lúc: ${customerSignedAt}`, rightX, signedAtY, { width: boxW, align: 'center' });
-
-    // advance doc.y past the signature block
-    doc.y = signedAtY + 18;
-    doc.fillColor('#000');
+   // advance doc.y past the signature block
+   doc.y = signedAtY + 18;
+   doc.fillColor('#000');
 
     // ── Hash xác thực ─────────────────────────────────────────
     if (contract.contentHash) {
@@ -672,15 +688,16 @@ exports.signContracts = async (contractId, data) => {
   const signatureImageThumb = signatureImage;
   const deadlineHours = contract.depositDeadlineHours || 48;
   const depositDeadline = new Date(signedAt.getTime() + deadlineHours * 60 * 60 * 1000);
-  if ((!contract.adminSignature || !contract.adminSignature.signatureImage) && contract.templateId && contract.templateId.adminSignature) {
-    const tplSig = contract.templateId.adminSignature;
-    contract.adminSignature = {
-      signatureImage: tplSig.signatureImage || tplSig.signatureImageThumb,
-      signatureImageThumb: tplSig.signatureImageThumb || undefined,
-      signedByName: tplSig.signedByName || 'HOMS Vận Chuyển',
-      signedAt: tplSig.signedAt || new Date()
-    };
-  }
+    // If contract lacks adminSignature but template provides one, persist it into contract
+    if ((!contract.adminSignature || !contract.adminSignature.signatureImage) && contract.templateId && contract.templateId.adminSignature) {
+      const tplSig = contract.templateId.adminSignature;
+      contract.adminSignature = {
+        signatureImage: tplSig.signatureImage || tplSig.signatureImageThumb,
+        signatureImageThumb: tplSig.signatureImageThumb || undefined,
+        signedByName: tplSig.signedByName || 'HOMS Vận Chuyển',
+        signedAt: tplSig.signedAt || new Date()
+      };
+    }
   contract.customerSignature = {
     signatureImage: signatureImage,
     signatureImageThumb: signatureImageThumb,

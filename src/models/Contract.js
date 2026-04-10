@@ -31,11 +31,14 @@ const contractSchema = new mongoose.Schema({
 
     // Chữ ký điện tử
     customerSignature: {
-        signatureImage: { type: String }, // base64, ẩn khỏi query thường
-        signatureImageThumb: String,                     // thumbnail nhỏ để render UI (không mã hóa)
-        signedAt: Date,
-        ipAddress: String
-    },
+            // Trả về chuỗi base64 của chữ ký khách hàng để frontend có thể hiển thị.
+            // Lưu ý: trường này trước đó được ẩn khỏi các truy vấn mặc định (select: false).
+            // Bỏ `select: false` để API trả dữ liệu chữ ký khi cần (ví dụ trong chi tiết hợp đồng).
+            signatureImage: { type: String }, // base64
+    signatureImageThumb: String,                     // thumbnail nhỏ để render UI (không mã hóa)
+    signedAt: Date,
+    ipAddress: String
+  },
 
     adminSignature: {
         signatureImage: String,
