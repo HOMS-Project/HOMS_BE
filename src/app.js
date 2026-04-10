@@ -14,8 +14,10 @@ const csurf = require('csurf');
 // Cấu hình Socket.io
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || "http://localhost:3000",
-    methods: ["GET", "POST"],
+    origin: function (origin, callback) {
+      callback(null, origin || true);
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     credentials: true
   }
 });
@@ -67,7 +69,9 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 connectDB();
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || "http://localhost:3000",
+  origin: function (origin, callback) {
+    callback(null, origin || true);
+  },
   credentials: true
 }));
 
@@ -85,7 +89,7 @@ app.use(helmet({
       scriptSrc: ["'self'", "https://accounts.google.com"], // Cho phép Google OAuth script
       styleSrc: ["'self'", "'unsafe-inline'"],        // Cần unsafe-inline nếu dùng inline style
       imgSrc: ["'self'", "data:", "https:"],           // Cho phép ảnh từ https
-      connectSrc: ["'self'", process.env.CORS_ORIGIN || "http://localhost:3000"],
+      connectSrc: ["'self'", "*"],                     // Allow API calls to dynamically matching origins on Vercel
       frameSrc: ["https://accounts.google.com"],      // Google OAuth dùng iframe
       objectSrc: ["'none'"],                          // Chặn <object>, <embed> (nguy hiểm)
       upgradeInsecureRequests: [],                    // Tự động upgrade HTTP → HTTPS
