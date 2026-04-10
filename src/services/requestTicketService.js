@@ -15,7 +15,7 @@ const StrategyFactory = require('./strategies/StrategyFactory');
 const AutoAssignmentService = require('./AutoAssignmentService');
 const TicketStateMachine = require('./TicketStateMachine');
 const Contract = require('../models/Contract');
-
+const { formatDistrict } = require('../utils/districtMap');
 // Using strategies for transition logic now. 
 // Old STATE_TRANSITIONS moved/delegated to individual strategies.
 
@@ -320,7 +320,7 @@ class RequestTicketService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    return ticket;
+  return mapDistrict(ticket);
   }
 async _attachContractStatus(tickets) {
   const relevantIds = tickets
@@ -348,6 +348,7 @@ if (relevantIds.length === 0) {
 
     return tickets.map(t => {
     const plain = t.toObject ? t.toObject() : { ...t };
+    
     plain.contract = contractMap[plain._id.toString()] || null;
     return plain;
   });
@@ -411,7 +412,9 @@ if (relevantIds.length === 0) {
       .sort({ createdAt: -1 })
       .limit(filters.limit || 20)
       .skip(filters.skip || 0);
-    return await this._attachContractStatus(tickets);
+ const withContract = await this._attachContractStatus(tickets);
+
+return withContract.map(mapDistrict);
 
   }
 
@@ -542,5 +545,17 @@ if (relevantIds.length === 0) {
     return await invoiceService.verifyInvoicePayment(ticketId);
   }
 }
+function mapDistrict(ticket) {
+  const plain = ticket.toObject ? ticket.toObject() : ticket;
 
+  if (plain.pickup?.district) {
+    plain.pickup.district = formatDistrict(plain.pickup.district);
+  }
+
+  if (plain.delivery?.district) {
+    plain.delivery.district = formatDistrict(plain.delivery.district);
+  }
+
+  return plain;
+}
 module.exports = new RequestTicketService();
