@@ -26,7 +26,8 @@ exports.updateUserInfo = async (userId, updateData) => {
   }
 
   // Whitelist updatable fields
-  const allowed = ['fullName', 'phone'];
+  // include address so profile updates can persist user's address
+  const allowed = ['fullName', 'phone', 'address'];
   let changed = false;
   for (const key of allowed) {
     if (Object.prototype.hasOwnProperty.call(updateData, key)) {
@@ -46,12 +47,10 @@ exports.updateUserInfo = async (userId, updateData) => {
 
   await user.save();
 
-  // Return user without sensitive fields
-  const result = user.toObject();
-  delete result.password;
-  delete result.otpResetPassword;
-  delete result.otpResetExpires;
-  return result;
+  // Re-fetch the user from DB to ensure we return the persisted, up-to-date document
+  const updated = await User.findById(userId).select('-password -otpResetPassword -otpResetExpires');
+  if (!updated) throw new AppError('Không tìm thấy người dùng sau khi cập nhật', 500);
+  return updated;
 };
 
 // Thay đổi mật khẩu
