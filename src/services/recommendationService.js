@@ -108,7 +108,7 @@ class RecommendationService {
     const distanceFactor = Math.max(1, Math.min(3, (Number(distanceKm) || 1) / 8));
     let finalScore = baseScore * distanceFactor;
 
-    // 🔥 Real-Time TomTom Traffic Integration
+    // Real-Time TomTom Traffic Integration
     // Only check live traffic if the scheduled date is within the next 2 hours
     if (this.tomtomApiKey && location && typeof location === 'object' && location.lat && location.lng) {
       if (Math.abs(d.diff(moment(), 'hours')) <= 2) {
