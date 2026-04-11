@@ -3,13 +3,22 @@ const userController = require("../controllers/userController");
 const { verifyToken } = require("../middlewares/authMiddleware");
 
 const router = express.Router();
-const multer = require('multer');
-const path = require('path');
+const multer = require("multer");
 
 // Default parser for non-file multipart (FormData without files)
 const upload = multer();
 
-// Avatar upload functionality removed. If re-enabling, re-add multer storage and route.
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
+    if (allowedTypes.includes(file.mimetype)) {
+      return cb(null, true);
+    }
+    cb(new Error("Chỉ chấp nhận ảnh JPG, PNG hoặc WEBP."));
+  },
+});
 
 // Áp dụng middleware xác thực cho tất cả routes
 router.use(verifyToken);
@@ -30,7 +39,15 @@ router.get("/staff", userController.getStaff);
 // Accept multipart/form-data (from FE using FormData) as well as JSON
 router.put("/personal-info", upload.none(), userController.updateUserInfo);
 
-// Avatar upload route removed
+// Upload / đổi avatar
+router.post(
+  "/avatar",
+  avatarUpload.single("avatar"),
+  userController.updateAvatar,
+);
+
+// Đăng xuất tất cả phiên của user hiện tại
+router.post("/logout-all-sessions", userController.logoutAllSessions);
 
 // Đổi mật khẩu
 router.put("/change-password", userController.changePassword);

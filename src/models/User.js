@@ -20,6 +20,9 @@ const userSchema = new mongoose.Schema({
 
   phone: { type: String, unique: true, sparse: true, trim: true },
 
+  // Optional contact address for the user
+  address: { type: String },
+
   password: {
     type: String,
     required: function () {
