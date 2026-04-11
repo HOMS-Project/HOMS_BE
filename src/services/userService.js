@@ -1,6 +1,36 @@
 const User = require("../models/User");
 const AppError = require("../utils/appErrors");
 const bcrypt = require("bcryptjs");
+const cloudinary = require("cloudinary").v2;
+const streamifier = require("streamifier");
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+const uploadAvatarToCloudinary = (fileBuffer, originalName) => {
+  return new Promise((resolve, reject) => {
+    const safeName = (originalName || "avatar").replace(/\s+/g, "_");
+    const publicId = `avatars/${Date.now()}_${safeName}`;
+
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        public_id: publicId,
+        resource_type: "image",
+        folder: "avatars",
+        overwrite: false,
+      },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result.secure_url);
+      },
+    );
+
+    streamifier.createReadStream(fileBuffer).pipe(uploadStream);
+  });
+};
 
 // Lấy thông tin người dùng
 exports.getUserInfo = async (userId) => {
@@ -27,13 +57,13 @@ exports.updateUserInfo = async (userId, updateData) => {
 
   // Whitelist updatable fields
   // include address so profile updates can persist user's address
-  const allowed = ['fullName', 'phone', 'address'];
+  const allowed = ["fullName", "phone", "address"];
   let changed = false;
   for (const key of allowed) {
     if (Object.prototype.hasOwnProperty.call(updateData, key)) {
       // assign only if value is not undefined
       const val = updateData[key];
-      if (typeof val !== 'undefined' && val !== null) {
+      if (typeof val !== "undefined" && val !== null) {
         user[key] = val;
         changed = true;
       }
@@ -42,14 +72,24 @@ exports.updateUserInfo = async (userId, updateData) => {
 
   if (!changed) {
     // Nothing to update, simply return current user (without sensitive fields)
-    return user.toObject({ transform: (doc, ret) => { delete ret.password; delete ret.otpResetPassword; delete ret.otpResetExpires; return ret; } });
+    return user.toObject({
+      transform: (doc, ret) => {
+        delete ret.password;
+        delete ret.otpResetPassword;
+        delete ret.otpResetExpires;
+        return ret;
+      },
+    });
   }
 
   await user.save();
 
   // Re-fetch the user from DB to ensure we return the persisted, up-to-date document
-  const updated = await User.findById(userId).select('-password -otpResetPassword -otpResetExpires');
-  if (!updated) throw new AppError('Không tìm thấy người dùng sau khi cập nhật', 500);
+  const updated = await User.findById(userId).select(
+    "-password -otpResetPassword -otpResetExpires",
+  );
+  if (!updated)
+    throw new AppError("Không tìm thấy người dùng sau khi cập nhật", 500);
   return updated;
 };
 
@@ -111,5 +151,47 @@ exports.getStaff = async () => {
   );
 };
 
-// Note: avatar upload/update functionality removed per request.
-// If you later want to re-enable avatar updates, re-implement an updateAvatar(userId, avatarUrl) function here.
+exports.updateAvatar = async (userId, file) => {
+  if (!file || !file.buffer) {
+    throw new AppError("Vui lòng chọn ảnh đại diện hợp lệ", 400);
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new AppError("Không tìm thấy người dùng", 404);
+  }
+
+  const avatarUrl = await uploadAvatarToCloudinary(
+    file.buffer,
+    file.originalname,
+  );
+  user.avatar = avatarUrl;
+  await user.save();
+
+  const updated = await User.findById(userId).select(
+    "-password -otpResetPassword -otpResetExpires",
+  );
+
+  if (!updated) {
+    throw new AppError(
+      "Không tìm thấy người dùng sau khi cập nhật avatar",
+      500,
+    );
+  }
+
+  return updated;
+};
+
+exports.logoutAllSessions = async (userId) => {
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { $set: { refreshTokens: [] } },
+    { new: true },
+  );
+
+  if (!user) {
+    throw new AppError("Không tìm thấy người dùng", 404);
+  }
+
+  return { message: "Đã đăng xuất khỏi tất cả phiên đăng nhập" };
+};

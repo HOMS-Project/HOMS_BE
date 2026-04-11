@@ -85,6 +85,7 @@ exports.login = async (req, res, next) => {
           fullName: user.fullName,
           role: user.role,
           email: user.email,
+          createdAt: user.createdAt,
           dispatcherProfile: user.dispatcherProfile,
           // include contact fields so frontend has current phone/address/avatar immediately after login
           phone: user.phone,
@@ -133,6 +134,7 @@ exports.googleLogin = async (req, res, next) => {
           fullName: user.fullName,
           role: user.role,
           email: user.email,
+          createdAt: user.createdAt,
           dispatcherProfile: user.dispatcherProfile,
           phone: user.phone,
           address: user.address,
