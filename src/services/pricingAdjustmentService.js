@@ -51,9 +51,8 @@ class PricingAdjustmentService {
     let appliedAmount = 0;
 
     if (finalAdjustmentPercent !== 0) {
-      const multiplier = (finalAdjustmentPercent / 100);
-      appliedAmount = -Math.round(basePrice * multiplier); 
-      finalPrice += appliedAmount;
+      // Feature Toggle: AI no longer affects calculation, only provides date advisory.
+      appliedAmount = 0;
     }
 
     // 🛡️ Apply Guardrails (Clamp)
