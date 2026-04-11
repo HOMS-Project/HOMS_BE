@@ -2,6 +2,7 @@ const cloudinary = require("cloudinary").v2;
 const streamifier = require("streamifier");
 const Incident = require("../models/Incident");
 const Invoice = require("../models/Invoice");
+const DispatchAssignment = require("../models/DispatchAssignment");
 const AppError = require("../utils/appErrors");
 // ─── Cloudinary config (expects env vars) ────────────────────────────────────
 cloudinary.config({
@@ -18,14 +19,14 @@ const uploadToCloudinary = (fileBuffer, originalName) => {
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         public_id: publicId,
-        resource_type: "auto",   // handles images AND videos
+        resource_type: "auto", // handles images AND videos
         folder: "incidents",
         overwrite: false,
       },
       (error, result) => {
         if (error) return reject(error);
         resolve(result.secure_url);
-      }
+      },
     );
 
     // Pipe the in-memory buffer into the Cloudinary stream
@@ -38,10 +39,33 @@ const uploadMediaFiles = async (files = []) => {
   if (!files.length) return [];
 
   const uploadPromises = files.map((file) =>
-    uploadToCloudinary(file.buffer, file.originalname)
+    uploadToCloudinary(file.buffer, file.originalname),
   );
 
   return Promise.all(uploadPromises);
+};
+
+const INCIDENT_TYPE_OPTIONS = [
+  { value: "Damage", label: "Hư hỏng" },
+  { value: "Delay", label: "Trễ giờ" },
+  { value: "Accident", label: "Tai nạn" },
+  { value: "Loss", label: "Mất mát" },
+  { value: "Other", label: "Khác" },
+];
+
+const TYPE_MAP = {
+  DAMAGE: "Damage",
+  DELAY: "Delay",
+  ACCIDENT: "Accident",
+  LOSS: "Loss",
+  OTHER: "Other",
+  STAFF: "Other",
+};
+
+const resolveIncidentType = (rawType) => {
+  if (!rawType) return "";
+  const mapped = TYPE_MAP[String(rawType).toUpperCase()];
+  return mapped || rawType;
 };
 
 // ─── Create incident ─────────────────────────────────────────────────────────
@@ -59,27 +83,30 @@ const createIncident = async (invoiceId, reporterId, body, files = []) => {
     err.statusCode = 404;
     throw err;
   }
-if (!reporterId) {
-  throw new AppError("Không xác định được người báo cáo.", 401);
-}
+  if (!reporterId) {
+    throw new AppError("Không xác định được người báo cáo.", 401);
+  }
 
-if (!invoice.customerId) {
-  throw new AppError("Invoice không có customerId.", 400);
-}
+  if (!invoice.customerId) {
+    throw new AppError("Invoice không có customerId.", 400);
+  }
 
-if (invoice.customerId.toString() !== reporterId.toString()) {
-  throw new AppError("Bạn không có quyền báo cáo sự cố.", 403);
-}
+  if (invoice.customerId.toString() !== reporterId.toString()) {
+    throw new AppError("Bạn không có quyền báo cáo sự cố.", 403);
+  }
 
   const allowedInvoiceStatus = ["IN_PROGRESS", "COMPLETED"];
   if (!allowedInvoiceStatus.includes(invoice.status)) {
-    throw new AppError("Chỉ có thể báo cáo sự cố khi đơn đang hoặc đã vận chuyển.", 400);
+    throw new AppError(
+      "Chỉ có thể báo cáo sự cố khi đơn đang hoặc đã vận chuyển.",
+      400,
+    );
   }
-   const existing = await Incident.findOne({ invoiceId });
+  const existing = await Incident.findOne({ invoiceId });
   if (existing) {
     throw new AppError("Đơn hàng đã có báo cáo sự cố.", 400);
   }
-   if (!body.description || body.description.trim().length < 10) {
+  if (!body.description || body.description.trim().length < 10) {
     throw new AppError("Mô tả phải ít nhất 10 ký tự.", 400);
   }
   if (files.length > 5) {
@@ -91,7 +118,7 @@ if (invoice.customerId.toString() !== reporterId.toString()) {
   const typeMap = {
     DAMAGE: "Damage",
     LOSS: "Loss",
-    STAFF: "Other",   // closest match
+    STAFF: "Other", // closest match
     OTHER: "Other",
   };
   const resolvedType = typeMap[body.type] || body.type;
@@ -116,6 +143,93 @@ if (invoice.customerId.toString() !== reporterId.toString()) {
 
   return incident;
 };
+
+const createIncidentByStaff = async (
+  invoiceId,
+  reporterId,
+  body,
+  files = [],
+) => {
+  if (!invoiceId || !reporterId) {
+    throw new AppError("Thiếu thông tin báo cáo sự cố.", 400);
+  }
+
+  const invoice = await Invoice.findById(invoiceId).select("_id status");
+  if (!invoice) {
+    throw new AppError("Không tìm thấy hóa đơn tương ứng.", 404);
+  }
+
+  const assignment = await DispatchAssignment.findOne({
+    invoiceId,
+    $or: [
+      { "assignments.driverIds": reporterId },
+      { "assignments.staffIds": reporterId },
+    ],
+  }).select("_id");
+
+  if (!assignment) {
+    throw new AppError("Bạn không được phân công cho đơn này.", 403);
+  }
+
+  const allowedInvoiceStatus = [
+    "ASSIGNED",
+    "ACCEPTED",
+    "IN_PROGRESS",
+    "COMPLETED",
+  ];
+  if (!allowedInvoiceStatus.includes(invoice.status)) {
+    throw new AppError(
+      "Chỉ có thể báo cáo sự cố ở các đơn đã phân công hoặc đang thực hiện.",
+      400,
+    );
+  }
+
+  if (!body.description || body.description.trim().length < 10) {
+    throw new AppError("Mô tả phải ít nhất 10 ký tự.", 400);
+  }
+
+  if (files.length > 5) {
+    throw new AppError("Tối đa 5 file.", 400);
+  }
+
+  const allowedTypes = INCIDENT_TYPE_OPTIONS.map((item) => item.value);
+  const resolvedType = resolveIncidentType(body.type);
+  if (!allowedTypes.includes(resolvedType)) {
+    throw new AppError(`Loại sự cố không hợp lệ: ${body.type}`, 400);
+  }
+
+  const mediaUrls = await uploadMediaFiles(files);
+
+  const incident = await Incident.create({
+    invoiceId,
+    reporterId,
+    type: resolvedType,
+    description: body.description.trim(),
+    images: mediaUrls,
+    status: "Open",
+  });
+
+  return incident;
+};
+
+const getIncidentsByReporter = async (reporterId) => {
+  if (!reporterId) {
+    throw new AppError("Không xác định được người báo cáo.", 401);
+  }
+
+  return Incident.find({ reporterId })
+    .populate({
+      path: "invoiceId",
+      select: "code requestTicketId scheduledTime status",
+      populate: {
+        path: "requestTicketId",
+        select: "code",
+      },
+    })
+    .sort({ createdAt: -1 });
+};
+
+const getIncidentTypeOptions = () => INCIDENT_TYPE_OPTIONS;
 
 // ─── Get all incidents for one invoice ───────────────────────────────────────
 const getIncidentsByInvoice = async (invoiceId) => {
@@ -166,7 +280,10 @@ const resolveIncident = async (incidentId, resolutionData) => {
 
 module.exports = {
   createIncident,
+  createIncidentByStaff,
   getIncidentsByInvoice,
+  getIncidentsByReporter,
+  getIncidentTypeOptions,
   getIncidentById,
   resolveIncident,
 };
