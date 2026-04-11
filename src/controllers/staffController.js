@@ -12,6 +12,26 @@ const stripSecTag = (value) => {
   return value.replace(/^\s*\[SEC:[^\]]+\]\s*/i, "").trim();
 };
 
+const normalizeId = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object") {
+    if (value._id) return String(value._id);
+    if (value.id) return String(value.id);
+  }
+  return String(value);
+};
+
+const hasMemberId = (members, targetId) => {
+  if (!Array.isArray(members) || !targetId) return false;
+  const normalizedTarget = String(targetId);
+  return members.some((member) => normalizeId(member) === normalizedTarget);
+};
+
+const isPersonalAssignment = (assignment, staffId) =>
+  hasMemberId(assignment?.driverIds, staffId) ||
+  hasMemberId(assignment?.staffIds, staffId);
+
 // Helper to normalize coordinates: assuming larger number (>100) is Longitude (Vietnam)
 const normalizePoint = (coord) => {
   if (!coord) return null;
@@ -29,6 +49,7 @@ const normalizePoint = (coord) => {
 exports.getAssignedOrders = async (req, res, next) => {
   try {
     const staffId = req.user.userId || req.user._id || req.user.id;
+    const normalizedStaffId = normalizeId(staffId);
 
     // Tìm các DispatchAssignment có chứa staffId trong driverIds hoặc staffIds của bất kỳ assignment nào
     const assignments = await DispatchAssignment.find({
@@ -55,10 +76,8 @@ exports.getAssignedOrders = async (req, res, next) => {
         const ticket = invoice.requestTicketId;
 
         // Lấy assignment cụ thể cho staff này
-        const personalAssignment = da.assignments.find(
-          (a) =>
-            a.driverIds.some((id) => id.toString() === staffId.toString()) ||
-            a.staffIds.some((id) => id.toString() === staffId.toString()),
+        const personalAssignment = da.assignments.find((a) =>
+          isPersonalAssignment(a, staffId),
         );
 
         return {
@@ -99,8 +118,12 @@ exports.getOrderDetails = async (req, res, next) => {
         path: "requestTicketId",
         populate: {
           path: "customerId",
-          select: "fullName phoneNumber email",
+          select: "fullName phone phoneNumber email avatar",
         },
+      })
+      .populate({
+        path: "customerId",
+        select: "fullName phone phoneNumber email avatar",
       })
       .populate("routeId");
 
@@ -109,32 +132,67 @@ exports.getOrderDetails = async (req, res, next) => {
     }
 
     const ticket = invoice.requestTicketId;
-    const customer = ticket.customerId;
+    const ticketCustomer = ticket?.customerId || null;
+    const invoiceCustomer = invoice?.customerId || null;
+    const customer = ticketCustomer || invoiceCustomer || {};
+    const customerName =
+      customer.fullName || invoiceCustomer?.fullName || "Khách hàng";
+    const customerPhone =
+      customer.phone ||
+      customer.phoneNumber ||
+      invoiceCustomer?.phone ||
+      invoiceCustomer?.phoneNumber ||
+      "";
+    const customerEmail = customer.email || invoiceCustomer?.email || "";
+    const customerAvatar = customer.avatar || invoiceCustomer?.avatar || "";
 
     // Find the assignment specifically for this staff/driver to get its route validation
     const staffId = req.user.userId || req.user._id || req.user.id;
+    const normalizedStaffId = normalizeId(staffId);
     const da = await DispatchAssignment.findOne({
       invoiceId,
       $or: [
         { "assignments.driverIds": staffId },
         { "assignments.staffIds": staffId },
       ],
-    }).populate("assignments.routeId");
+    })
+      .populate("assignments.routeId")
+      .populate("assignments.vehicleId", "plateNumber vehicleType")
+      .populate("assignments.driverIds", "fullName phone avatar")
+      .populate("assignments.staffIds", "fullName phone avatar");
 
     // Find personal assignment once and reuse it
     let personalAssignment = null;
     let routeValidation = null;
 
     if (da) {
-      personalAssignment = da.assignments.find(
-        (a) =>
-          a.driverIds.some((id) => id.toString() === staffId.toString()) ||
-          a.staffIds.some((id) => id.toString() === staffId.toString()),
+      personalAssignment = da.assignments.find((a) =>
+        isPersonalAssignment(a, staffId),
       );
       if (personalAssignment) {
         routeValidation = personalAssignment.routeValidation;
       }
     }
+
+    const teamDrivers = Array.isArray(personalAssignment?.driverIds)
+      ? personalAssignment.driverIds.map((member) => ({
+          id: normalizeId(member),
+          fullName: member?.fullName || "Chưa có tên",
+          phone: member?.phone || "",
+          avatar: member?.avatar || "",
+          isCurrentUser: normalizeId(member) === normalizedStaffId,
+        }))
+      : [];
+
+    const teamAssistants = Array.isArray(personalAssignment?.staffIds)
+      ? personalAssignment.staffIds.map((member) => ({
+          id: normalizeId(member),
+          fullName: member?.fullName || "Chưa có tên",
+          phone: member?.phone || "",
+          avatar: member?.avatar || "",
+          isCurrentUser: normalizeId(member) === normalizedStaffId,
+        }))
+      : [];
 
     // Lấy dữ liệu khảo sát (nếu có) cho ticket này
     const survey = await SurveyData.findOne({
@@ -180,9 +238,26 @@ exports.getOrderDetails = async (req, res, next) => {
         items: resolvedItems,
         scheduledTime: invoice.scheduledTime,
         customer: {
-          name: customer.fullName,
-          phone: customer.phoneNumber,
-          email: customer.email,
+          name: customerName,
+          phone: String(customerPhone || ""),
+          email: customerEmail,
+          avatar: customerAvatar,
+        },
+        team: {
+          vehicle: personalAssignment?.vehicleId
+            ? {
+                plateNumber:
+                  personalAssignment.vehicleId.plateNumber ||
+                  personalAssignment.vehicleId.licensePlate ||
+                  "",
+                vehicleType:
+                  personalAssignment.vehicleId.vehicleType ||
+                  personalAssignment.vehicleId.type ||
+                  "",
+              }
+            : null,
+          drivers: teamDrivers,
+          assistants: teamAssistants,
         },
         route: personalAssignment?.routeId || invoice.routeId,
         routeValidation: routeValidation,

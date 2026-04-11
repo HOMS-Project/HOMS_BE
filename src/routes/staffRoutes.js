@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 const staffController = require("../controllers/staffController");
+const staffIncidentController = require("../controllers/staffIncidentController");
 const { authenticate, authorize } = require("../middlewares/authMiddleware");
 
 // Multer in-memory storage for Cloudinary uploads
@@ -51,6 +52,17 @@ router.patch(
 router.patch(
   "/assignments/:assignmentId/route",
   staffController.updateAssignmentRoute,
+);
+
+// Incident metadata for report form
+router.get("/incidents/meta/types", staffIncidentController.getIncidentTypes);
+
+// Driver/staff incident reports
+router.get("/incidents", staffIncidentController.getMyIncidents);
+router.post(
+  "/incidents",
+  upload.array("file", 5),
+  staffIncidentController.createIncident,
 );
 
 module.exports = router;
