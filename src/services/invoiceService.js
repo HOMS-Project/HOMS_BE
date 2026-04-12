@@ -473,6 +473,10 @@ class InvoiceService {
     }
 
     await invoice.save();
+
+    // Clear the order code after successful processing to prevent double-processing
+    await Invoice.updateOne({ _id: invoice._id }, { $unset: { paymentOrderCode: 1 } });
+
     return invoice;
   }
 
@@ -506,6 +510,9 @@ class InvoiceService {
 
         invoice.paidAmount += paymentInfo.amount || 0;
         await invoice.save();
+
+        // Clear the order code after successful processing to prevent double-processing
+        await Invoice.updateOne({ _id: invoice._id }, { $unset: { paymentOrderCode: 1 } });
       }
     } catch (e) {
       console.error("[InvoiceService] Manual verifyPaymentStatus failed:", e);
