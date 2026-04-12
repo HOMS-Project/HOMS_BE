@@ -664,16 +664,24 @@ exports.signContracts = async (contractId, data) => {
   }
 
 
+  console.log(`[ContractSign] Starting update for ${contractId}`);
+  console.time('OTP-Verify');
   try {
     await verifyOtp('CONTRACT_SIGN', contract._id.toString(), otp);
   } catch (err) {
     throw new AppError(err.message, 400);
   }
+  console.timeEnd('OTP-Verify');
+
   const signedAt = new Date();
+  
+  console.time('Hashing');
   const contentHash = require('crypto')
     .createHash('sha256')
     .update(contract.content)
     .digest('hex');
+  console.timeEnd('Hashing');
+
   const signedPayload = JSON.stringify({
     contractNumber: contract.contractNumber,
     // Note: full contract content removed from encrypted payload to prevent timeouts on large contracts.
@@ -685,34 +693,48 @@ exports.signContracts = async (contractId, data) => {
     signerEmail: contract.customerId?.email,
     contentHash
   });
+
+  console.time('Encryption');
   const { encryptedData, iv, authTag } = encryptContract(signedPayload);
+  console.timeEnd('Encryption');
+
   const signatureImageThumb = signatureImage;
   const deadlineHours = contract.depositDeadlineHours || 48;
   const depositDeadline = new Date(signedAt.getTime() + deadlineHours * 60 * 60 * 1000);
-    // If contract lacks adminSignature but template provides one, persist it into contract
-    if ((!contract.adminSignature || !contract.adminSignature.signatureImage) && contract.templateId && contract.templateId.adminSignature) {
-      const tplSig = contract.templateId.adminSignature;
-      contract.adminSignature = {
-        signatureImage: tplSig.signatureImage || tplSig.signatureImageThumb,
-        signatureImageThumb: tplSig.signatureImageThumb || undefined,
-        signedByName: tplSig.signedByName || 'HOMS Vận Chuyển',
-        signedAt: tplSig.signedAt || new Date()
-      };
-    }
-  contract.customerSignature = {
-    signatureImage: signatureImage,
-    signatureImageThumb: signatureImageThumb,
-    signedAt,
-    ipAddress: ipAddress || 'unknown'
+  
+  // Prepare update object
+  const updateFields = {
+    customerSignature: {
+      signatureImage: signatureImage,
+      signatureImageThumb: signatureImageThumb,
+      signedAt,
+      ipAddress: ipAddress || 'unknown'
+    },
+    encryptedSignedData: encryptedData,
+    encryptionIv: iv,
+    encryptionAuthTag: authTag,
+    contentHash,
+    depositDeadline,
+    status: 'SIGNED',
+    signedAt: signedAt
   };
-  contract.encryptedSignedData = encryptedData;
-  contract.encryptionIv = iv;
-  contract.encryptionAuthTag = authTag;
-  contract.contentHash = contentHash;
-  contract.depositDeadline = depositDeadline;
-  contract.status = 'SIGNED';
-  contract.signedAt = signedAt;
-  await contract.save();
+
+  // If contract lacks adminSignature but template provides one, persist it into contract
+  if ((!contract.adminSignature || !contract.adminSignature.signatureImage) && contract.templateId && contract.templateId.adminSignature) {
+    const tplSig = contract.templateId.adminSignature;
+    updateFields.adminSignature = {
+      signatureImage: tplSig.signatureImage || tplSig.signatureImageThumb,
+      signatureImageThumb: tplSig.signatureImageThumb || undefined,
+      signedByName: tplSig.signedByName || 'HOMS Vận Chuyển',
+      signedAt: tplSig.signedAt || new Date()
+    };
+  }
+
+  console.time('DB-Update');
+  // Use findByIdAndUpdate to avoid sending back the huge 'content' HTML field
+  await Contract.findByIdAndUpdate(contractId, { $set: updateFields });
+  console.timeEnd('DB-Update');
+  console.log(`[ContractSign] Successfully completed for ${contractId}`);
   // NOTE: Initializing invoice synchronously here is removed to prevent timeouts on slow connections/CPU.
   // Instead, the invoice will be lazily created when the user attempts to pay the deposit.
   /*
