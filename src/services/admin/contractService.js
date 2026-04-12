@@ -676,7 +676,8 @@ exports.signContracts = async (contractId, data) => {
     .digest('hex');
   const signedPayload = JSON.stringify({
     contractNumber: contract.contractNumber,
-    content: contract.content,
+    // Note: full contract content removed from encrypted payload to prevent timeouts on large contracts.
+    // Content integrity is still protected by contentHash below.
     signatureImage,
     signedAt: signedAt.toISOString(),
     ipAddress: ipAddress || 'unknown',
