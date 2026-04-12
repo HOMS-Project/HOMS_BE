@@ -77,10 +77,37 @@ async function getRecentInvoices(req, res, next) {
 	}
 }
 
+/**
+ * GET /api/admin/dashboard/conversion
+ * Return conversion counts and pie-friendly data.
+ * Response: { success: true, data: { totalRequests, successfulOrders, conversionRate, pie: [{ name, value }] } }
+ */
+async function getConversion(req, res, next) {
+	try {
+		// total request tickets (all time)
+		const totalRequests = await RequestTicket.countDocuments({});
+
+		// successful invoices (consider PAID and PARTIAL as successful)
+		const successfulOrders = await Invoice.countDocuments({ paymentStatus: { $in: ['PAID', 'PARTIAL'] } });
+
+		const conversionRate = totalRequests > 0 ? Math.round((successfulOrders / totalRequests) * 10000) / 100 : 0;
+
+		const pie = [
+			{ name: 'Đơn thành công', value: successfulOrders },
+			{ name: 'Không chuyển đổi', value: Math.max(totalRequests - successfulOrders, 0) }
+		];
+
+		return res.status(200).json({ success: true, data: { totalRequests, successfulOrders, conversionRate, pie } });
+	} catch (err) {
+		next(err);
+	}
+}
+
 module.exports = {
 	getOverview,
 	getRevenue,
 	getOrders,
-	getRecentInvoices
+	getRecentInvoices,
+	getConversion
 };
 
