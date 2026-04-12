@@ -79,12 +79,15 @@ exports.generateContract = async (data, adminId) => {
   // Tạo mã hợp đồng ngẫu nhiên
   const contractNumber = `HĐ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
+  const contentHash = crypto.createHash('sha256').update(finalContent).digest('hex');
+
   const newContract = new Contract({
     contractNumber,
     templateId,
     requestTicketId,
     customerId,
     content: finalContent,
+    contentHash,
     status: 'DRAFT'
   });
 
@@ -654,7 +657,8 @@ exports.signContracts = async (contractId, data) => {
 
   const contract = await Contract.findById(contractId)
     .populate('customerId', 'fullName email')
-    .populate('templateId');
+    .populate('templateId')
+    .select('-content'); // CRITICAL: Do not load the multi-megabyte HTML content into memory
 
   if (!contract) {
     throw new AppError('Hợp đồng không tồn tại', 404);
@@ -675,12 +679,17 @@ exports.signContracts = async (contractId, data) => {
 
   const signedAt = new Date();
   
-  console.time('Hashing');
-  const contentHash = require('crypto')
-    .createHash('sha256')
-    .update(contract.content)
-    .digest('hex');
-  console.timeEnd('Hashing');
+  // Use pre-calculated hash if available, otherwise fallback (for older contracts)
+  let contentHash = contract.contentHash;
+  if (!contentHash) {
+    console.log(`[ContractSign] Fallback: Calculating hash for legacy contract ${contractId}`);
+    // Only load content if absolutely necessary for legacy records
+    const legacyDoc = await Contract.findById(contractId).select('content');
+    contentHash = require('crypto')
+      .createHash('sha256')
+      .update(legacyDoc.content)
+      .digest('hex');
+  }
 
   const signedPayload = JSON.stringify({
     contractNumber: contract.contractNumber,

@@ -462,12 +462,15 @@ return withContract.map(mapDistrict);
 
     const contractNumber = `HĐ-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
+    const contentHash = crypto.createHash('sha256').update(finalContent).digest('hex');
+
     const newContract = new Contract({
       contractNumber,
       templateId: template._id,
       requestTicketId: ticket._id,
       customerId: ticket.customerId ? ticket.customerId._id : null,
       content: finalContent,
+      contentHash,
       status: 'DRAFT'
     });
 
