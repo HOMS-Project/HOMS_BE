@@ -691,17 +691,25 @@ exports.signContracts = async (contractId, data) => {
       .digest('hex');
   }
 
-  const signedPayload = JSON.stringify({
+  // Create a hash of the signature image to include in the encrypted audit trail.
+  // This ensures the audit trail links to the image without storing the massive base64 string in the encrypted blob.
+  const signatureImageHash = require('crypto')
+    .createHash('sha256')
+    .update(signatureImage)
+    .digest('hex');
+
+  const signedPayloadObj = {
     contractNumber: contract.contractNumber,
-    // Note: full contract content removed from encrypted payload to prevent timeouts on large contracts.
-    // Content integrity is still protected by contentHash below.
-    signatureImage,
+    signatureImageHash, // Use hash instead of full image to keep encryption payload tiny
     signedAt: signedAt.toISOString(),
     ipAddress: ipAddress || 'unknown',
     signerName: contract.customerId?.fullName,
     signerEmail: contract.customerId?.email,
     contentHash
-  });
+  };
+  
+  const signedPayload = JSON.stringify(signedPayloadObj);
+  console.log(`[ContractSign] Final encrypted payload size: ${signedPayload.length} bytes`);
 
   console.time('Encryption');
   const { encryptedData, iv, authTag } = encryptContract(signedPayload);
