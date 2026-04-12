@@ -713,6 +713,9 @@ exports.signContracts = async (contractId, data) => {
   contract.status = 'SIGNED';
   contract.signedAt = signedAt;
   await contract.save();
+  // NOTE: Initializing invoice synchronously here is removed to prevent timeouts on slow connections/CPU.
+  // Instead, the invoice will be lazily created when the user attempts to pay the deposit.
+  /*
   try {
     const InvoiceService = require('../invoiceService');
     await InvoiceService.createInvoiceFromTicket(contract.requestTicketId);
@@ -720,6 +723,7 @@ exports.signContracts = async (contractId, data) => {
   } catch (invoiceErr) {
     console.warn(`[Contract ${contractId}] Invoice creation skipped:`, invoiceErr.message);
   }
+  */
   return {
     message: 'Ký hợp đồng thành công',
     depositDeadline

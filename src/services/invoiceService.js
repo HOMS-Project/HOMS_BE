@@ -384,9 +384,15 @@ class InvoiceService {
    * Tạo link thanh toán tiền cọc (50%)
    */
   async createMovingDepositPayment(ticketId) {
-    const invoice = await Invoice.findOne({ requestTicketId: ticketId });
+    let invoice = await Invoice.findOne({ requestTicketId: ticketId });
     if (!invoice) {
-      throw new Error("Invoice not found for this ticket");
+      console.log(`[InvoiceService] Invoice missing for ticket ${ticketId}. Attempting lazy creation...`);
+      try {
+        invoice = await this.createInvoiceFromTicket(ticketId);
+      } catch (err) {
+        console.error(`[InvoiceService] Lazy invoice creation failed: ${err.message}`);
+        throw new Error("Không thể khởi tạo hóa đơn để thanh toán. Vui lòng liên hệ hỗ trợ.");
+      }
     }
 
     const depositAmount = Math.floor(invoice.priceSnapshot.totalPrice * 0.5);
