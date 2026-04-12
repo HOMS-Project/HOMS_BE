@@ -42,6 +42,15 @@ const invoiceSchema = new mongoose.Schema(
       subtotal: Number,
       tax: Number,
       totalPrice: Number,
+      promotion: {
+        promotionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Promotion' },
+        code: String,
+        discountAmount: Number,
+        discountType: String,
+        discountValue: Number,
+        appliedAt: Date
+      },
+      totalAfterPromotion: Number,
       breakdown: Object,
     },
 

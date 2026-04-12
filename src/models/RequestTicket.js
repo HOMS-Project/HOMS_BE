@@ -47,22 +47,28 @@ const requestTicketSchema = new mongoose.Schema({
   },
 
   /* ===== QUOTE SNAPSHOT ===== */
-  pricing: {
-    pricingDataId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'PricingData'
+    pricing: {
+      pricingDataId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'PricingData'
+      },
+      subtotal: Number,
+      tax: Number,
+      totalPrice: Number,
+      promotion: {
+        promotionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Promotion' },
+        code: String,
+        discountAmount: Number,
+        discountType: String,
+        discountValue: Number,
+        appliedAt: Date
+      },
+      totalAfterPromotion: Number,
+      version: Number,
+      quotedAt: Date,
+      acceptedAt: Date,
+      isFinalized: { type: Boolean, default: false }
     },
-
-    subtotal: Number,
-    tax: Number,
-    totalPrice: Number,
-
-    version: Number,
-    quotedAt: Date,
-    acceptedAt: Date,
-
-    isFinalized: { type: Boolean, default: false }
-  },
 
   status: {
     type: String,

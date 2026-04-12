@@ -135,7 +135,9 @@ class InvoiceService {
       priceSnapshot: {
         subtotal: ticket.pricing.subtotal,
         tax: ticket.pricing.tax,
-        totalPrice: ticket.pricing.totalPrice,
+        totalPrice: ticket.pricing.totalAfterPromotion || ticket.pricing.totalPrice,
+        promotion: ticket.pricing.promotion ? { ...ticket.pricing.promotion } : undefined,
+        totalAfterPromotion: ticket.pricing.totalAfterPromotion || undefined,
         breakdown: {} // Nếu cần breakdown chi tiết, load từ PricingData
       },
       paymentStatus: 'UNPAID',
