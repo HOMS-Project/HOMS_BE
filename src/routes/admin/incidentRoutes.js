@@ -6,6 +6,9 @@ const { ensureAdmin } = require('../../middlewares/authMiddleware') || ((req,res
 // GET /api/admin/incidents
 router.get('/', /*ensureAdmin,*/ adminIncidentController.listIncidents);
 
+// GET /api/admin/incidents/export
+router.get('/export', /*ensureAdmin,*/ adminIncidentController.exportIncidents);
+
 // GET /api/admin/incidents/:id
 router.get('/:id', /*ensureAdmin,*/ adminIncidentController.getIncident);
 
