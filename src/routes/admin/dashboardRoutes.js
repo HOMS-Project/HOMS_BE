@@ -19,6 +19,9 @@ router.get('/orders', dashboardController.getOrders);
 // GET /api/admin/dashboard/recent-invoices
 router.get('/recent-invoices', dashboardController.getRecentInvoices);
 
+// GET /api/admin/dashboard/conversion
+router.get('/conversion', dashboardController.getConversion);
+
 // -- Debug endpoint (DEV ONLY) --
 // Public route to quickly inspect overview data without auth. Remove in production.
 router.get('/debug-overview', async (req, res, next) => {
