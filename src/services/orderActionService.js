@@ -249,23 +249,43 @@ async function handleRequestDiscount(aiAction) {
  */
 async function handleCreateOrder(aiAction, session, facebookId) {
   // 1. Lấy / tạo User từ Facebook ID
-  let user = await User.findOne({ facebookId });
+const email = aiAction.email; 
+  if (!email) {
+    return '[HỆ_THỐNG_BÁO_LỖI]: Bạn chưa xin Email của khách hàng. Hãy khéo léo xin Email để gửi OTP ký hợp đồng ngay lập tức!';
+  }
+let user = await User.findOne({ email });
+  let isReturningCustomer = false;
   let fullName = 'Khách hàng Facebook';
 
-  try {
-    const fbRes = await axios.get(
-      `https://graph.facebook.com/${facebookId}?fields=first_name,last_name&access_token=${PAGE_ACCESS_TOKEN}`
-    );
-    if (fbRes.data) fullName = `${fbRes.data.last_name} ${fbRes.data.first_name}`.trim();
-  } catch (e) {
-    console.log('[CreateOrder] Lấy tên FB lỗi, dùng tên mặc định');
-  }
-
-  if (!user) {
-    user = new User({ facebookId, provider: 'facebook', fullName, role: 'customer', status: 'Active' });
-    await user.save();
+  if (user) {
+    // KHÁCH HÀNG CŨ: Đã có tài khoản bằng Email này
+    isReturningCustomer = true;
+    fullName = user.fullName;
+    // Nếu tài khoản này chưa từng liên kết FB, thì map luôn facebookId vào
+    if (!user.facebookId) {
+      user.facebookId = facebookId;
+      await user.save();
+    }
   } else {
-    fullName = user.fullName || fullName;
+    // KHÁCH HÀNG MỚI: Lấy tên từ FB và tạo tài khoản tạm
+    try {
+      const fbRes = await axios.get(
+        `https://graph.facebook.com/${facebookId}?fields=first_name,last_name&access_token=${PAGE_ACCESS_TOKEN}`
+      );
+      if (fbRes.data) fullName = `${fbRes.data.last_name} ${fbRes.data.first_name}`.trim();
+    } catch (e) {
+      console.log('[CreateOrder] Lấy tên FB lỗi, dùng tên mặc định');
+    }
+
+    user = new User({ 
+      facebookId, 
+      email, // Đã có sẵn email từ bot
+      provider: 'facebook', 
+      fullName, 
+      role: 'customer', 
+      status: 'Pending_Password' // Trạng thái chờ đặt pass
+    });
+    await user.save();
   }
 
   if (!session.surveyDataCache) {
@@ -386,18 +406,15 @@ async function handleCreateOrder(aiAction, session, facebookId) {
   }
 
   // 9. Build tin nhắn gửi khách
-  const FE_URL = process.env.FRONTEND_URL || 'https://localhost:3000';
-  const isReturningCustomer = !!(user.email && user.password);
-
+  const FE_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
   if (isReturningCustomer) {
-    const directLink = `${FE_URL}/customer/sign-contract/${newTicket._id}`;
+    const directLink = `${FE_URL}/login?redirect=/customer/sign-contract/${newTicket._id}`;
     return (
       `Dạ mừng anh/chị đã quay lại sử dụng dịch vụ HOMS! 🎉\n\n` +
-      `Em đã lên hồ sơ hợp đồng xong rồi ạ. Anh/chị truy cập link dưới đây, ` +
-      `đăng nhập bằng số điện thoại/email cũ để ký hợp đồng nhé:\n👉 ${directLink}`
+      `Hợp đồng mới đã được tạo dựa trên email ${email}. Anh/chị truy cập link dưới đây, ` +
+      `đăng nhập bằng mật khẩu cũ để tiến hành ký hợp đồng nhé:\n👉 ${directLink}`
     );
   }
-
   const setupToken = jwt.sign(
     { id: user._id, facebookId, fullName, type: 'setup_account' },
     process.env.JWT_SECRET || 'SECRET',
