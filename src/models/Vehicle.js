@@ -12,6 +12,22 @@ const vehicleSchema = new mongoose.Schema({
 
   loadCapacity: Number, // kg
 
+  maxStaff: {
+    type: Number,
+    default: function() {
+      if(this.vehicleType === '500KG') return 2;
+      if(this.vehicleType === '1TON') return 3;
+      if(this.vehicleType === '1.5TON') return 3;
+      if(this.vehicleType === '2TON') return 4;
+      return 2;
+    }
+  },
+
+  currentLocation: {
+    type: { type: String, enum: ['Point'], default: 'Point' },
+    coordinates: { type: [Number], default: [0, 0] } // [longitude, latitude]
+  },
+
   status: {
     type: String,
     enum: ['Available', 'InTransit', 'Maintenance'],

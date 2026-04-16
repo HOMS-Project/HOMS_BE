@@ -27,6 +27,7 @@ const User = require('./models/User');
 
 const socketAuthMiddleware = require('./middlewares/socketAuthMiddleware');
 const { registerVideoSocketEvents } = require('./socket/videoSocket');
+const { registerTrackingSocketEvents } = require('./socket/trackingSocket');
 
 const videoIo = io.of('/video-chat');
 videoIo.use(socketAuthMiddleware);
@@ -36,6 +37,8 @@ videoIo.on('connection', (socket) => {
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
+  
+  registerTrackingSocketEvents(io, socket);
 
   // Khi user login/vào web, FE sẽ gửi event 'register_user' kèm userId
   socket.on('register_user', (userId) => {

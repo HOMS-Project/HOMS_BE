@@ -334,7 +334,12 @@ class InvoiceService {
 
     const invoices = await Invoice.find(query)
       .populate('customerId', 'fullName email phone')
-      .populate('requestTicketId')
+      .populate({
+        path: 'requestTicketId',
+        populate: {
+          path: 'surveyDataId'
+        }
+      })
       .sort({ createdAt: -1 })
       .limit(filters.limit || 20)
       .skip(filters.skip || 0);

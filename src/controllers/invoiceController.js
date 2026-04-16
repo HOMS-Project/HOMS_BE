@@ -265,6 +265,31 @@ const SurveyData = require('../models/SurveyData');
 /**
  * 7. ĐIỀU PHỐI XE & NHÂN SỰ
  */
+exports.suggestOptimalSquad = async (req, res) => {
+  try {
+    const { totalWeight, totalVolume, pickupLocation, requiredSkills } = req.body;
+    const squad = await VehicleDispatchService.getOptimalSquad(
+      totalWeight || 1000,
+      totalVolume || 10,
+      pickupLocation,
+      requiredSkills || []
+    );
+
+    res.status(200).json({
+      success: true,
+      data: squad
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+/**
+ * 7.5 THỰC HIỆN ĐIỀU PHỐI
+ */
 exports.dispatchVehicles = async (req, res) => {
   try {
     const { invoiceId } = req.params;

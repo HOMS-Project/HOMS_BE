@@ -46,6 +46,12 @@ const userSchema = new mongoose.Schema({
     default: 'customer'
   },
 
+  currentLocation: {
+    type: { type: String, enum: ['Point'], default: 'Point' },
+    coordinates: { type: [Number], default: [108.2022, 16.0544] }, // Default is Da Nang
+    updatedAt: { type: Date }
+  },
+
   status: {
     type: String,
     enum: ['Active', 'Inactive', 'Blocked', 'Banned'],

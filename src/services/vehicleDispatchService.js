@@ -12,6 +12,7 @@ const Vehicle = require('../models/Vehicle');
 const User = require('../models/User');
 const RouteValidationService = require('./routeValidationService');
 const AppError = require('../utils/appErrors');
+const turf = require('@turf/turf');
 
 class VehicleDispatchService {
   /**
@@ -72,9 +73,17 @@ class VehicleDispatchService {
    */
   async assignStaff(vehicleId, leaderId, driverIds, staffIds) {
     try {
+      const vehicle = await Vehicle.findById(vehicleId);
+      if (!vehicle) throw new AppError('Vehicle not found', 404);
+
       let allDriverIds = [...(driverIds || [])];
       if (leaderId && !allDriverIds.includes(leaderId)) {
         allDriverIds.push(leaderId);
+      }
+
+      const totalStaff = allDriverIds.length + (staffIds?.length || 0);
+      if (vehicle.maxStaff && totalStaff > vehicle.maxStaff) {
+        throw new AppError(`Cannot assign ${totalStaff} staff. Vehicle ${vehicle.vehicleType} max capacity is ${vehicle.maxStaff}.`, 400);
       }
 
       // Kiểm tra user tồn tại
@@ -315,6 +324,76 @@ class VehicleDispatchService {
       .populate('assignments.vehicleId')
       .populate('assignments.driverIds')
       .populate('assignments.staffIds');
+  }
+
+  /**
+   * Tìm nhân sự có sẵn gần nhất
+   */
+  async findNearestAvailableStaff(location, role, limit = 5, requiredSkills = []) {
+    let query = { role: role, status: 'Active' };
+    if (role === 'driver') {
+      query['driverProfile.isAvailable'] = true;
+      if (requiredSkills && requiredSkills.length > 0) {
+        query['driverProfile.skills'] = { $all: requiredSkills };
+      }
+    }
+
+    const staffList = await User.find(query);
+    if (!location || !location.coordinates || staffList.length === 0) return staffList.slice(0, limit);
+
+    const point = turf.point(location.coordinates);
+    
+    // Tính khoảng cách
+    const sortedStaff = staffList.map(staff => {
+      const coords = (staff.currentLocation && staff.currentLocation.coordinates && staff.currentLocation.coordinates.length === 2) 
+        ? staff.currentLocation.coordinates 
+        : [108.2022, 16.0544];
+      const staffPoint = turf.point(coords);
+      const distance = turf.distance(point, staffPoint, { units: 'kilometers' });
+      return { ...staff.toObject(), distance };
+    }).sort((a, b) => a.distance - b.distance);
+
+    return sortedStaff.slice(0, limit);
+  }
+
+  /**
+   * Gợi ý Smart Squad (Xe + Leader + Driver + Helper)
+   */
+  async getOptimalSquad(totalWeight, totalVolume, pickupLocation, requiredSkills = []) {
+    // 1. Tính toán xe cần thiết
+    const vehicleNeeds = await this.calculateVehicleNeeds(totalWeight, totalVolume);
+    const primaryNeed = vehicleNeeds[0];
+
+    // 2. Tìm xe phù hợp
+    const vehicles = await this.findAvailableVehicles(primaryNeed.vehicleType, 1);
+    const vehicle = vehicles[0];
+    
+    let vehicleDistance = null;
+    if (pickupLocation && pickupLocation.coordinates && vehicle.currentLocation?.coordinates) {
+      const p1 = turf.point(pickupLocation.coordinates);
+      const p2 = turf.point(vehicle.currentLocation.coordinates);
+      vehicleDistance = turf.distance(p1, p2, { units: 'kilometers' });
+    }
+
+    // 3. Tìm nhân sự
+    const neededCapacity = vehicle.maxStaff || 2;
+    const drivers = await this.findNearestAvailableStaff(pickupLocation, 'driver', 1, requiredSkills);
+    
+    let leader = null;
+    const staffs = await this.findNearestAvailableStaff(pickupLocation, 'staff', neededCapacity - 1);
+    
+    if (staffs.length > 0) {
+      leader = staffs[0];
+    }
+
+    const helpers = staffs.slice(1, neededCapacity - 1);
+
+    return {
+      vehicle: { ...vehicle.toObject(), distance: vehicleDistance },
+      driver: drivers[0] || null,
+      leader: leader || null,
+      helpers: helpers || [],
+    };
   }
 }
 

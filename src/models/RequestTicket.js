@@ -112,6 +112,13 @@ requestTicketSchema.virtual("invoice", {
   justOne: true
 });
 
+requestTicketSchema.virtual("surveyDataId", {
+  ref: "SurveyData",
+  localField: "_id",
+  foreignField: "requestTicketId",
+  justOne: true
+});
+
 requestTicketSchema.set("toObject", { virtuals: true });
 requestTicketSchema.set("toJSON", { virtuals: true });
 module.exports = mongoose.model('RequestTicket', requestTicketSchema);
