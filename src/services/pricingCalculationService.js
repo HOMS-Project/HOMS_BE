@@ -173,7 +173,7 @@ class PricingCalculationService {
     // 8️⃣ DỊCH VỤ BỔ SUNG (Additional Services)
     const addServices = priceList.additionalServices || {};
     const assemblingFee = needsAssembling ? (addServices.assemblingFee || 0) : 0;
-    const packingFee = needsPacking ? (addServices.packingFee || 0) : 0;
+  const packingFee = needsPacking ? (addServices.packingFee || 0) : 0;  
     const insuranceFee = (insuranceRequired && declaredValue > 0)
       ? declaredValue * (addServices.insuranceRate || 0)
       : 0;
