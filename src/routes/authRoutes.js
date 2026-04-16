@@ -12,11 +12,13 @@ router.post('/register', registerLimiter, validate(schemas.register), authContro
 router.post('/send-registration-otp', validate(schemas.register), authController.sendRegistrationOTP);
 router.post('/verify-registration-otp', authController.verifyRegistrationOTP);
 router.post('/login',loginLimiter, validate(schemas.login), authController.login);
-router.post('/google-login',authController.googleLogin)
+router.post('/google-login',authController.googleLogin);
+router.post('/facebook-login', authController.facebookLogin);
 router.post('/send-otp', authController.resetPassword);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/verify-otp', authController.verifyOTP);
 router.post('/reset-password', authController.resetPassword);
 router.post('/refresh', authController.refreshToken);
 router.post('/logout',authController.logout);
+router.post('/magic',authController.setupMagicAccount);
 module.exports = router;

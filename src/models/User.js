@@ -32,10 +32,10 @@ const userSchema = new mongoose.Schema({
 
   provider: {
     type: String,
-    enum: ['local', 'google'],
+    enum: ['local', 'google','facebook','local_and_facebook'],
     default: 'local'
   },
-
+ facebookId: { type: String, unique: true, sparse: true },
   googleId: String,
 
   avatar: String,

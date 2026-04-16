@@ -1,6 +1,5 @@
 const authService = require("../services/authService");
 const AppError = require("../utils/appErrors");
-
 exports.sendRegistrationOTP = async (req, res, next) => {
   try {
     await authService.sendRegistrationOTP(req.body);
@@ -221,6 +220,64 @@ exports.logout = async (req, res, next) => {
     res.json({
       success: true,
       message: "Đăng xuất thành công",
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+exports.setupMagicAccount = async (req, res) => {
+  try {
+    const { token, phone, password, email } = req.body;
+
+    const accessToken = await authService.setupMagicAccount({
+      token,
+      phone,
+      password,
+      email
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Thiết lập thành công',
+      accessToken
+    });
+
+  } catch (error) {
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'Link hết hạn hoặc lỗi hệ thống.'
+    });
+  }
+};
+
+exports.facebookLogin = async (req, res, next) => {
+  try {
+    // 1. Lấy token từ body (do Facebook SDK hoặc phía App gửi về)
+    const { user, accessToken, refreshToken, expiresInMs } = await authService.facebookLogin(req.body);
+
+    // 2. Thiết lập Cookie (cho trình duyệt)
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      sameSite: "none",
+      secure: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    // 3. Trả về thông tin cho khách hàng
+    res.json({
+      success: true,
+      message: "Đăng nhập Facebook thành công",
+      data: {
+        user: {
+          _id: user._id,
+          fullName: user.fullName,
+          role: user.role, 
+          email: user.email,
+          avatar: user.avatar,
+        },
+        accessToken,
+        expiresInMs,
+      },
     });
   } catch (err) {
     next(err);
