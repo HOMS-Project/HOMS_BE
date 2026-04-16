@@ -225,28 +225,33 @@ exports.logout = async (req, res, next) => {
     next(err);
   }
 };
-exports.setupMagicAccount = async (req, res) => {
+exports.setupMagicAccount = async (req, res,next) => {
   try {
-    const { token, phone, password, email } = req.body;
+   const { token, password } = req.body;
 
-    const accessToken = await authService.setupMagicAccount({
-      token,
-      phone,
-      password,
-      email
+    const { user, accessToken, refreshToken, expiresInMs } = 
+      await authService.setupMagicAccount({
+        token,      
+        password,
+      });
+
+    
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      sameSite: "none",
+      secure: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
     });
 
     return res.status(200).json({
       success: true,
       message: 'Thiết lập thành công',
-      accessToken
+      accessToken,
+      data: { user }
     });
 
   } catch (error) {
-    return res.status(400).json({
-      success: false,
-      message: error.message || 'Link hết hạn hoặc lỗi hệ thống.'
-    });
+   next(error);
   }
 };
 

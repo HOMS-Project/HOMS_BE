@@ -346,8 +346,8 @@ exports.logoutUser = async (refreshToken) => {
 };
 exports.setupMagicAccount = async ({ token, phone, password, email }) => {
   try {
-    if (!token || !phone || !password || !email) {
-      throw new Error('Vui lòng nhập đủ thông tin (SĐT, Email, Mật khẩu).');
+    if (!token || !password){
+     throw new Error('Vui lòng nhập mật khẩu mới.');
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'SECRET');
@@ -362,53 +362,31 @@ exports.setupMagicAccount = async ({ token, phone, password, email }) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Kiểm tra xem có ai khác (không phải tempUser) dùng email/phone này chưa
-    const existingUser = await User.findOne({
-      _id: { $ne: tempUser._id },
-      $or: [{ phone }, { email }]
-    });
-
-    let finalUser;
-
-    if (existingUser) {
-      // Hợp nhất vào tài khoản cũ
-      const fbIdToTransfer = tempUser.facebookId;
-      
-      // Xóa tài khoản tạm
-      await User.findByIdAndDelete(tempUser._id);
-
-      // Cập nhật tài khoản cũ
-      existingUser.facebookId = fbIdToTransfer || existingUser.facebookId;
-      existingUser.phone = phone;
-      existingUser.email = email;
-      existingUser.password = hashedPassword; // Cập nhật mật khẩu mới
-      existingUser.provider = 'local_and_facebook';
-      existingUser.status = 'Active';
-      
-      await existingUser.save();
-      finalUser = existingUser;
-    } else {
-      // Cập nhật trực tiếp trên tempUser
-      tempUser.phone = phone;
-      tempUser.email = email;
-      tempUser.password = hashedPassword;
-      tempUser.provider = 'local_and_facebook';
-      tempUser.status = 'Active';
-      
-      await tempUser.save();
-      finalUser = tempUser;
-    }
-
-    const accessToken = jwt.sign(
-      { id: finalUser._id, role: finalUser.role },
-      process.env.JWT_SECRET || 'SECRET',
-      { expiresIn: '30d' }
-    );
-
-    return accessToken;
-  } catch (error) {
+   tempUser.password = hashedPassword;
+    tempUser.provider = 'local_and_facebook';
+    tempUser.status = 'Active';
+await tempUser.save();
+   const accessToken = generateToken(tempUser);
+    const refreshToken = generateRefreshToken(tempUser);
+    const decodedToken = jwt.decode(accessToken);
+    const expiresInMs = (decodedToken.exp - decodedToken.iat) * 1000;
+ 
+ await storeRefreshToken(tempUser, refreshToken);
+ return {
+accessToken,
+ refreshToken,
+expiresInMs,
+user: {
+            id: tempUser._id,
+            fullName: tempUser.fullName,
+            email: tempUser.email,
+            role: tempUser.role,
+            avatar: tempUser.avatar,
+        }
+ };
+ } catch (error) {
     console.error("LỖI SETUP MAGIC:", error);
-    // Ném lỗi ra để Controller bắt được và gửi về Client
+    
     throw new Error(error.message || 'Lỗi xử lý server');
   }
 };
