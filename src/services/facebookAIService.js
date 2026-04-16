@@ -101,6 +101,7 @@ function buildSystemPrompt() {
   \`\`\`
   (Có thể đổi percent thành 5, 10, tối đa 15 tùy độ gắt của khách). Hệ thống sẽ cấp mã thật cho bạn báo khách.
 
+  "Khi khách hàng đồng ý chốt đơn, BẮT BUỘC phải xin ĐỊA CHỈ EMAIL của khách với lý do 'để hệ thống gửi mã OTP bảo mật khi ký hợp đồng'. Chỉ được phép gọi action CHỐT_ĐƠN khi trong object data đã có thuộc tính email hợp lệ."
   ━━━ BƯỚC 8: TẠO INVOICE & HỢP ĐỒNG ━━━
   Khi khách ĐỒNG Ý CHỐT ĐƠN, hãy thông báo rằng bạn sẽ tiến hành lên Hợp đồng điện tử và Invoice thanh toán. 
   Trích xuất JSON cuối cùng này:
@@ -277,7 +278,17 @@ const facebookService = {
         session.history = session.history.slice(-16);
     }
    try {
-        await session.save();
+      await ChatSession.findOneAndUpdate(
+  { facebookId },
+  {
+    history: session.history,
+    visionItems: session.visionItems,
+    visionWeight: session.visionWeight,
+    surveyDataCache: session.surveyDataCache,
+    calculatedPriceResult: session.calculatedPriceResult
+  },
+  { upsert: true }
+);
     } catch (err) {
         if (err.name === 'VersionError') {
             console.warn('Xung đột phiên bản, bỏ qua save lần này');
