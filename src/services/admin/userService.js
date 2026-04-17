@@ -10,7 +10,11 @@ exports.getAllUsers = async (query) => {
     const { page = 1, limit = 10, role, status, search } = query;
 
     let filter = {};
-    if (role) filter.role = role.toLowerCase();
+    if (role) {
+        // Keep role filter exact. Frontend/tab logic should decide when to request
+        // a non-customer "staff" view (by omitting role and filtering client-side).
+        filter.role = String(role).toLowerCase();
+    }
     if (status) {
         // Normalize status to match enum values in User model (e.g., 'active' -> 'Active')
         const s = String(status).toLowerCase();
