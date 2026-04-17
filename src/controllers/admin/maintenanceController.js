@@ -1,6 +1,24 @@
 const MaintenanceService = require('../../services/admin/maintenanceService');
 const MaintenanceSchedule = require('../../models/MaintenanceSchedule');
 
+// GET /api/admin/maintenances/drivers
+exports.getDrivers = async (req, res, next) => {
+  try {
+    // Support query param `roles=driver,staff` and optional filters in future
+    const roles = req.query.roles || 'driver,staff';
+    const extraFilter = {};
+    // Example: ?available=true could be used to filter by driverProfile.isAvailable
+    if (req.query.available === 'true') {
+      extraFilter['driverProfile.isAvailable'] = true;
+      extraFilter['dispatcherProfile.isAvailable'] = true;
+    }
+    const drivers = await MaintenanceService.listDrivers({ roles, filter: extraFilter });
+    return res.json(drivers);
+  } catch (err) {
+    next(err);
+  }
+};
+
 exports.getAll = async (req, res, next) => {
   try {
     const schedules = await MaintenanceService.listAll();
