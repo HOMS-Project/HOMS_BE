@@ -94,13 +94,61 @@ exports.getAllRatings = async (query) => {
     const docs = (results[0] && results[0].docs) || [];
     const total = (results[0] && results[0].totalCount && results[0].totalCount[0] && results[0].totalCount[0].count) || 0;
 
-    // sanitize docs: remove sensitive fields
+    // sanitize docs: remove sensitive fields and compute a conservative `needsAttention` flag.
+    // The frontend previously flagged ratings as "needs attention" when rating <= 2 or when
+    // certain negative keywords were present in the comment. That logic was triggering on
+    // innocuous words like the Vietnamese "không" (which commonly appears in neutral
+    // sentences). To reduce false positives we compute the flag server-side using
+    // a small list of negative keywords and a few negative Vietnamese phrases.
+    const negativeWordPatterns = [
+        /\bbad\b/i,
+        /\bterrible\b/i,
+        /\blate\b/i,
+        /\brude\b/i,
+        /\bbroken\b/i,
+        /\bdamaged\b/i,
+        /\bdelay\b/i,
+        /\btrễ\b/i,
+        /\btệ\b/i,
+        /\bchậm\b/i,
+        /\bhỏng\b/i,
+        // Vietnamese negative phrases to avoid matching lone "không"
+        /\bkhông\s+tốt\b/i,
+        /\bkhông\s+hài\s+lòng\b/i,
+        /\bkhông\s+đúng\b/i,
+        /\bkhông\s+đúng\s+giờ\b/i,
+        /\bkhông\s+đạt\b/i
+    ];
+
     const ratings = docs.map(d => {
         const obj = { ...d };
         if (obj.customer && obj.customer.password) delete obj.customer.password;
         if (obj.customer && obj.customer.refreshTokens) delete obj.customer.refreshTokens;
         if (obj.driver && obj.driver.password) delete obj.driver.password;
         if (obj.driver && obj.driver.refreshTokens) delete obj.driver.refreshTokens;
+
+        // compute needsAttention conservatively
+        let needs = false;
+        const r = Number(obj.rating || 0);
+    if (!Number.isNaN(r) && r <= 3) needs = true;
+
+        const comment = (obj.comment || '').toString().toLowerCase();
+        if (!needs && comment) {
+            // check negative word patterns
+            for (const pat of negativeWordPatterns) {
+                if (pat.test(comment)) { needs = true; break; }
+            }
+        }
+
+        // also check quickTags for explicit negative tags
+        if (!needs && Array.isArray(obj.quickTags) && obj.quickTags.length) {
+            const tagsLower = obj.quickTags.join(' ').toLowerCase();
+            for (const pat of negativeWordPatterns) {
+                if (pat.test(tagsLower)) { needs = true; break; }
+            }
+        }
+
+        obj.needsAttention = needs;
         return obj;
     });
 
