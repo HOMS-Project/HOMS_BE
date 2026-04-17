@@ -373,6 +373,59 @@ exports.getContractDocx = async (contractId) => {
   const outFilename = (filename || 'contract').toString().replace(/\.html?$/i, '') + '.docx';
   return { filename: outFilename, buffer: docxBuffer };
 };
+
+/**
+ * Convert contract HTML to PDF buffer.
+ * Tries available libraries in order: html-pdf, html-pdf-node, puppeteer.
+ * If none present, throws an informative error.
+ */
+exports.getContractPdf = async (contractId) => {
+  const { filename, html } = await exports.getContractFile(contractId);
+
+  // try node-html-pdf (html-pdf)
+  try {
+    const htmlPdf = require('html-pdf');
+    return await new Promise((resolve, reject) => {
+      htmlPdf.create(html, { format: 'A4' }).toBuffer((err, buffer) => {
+        if (err) return reject(err);
+        const outFilename = (filename || 'contract').toString().replace(/\.html?$/i, '') + '.pdf';
+        resolve({ filename: outFilename, buffer });
+      });
+    });
+  } catch (e) {
+    // continue to next
+  }
+
+  // try html-pdf-node
+  try {
+    const htmlPdfNode = require('html-pdf-node');
+    const options = { format: 'A4' };
+    const file = { content: html };
+    const result = await htmlPdfNode.generatePdf(file, options);
+    // generatePdf may return a Buffer or an object with 'buffer'
+    const buffer = Buffer.isBuffer(result) ? result : (result && result.buffer) ? result.buffer : Buffer.from(String(result));
+    const outFilename = (filename || 'contract').toString().replace(/\.html?$/i, '') + '.pdf';
+    return { filename: outFilename, buffer };
+  } catch (e) {
+    // continue to next
+  }
+
+  // try puppeteer
+  try {
+    const puppeteer = require('puppeteer');
+    const browser = await puppeteer.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const pdfBuffer = await page.pdf({ format: 'A4', printBackground: true });
+    await browser.close();
+    const outFilename = (filename || 'contract').toString().replace(/\.html?$/i, '') + '.pdf';
+    return { filename: outFilename, buffer: pdfBuffer };
+  } catch (e) {
+    // none available
+  }
+
+  throw new Error('Dependency missing: please install one of html-pdf, html-pdf-node, or puppeteer to enable PDF downloads');
+};
 exports.getMyContracts = async (customerId, options = {}) => {
   const { page = 1, limit = 10, status, search } = options;
   const skip = (page - 1) * limit;

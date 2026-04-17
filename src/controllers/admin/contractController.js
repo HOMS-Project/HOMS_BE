@@ -114,13 +114,14 @@ exports.downloadContract = async (req, res, next) => {
 
 exports.downloadContractDocx = async (req, res, next) => {
   try {
-    const { filename, buffer } = await adminContractService.getContractDocx(req.params.id);
+    // Previously returned DOCX; now return PDF. Keep route for compatibility but send PDF content.
+    const { filename, buffer } = await adminContractService.getContractPdf(req.params.id);
     // sanitize filename similar to html download
-    const rawName = String(filename || 'contract.docx');
+    const rawName = String(filename || 'contract.pdf');
     const safeAscii = rawName.replace(/[\r\n\"]/g, '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').replace(/[^\x20-\x7E]/g, '_');
     const encoded = encodeURIComponent(rawName);
     res.setHeader('Content-Disposition', `attachment; filename="${safeAscii}"; filename*=UTF-8''${encoded}`);
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Type', 'application/pdf');
     return res.send(buffer);
   } catch (error) {
     if (String(error.message || '').toLowerCase().includes('dependency missing')) {
