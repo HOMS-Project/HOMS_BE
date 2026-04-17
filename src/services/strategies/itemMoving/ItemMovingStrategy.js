@@ -77,7 +77,7 @@ class ItemMovingStrategy extends BaseStrategy {
       }
 
       // 3. Save the SurveyData with the BE's resource allocation and estimated price
-      const surveyData = new SurveyData({
+      const surveyDataOptions = {
         requestTicketId: ticket._id,
         surveyType: 'ONLINE', // AI analysis is an online survey
         status: 'COMPLETED', // Completed from customer's view
@@ -88,7 +88,13 @@ class ItemMovingStrategy extends BaseStrategy {
         suggestedStaffCount: estimate.suggestedStaffCount,
         distanceKm: estimate.distanceKm || 0,
         estimatedPrice: estimatedPrice
-      });
+      };
+
+      if (data.images && Array.isArray(data.images)) {
+        surveyDataOptions.images = data.images;
+      }
+
+      const surveyData = new SurveyData(surveyDataOptions);
       
       await surveyData.save();
     }
