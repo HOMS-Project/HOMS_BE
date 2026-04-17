@@ -385,10 +385,22 @@ exports.getInvoice = async (req, res) => {
       throw new AppError('Invoice not found', 404);
     }
 
-    res.status(200).json({
-      success: true,
-      data: invoice
-    });
+    // Authorization: customers may only access their own invoices
+    const userId = req.user?.userId || req.user?._id || req.user?.id;
+    const role = (req.user?.role || '').toString().toLowerCase();
+
+    if (role === 'customer') {
+      // invoice.customerId may be populated or just an ObjectId
+      const custId = invoice.customerId && invoice.customerId._id ? invoice.customerId._id.toString() : (invoice.customerId ? invoice.customerId.toString() : null);
+      if (!custId || custId !== String(userId)) {
+        return res.status(403).json({ success: false, message: 'Bạn không có quyền truy cập hóa đơn này.' });
+      }
+    } else if (!['admin', 'staff', 'dispatcher'].includes(role)) {
+      // other roles (if any) are not allowed
+      return res.status(403).json({ success: false, message: 'Bạn không có quyền truy cập hóa đơn này.' });
+    }
+
+    res.status(200).json({ success: true, data: invoice });
   } catch (error) {
     res.status(400).json({
       success: false,
