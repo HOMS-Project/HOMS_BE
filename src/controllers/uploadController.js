@@ -1,4 +1,5 @@
 const uploadService = require('../services/uploadService');
+const cloudinaryService = require('../services/cloudinaryService');
 
 const getPresignUrl = async (req, res) => {
   try {
@@ -35,7 +36,24 @@ const processToHLS = async (req, res) => {
   }
 };
 
+const uploadSurveyMedia = async (req, res) => {
+  try {
+    const files = req.files || [];
+    if (!files.length) {
+      return res.status(400).json({ success: false, message: ' [uploadController] No files provided for upload.' });
+    }
+
+    const uploadedObjects = await cloudinaryService.uploadMultipleFiles(files, 'survey-media');
+
+    return res.status(200).json({ success: true, data: uploadedObjects });
+  } catch (err) {
+    console.error('uploadSurveyMedia error', err);
+    return res.status(500).json({ success: false, message: err.message || ' [uploadController] Failed to upload media to Cloudinary.' });
+  }
+};
+
 module.exports = {
   getPresignUrl,
-  processToHLS
+  processToHLS,
+  uploadSurveyMedia
 };

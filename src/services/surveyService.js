@@ -106,6 +106,7 @@ class SurveyService {
       declaredValue = 0,
       estimatedHours,
       items,
+      images,
       notes
     } = surveyData;
 
@@ -160,6 +161,10 @@ class SurveyService {
       updateData.$set.totalActualItems = totalActualItems;
       updateData.$set.totalActualWeight = totalActualWeight;
       updateData.$set.totalActualVolume = totalActualVolume;
+    }
+
+    if (images && Array.isArray(images)) {
+      updateData.$set.images = images;
     }
 
     if (notes) {

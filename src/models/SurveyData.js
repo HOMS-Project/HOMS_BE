@@ -78,7 +78,21 @@ const surveyDataSchema = new mongoose.Schema({
   },
 
   notes: String,
-  images: [String]
+  images: [{
+    url: {
+      type: String,
+      required: true
+    },
+    publicId: {
+      type: String,
+      required: true
+    },
+    resourceType: {
+      type: String,
+      enum: ['image', 'video', 'raw'],
+      default: 'image'
+    }
+  }]
 
 }, { timestamps: true });
 
