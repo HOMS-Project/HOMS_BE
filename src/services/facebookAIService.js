@@ -5,8 +5,24 @@ const { processIncomingImage } = require('./visionService');
 const { handleCalculatePrice, handleRequestDiscount, handleCreateOrder } = require('./orderActionService');
 
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
-const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY);
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.REACT_APP_GEMINI_API_KEY);
 const ChatSession = require('../models/ChatSession');
+
+function normalize(text) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/0/g, 'o')
+    .replace(/1/g, 'i')
+    .replace(/3/g, 'e')
+    .replace(/4/g, 'a')
+    .replace(/5/g, 's')
+    .replace(/7/g, 't')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function isSpamOrTooShort(text) {
   if (!text) return false;
@@ -156,11 +172,13 @@ function buildSystemPrompt() {
   \`\`\`json
   {
     "action": "CREATE_ORDER",
+    "email": "email_khách_hàng@gmail.com",
     "final_price": "giá chốt",
     "discount_code": "MÃ ĐƯỢC CẤP (nếu có)",
     "notes": "các lưu ý của khách"
   }
-  \`\`\``;
+  \`\`\`
+  QUAN TRỌNG: Bạn PHẢI lấy được email của khách trước khi gọi action này. Nếu chưa có email, hãy khéo léo xin email trước.`;
 }
 // ─────────────────────────────────────────────────────────────
 // FACEBOOK MESSENGER HELPERS
@@ -175,13 +193,21 @@ async function sendTypingIndicator(facebookId, isTyping = true) {
 }
 
 async function sendMessageBackToUser(facebookId, text) {
+  if (!PAGE_ACCESS_TOKEN) {
+    console.error('[FB] Lỗi: Thiếu PAGE_ACCESS_TOKEN trong .env');
+    return;
+  }
+  if (!text || text.trim().length === 0) {
+    console.warn('[FB] Bỏ qua gửi tin nhắn trống cho user:', facebookId);
+    return;
+  }
   try {
     await axios.post(
       `https://graph.facebook.com/v25.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
       { recipient: { id: facebookId }, message: { text } }
     );
   } catch (err) {
-    console.error('[FB] Lỗi gửi tin:', err.message);
+    console.error('[FB] Lỗi gửi tin:', err.response?.data || err.message);
   }
 }
 
