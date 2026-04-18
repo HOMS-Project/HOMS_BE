@@ -8,6 +8,8 @@
 
 const mongoose = require('mongoose');
 const DispatchAssignment = require('../models/DispatchAssignment');
+const DispatchDecisionLog = require('../models/DispatchDecisionLog');
+const ResourceScheduleView = require('../models/ResourceScheduleView');
 const Invoice = require('../models/Invoice');
 const Vehicle = require('../models/Vehicle');
 const User = require('../models/User');
@@ -93,23 +95,82 @@ class DispatchService {
   }
 
   /**
-   * Deterministic Resource Suggestion
-   * Suggests available resources to fulfill needs, calculating shortages.
+   * Phase 2: Penalty-Based Heuristic Routing
+   * Suggests available resources fulfilling limits via optimization scoring (70% Efficiency, 30% Fairness).
    */
   async suggestResources(pickupTime, estimatedDuration, rules = {}) {
     const { requiredLeaders = 0, requiredDrivers = 0, requiredHelpers = 0 } = rules;
     
-    // Use target start and end for grading
+    // Evaluate constraint limits and tight schedules
     const availability = await this.checkResourceAvailability(pickupTime, estimatedDuration);
     
-    const availableDrivers = availability.drivers.filter(d => d.availabilityStatus === 'AVAILABLE');
-    const availableStaff = availability.staff.filter(s => s.availabilityStatus === 'AVAILABLE');
-    
-    let suggestedDrivers = availableDrivers.slice(0, requiredDrivers);
+    // Load snapshot of cached workload for fairness scoring
+    const targetDate = new Date(pickupTime);
+    targetDate.setHours(0, 0, 0, 0); 
+    const scheduleViews = await ResourceScheduleView.find({ date: targetDate }).lean();
+    const workloadMap = new Map(scheduleViews.map(view => [view.resourceId.toString(), view.workloadCount]));
+
+    const scoreResource = (resource) => {
+      let breakdown = {
+        resourceId: resource._id,
+        resourceType: 'USER',
+        baseScore: 100,
+        penalty: 0,
+        tags: [],
+        finalScore: 0
+      };
+
+      // 1. Efficiency Penalty (70% of base)
+      let efficiencyScore = 70;
+      if (resource.availabilityStatus === 'TIGHT') {
+        efficiencyScore -= 30; // Severe penalty for tight back-to-back schedules
+        breakdown.tags.push('tight_schedule');
+      }
+      
+      // Heuristic: If we lack real-time GPS coordinate data, assume average fixed risk
+      if (!resource.currentLocation?.coordinates) {
+        efficiencyScore -= 10;
+        breakdown.tags.push('far_from_depot_or_unknown');
+      }
+
+      // 2. Fairness Penalty (30% of base) -> Balanced workload distribution
+      let fairnessScore = 30;
+      const currentWorkload = workloadMap.get(resource._id.toString()) || 0;
+      const MULTIPLIER = 10; // e.g. 3 jobs -> 30 penalty = 0 fairness
+      const workloadPenalty = Math.min(currentWorkload * MULTIPLIER, 30);
+      fairnessScore -= workloadPenalty;
+      
+      if (currentWorkload > 0) {
+        breakdown.tags.push(`workload_count_${currentWorkload}`);
+      }
+
+      breakdown.penalty = (70 - efficiencyScore) + (30 - fairnessScore);
+      breakdown.finalScore = efficiencyScore + fairnessScore;
+      
+      return { data: resource, breakdown };
+    };
+
+    // Filter absolute constraints ('UNAVAILABLE'), then score the rest
+    const viableDrivers = availability.drivers
+      .filter(d => d.availabilityStatus !== 'UNAVAILABLE')
+      .map(scoreResource)
+      .sort((a, b) => b.breakdown.finalScore - a.breakdown.finalScore);
+
+    const viableStaff = availability.staff
+      .filter(s => s.availabilityStatus !== 'UNAVAILABLE')
+      .map(scoreResource)
+      .sort((a, b) => b.breakdown.finalScore - a.breakdown.finalScore);
+
+    // Greedy allocation of highest-scored resources
+    let suggestedDrivers = viableDrivers.slice(0, requiredDrivers);
     
     let leader = null;
     let helpers = [];
-    let remainingStaff = [...availableStaff];
+    
+    // Staff pool filtering out already selected valid drivers
+    let remainingStaff = viableStaff.filter(s => 
+      !suggestedDrivers.some(d => d.data._id.toString() === s.data._id.toString())
+    );
     
     if (requiredLeaders > 0 && remainingStaff.length > 0) {
       leader = remainingStaff.shift();
@@ -121,16 +182,20 @@ class DispatchService {
     const missingLeaders = Math.max(0, requiredLeaders - (leader ? 1 : 0));
     const missingHelpers = Math.max(0, requiredHelpers - helpers.length);
     
-    // We can force proceed if we have at least min drivers (1) but missing helpers.
-    // Or based on business rule: always allow forcing if at least 1 driver.
+    // We can force proceed if we have at least minimum core drivers
     const canForce = (suggestedDrivers.length > 0);
     
     return {
       suggestedTeam: {
-        leaderId: leader ? leader._id : null,
-        driverIds: suggestedDrivers.map(d => d._id),
-        staffIds: helpers.map(h => h._id)
+        leaderId: leader ? leader.data._id : null,
+        driverIds: suggestedDrivers.map(d => d.data._id),
+        staffIds: helpers.map(h => h.data._id)
       },
+      scoreBreakdowns: [
+        ...suggestedDrivers.map(d => d.breakdown),
+        ...(leader ? [leader.breakdown] : []),
+        ...helpers.map(h => h.breakdown)
+      ],
       shortages: {
         required: { leader: requiredLeaders, drivers: requiredDrivers, helpers: requiredHelpers },
         available: { leader: leader ? 1 : 0, drivers: suggestedDrivers.length, helpers: helpers.length },
@@ -289,7 +354,7 @@ class DispatchService {
         throw new AppError('Some staff not found', 404);
       }
 
-      // ==== PREVENT OVERLAPPING SHIFTS (DOUBLE-BOOKING) ====
+        // ==== PREVENT OVERLAPPING SHIFTS (DOUBLE-BOOKING) ATOMICALLY ====
       const targetStaffIds = [...new Set([leaderId, ...driverIds, ...staffIds].filter(Boolean))];
       
       if (targetStaffIds.length > 0 && pickupTime && deliveryTime) {
@@ -297,16 +362,12 @@ class DispatchService {
           status: { $in: ['PENDING', 'ASSIGNED', 'CONFIRMED', 'IN_PROGRESS'] },
           assignments: {
             $elemMatch: {
-              $and: [
-                {
-                  $or: [
-                    { driverIds: { $in: targetStaffIds } },
-                    { staffIds: { $in: targetStaffIds } }
-                  ]
-                },
-                { pickupTime: { $lt: deliveryTime } },
-                { deliveryTime: { $gt: pickupTime } }
-              ]
+              $or: [
+                { driverIds: { $in: targetStaffIds } },
+                { staffIds: { $in: targetStaffIds } }
+              ],
+              pickupTime: { $lt: deliveryTime },
+              deliveryTime: { $gt: pickupTime }
             }
           }
         };
@@ -315,41 +376,13 @@ class DispatchService {
           query._id = { $ne: excludeAssignmentId };
         }
 
-        const conflictingAssignments = await DispatchAssignment.find(query).session(session);
+        // Phase 1: Atomic Concurrency Lock. 
+        // We use findOne inside a session transaction with proper ranges to block double-booking.
+        const conflictingAssignment = await DispatchAssignment.findOne(query).session(session);
 
-        if (conflictingAssignments.length > 0) {
-          const allUsers = [...drivers, ...staff];
-          const userMap = new Map(allUsers.map(u => [u._id.toString(), u]));
-          const conflictDetails = [];
-
-          conflictingAssignments.forEach(da => {
-            da.assignments.forEach(a => {
-              if (a.pickupTime < deliveryTime && a.deliveryTime > pickupTime) {
-                targetStaffIds.forEach(id => {
-                  const strId = id.toString();
-                  let role = null;
-                  if (a.driverIds?.some(d => d.toString() === strId)) role = 'DRIVER';
-                  else if (a.staffIds?.some(s => s.toString() === strId)) role = 'HELPER';
-                  
-                  if (role) {
-                    const user = userMap.get(strId);
-                    conflictDetails.push({
-                      staffId: strId,
-                      staffName: user?.fullName || user?.email || strId,
-                      assignmentId: da._id.toString(),
-                      pickupTime: a.pickupTime,
-                      deliveryTime: a.deliveryTime,
-                      role
-                    });
-                  }
-                });
-              }
-            });
-          });
-
-          if (conflictDetails.length > 0) {
-            throw new AppError('Staff availability conflict', 400, { conflicts: conflictDetails });
-          }
+        if (conflictingAssignment) {
+          // If we find just ONE overlap, immediately throw `RESOURCE_CONFLICT` to halt the transaction.
+          throw new AppError('RESOURCE_CONFLICT', 400);
         }
       }
 
@@ -519,6 +552,7 @@ class DispatchService {
    */
   async createDispatchAssignment(invoiceId, dispatchData) {
     console.log(`[BE] createDispatchAssignment initiated for invoice: ${invoiceId}`, dispatchData);
+    const startTime = Date.now();
 
     const session = await mongoose.startSession();
     let resultAssignment;
@@ -553,7 +587,7 @@ class DispatchService {
           assignmentRecords = allocResult.assignmentRecords;
           totalStaff = allocResult.totalStaff;
         } catch (error) {
-          if (error.message === 'Staff availability conflict' && dispatchData.forceProceed !== true) {
+          if ((error.message === 'RESOURCE_CONFLICT' || error.message === 'Staff availability conflict') && dispatchData.forceProceed !== true) {
             const assignedPickupTime = dispatchData.dispatchTime ? new Date(dispatchData.dispatchTime) : (invoice.scheduledTime || invoice.requestTicketId?.scheduledTime || new Date());
             const duration = dispatchData.estimatedDuration || 480;
             
@@ -609,6 +643,32 @@ class DispatchService {
           }
         }
 
+        // Phase 3: Materialized View (Interim Cache) Update
+        for (const record of assignmentRecords) {
+          const targetDate = new Date(record.pickupTime);
+          targetDate.setHours(0, 0, 0, 0);
+
+          // Build a bulk operation for this record's users
+          const participants = [
+            ...record.driverIds.map(id => ({ id, type: 'USER' })),
+            ...record.staffIds.map(id => ({ id, type: 'USER' })),
+            { id: record.vehicleId, type: 'VEHICLE' }
+          ];
+
+          for (const participant of participants) {
+            if (!participant.id) continue;
+            await ResourceScheduleView.findOneAndUpdate(
+              { resourceId: participant.id, date: targetDate },
+              {
+                $set: { resourceType: participant.type },
+                $max: { nextAvailableTime: record.deliveryTime },
+                $inc: { workloadCount: 1 }
+              },
+              { upsert: true, session, new: true }
+            );
+          }
+        }
+
         await assignment.save({ session });
 
         // Step 4: Update invoice details
@@ -622,8 +682,56 @@ class DispatchService {
         invoice.status = 'ASSIGNED';
         await invoice.save({ session });
 
+        // Phase 2: Log the decision & Run Heuristic Scoring
+        const logDurationMs = dispatchData.estimatedDuration ? dispatchData.estimatedDuration * 60000 : 480 * 60000;
+        const requestedTime = dispatchData.dispatchTime || invoice.scheduledTime;
+        
+        // Calculate the "Optimal" ML recommendation (even if manual override occurred)
+        const optimalSuggestion = await this.suggestResources(requestedTime, logDurationMs / 60000, {
+          requiredDrivers: dispatchData.driverIds?.length || 1,
+          requiredHelpers: dispatchData.staffIds?.length || 1,
+          requiredLeaders: dispatchData.leaderId ? 1 : 0
+        });
+
+        const decisionLog = new DispatchDecisionLog({
+          invoiceId: invoice._id,
+          transactionId: new mongoose.Types.ObjectId().toString(),
+          algorithmVersion: 'v2_heuristic_penalty',
+          computationTimeMs: Date.now() - startTime,
+          parameters: {
+            requestedTime: requestedTime,
+            durationMs: logDurationMs,
+            requiredDrivers: dispatchData.driverIds?.length || 1,
+            requiredHelpers: dispatchData.staffIds?.length || 1,
+            requiredVehicles: 1,
+            totalWeight: dispatchData.totalWeight || 0,
+            totalVolume: dispatchData.totalVolume || 0
+          },
+          forceProceed: dispatchData.forceProceed || false,
+          scoreBreakdown: optimalSuggestion.scoreBreakdowns,
+          suggestedOutcome: {
+            teams: [{
+              driverIds: optimalSuggestion.suggestedTeam.driverIds,
+              staffIds: optimalSuggestion.suggestedTeam.staffIds
+            }],
+            isUnderstaffedFallback: assignment.understaffed || false
+          }
+        });
+        await decisionLog.save({ session });
+
         resultAssignment = assignment;
       });
+
+      // Broadcast resource assignment update for real-time UI synchronization
+      try {
+        const { getIo } = require('../utils/socket');
+        const io = getIo();
+        if (io) {
+          io.emit('resources_updated', { invoiceId });
+        }
+      } catch (err) {
+        console.error('[BE] Warning: Failed to emit resources_updated', err.message);
+      }
 
       return resultAssignment;
     } catch (error) {

@@ -76,7 +76,9 @@ exports.dispatchVehicles = async (req, res, next) => {
       vehicleType,
       vehicleCount,
       routeId,
-      estimatedDuration
+      estimatedDuration,
+      dispatchTime,
+      forceProceed
     } = req.body;
 
     // Truy xuất thông tin SurveyData để lấy khối lượng thực tế
@@ -106,7 +108,9 @@ exports.dispatchVehicles = async (req, res, next) => {
       vehicleType,
       vehicleCount,
       routeId,
-      estimatedDuration
+      estimatedDuration,
+      dispatchTime,
+      forceProceed
     });
 
     // Cập nhật invoice status
