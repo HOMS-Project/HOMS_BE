@@ -320,7 +320,7 @@ const facebookService = {
       return sendMessageBackToUser(facebookId, `Dạ, để được hỗ trợ nhanh nhất và chính xác về giá, anh/chị vui lòng truy cập vào trang web ${FRONTEND_URL} để nhân viên tư vấn trực tiếp cho mình nhé! Em xin lỗi vì sự bất tiện này ạ.`);
     }
     await sendTypingIndicator(facebookId, true);
-    const historyLimit = session.calculatedPriceResult ? 4 : 10;
+    const historyLimit = session.calculatedPriceResult ? 6 : 20;
     if (session.history.length > historyLimit) {
       session.history = session.history.slice(-historyLimit);
     }
