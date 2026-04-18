@@ -8,7 +8,7 @@ const InvoiceService = require('../services/invoiceService');
 const SurveyService = require('../services/surveyService');
 const PricingService = require('../services/pricingService');
 const RouteValidationService = require('../services/routeValidationService');
-const VehicleDispatchService = require('../services/vehicleDispatchService');
+const DispatchService = require('../services/dispatchService');
 const AppError = require('../utils/appErrors');
 
 /**
@@ -251,118 +251,6 @@ exports.findOptimalRoute = async (req, res) => {
     res.status(200).json({
       success: true,
       data: routes
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-const SurveyData = require('../models/SurveyData');
-
-/**
- * 7. ĐIỀU PHỐI XE & NHÂN SỰ
- */
-exports.suggestOptimalSquad = async (req, res) => {
-  try {
-    const { totalWeight, totalVolume, pickupLocation, requiredSkills } = req.body;
-    const squad = await VehicleDispatchService.getOptimalSquad(
-      totalWeight || 1000,
-      totalVolume || 10,
-      pickupLocation,
-      requiredSkills || []
-    );
-
-    res.status(200).json({
-      success: true,
-      data: squad
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-/**
- * 7.5 THỰC HIỆN ĐIỀU PHỐI
- */
-exports.dispatchVehicles = async (req, res) => {
-  try {
-    const { invoiceId } = req.params;
-    const {
-      leaderId,
-      driverIds,
-      staffIds,
-      vehicleType,
-      vehicleCount,
-      routeId,
-      estimatedDuration
-    } = req.body;
-
-    // Truy xuất thông tin SurveyData để lấy khối lượng thực tế
-    const invoice = await Invoice.findById(invoiceId);
-    let totalWeight = 1000;
-    let totalVolume = 10;
-
-    if (invoice && invoice.requestTicketId) {
-      const surveyData = await SurveyData.findOne({
-        requestTicketId: invoice.requestTicketId,
-        status: 'COMPLETED'
-      });
-      if (surveyData) {
-        totalWeight = surveyData.totalActualWeight || 1000;
-        totalVolume = surveyData.totalActualVolume || 10;
-      }
-    }
-
-    const assignment = await VehicleDispatchService.createDispatchAssignment(invoiceId, {
-      totalWeight,
-      totalVolume,
-      leaderId,
-      driverIds,
-      staffIds,
-      vehicleType,
-      vehicleCount,
-      routeId,
-      estimatedDuration
-    });
-
-    // Cập nhật invoice status
-    await Invoice.findByIdAndUpdate(invoiceId, {
-      status: 'ASSIGNED'
-    });
-
-    res.status(201).json({
-      success: true,
-      data: assignment
-    });
-  } catch (error) {
-    res.status(400).json({
-      success: false,
-      message: error.message
-    });
-  }
-};
-
-/**
- * 8. XÁC NHẬN DISPATCH
- */
-exports.confirmDispatch = async (req, res) => {
-  try {
-    const { invoiceId } = req.params;
-    const invoice = await Invoice.findById(invoiceId);
-
-    const assignment = await VehicleDispatchService.confirmDispatchAssignment(
-      invoice.dispatchAssignmentId
-    );
-
-    res.status(200).json({
-      success: true,
-      data: assignment
     });
   } catch (error) {
     res.status(400).json({
