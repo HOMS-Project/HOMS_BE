@@ -23,73 +23,56 @@ function normalize(text) {
     .trim();
 }
 function isSpamOrTooShort(text) {
-    if (!text) return false;
-    const cleanText = text.toLowerCase().trim();
-    const junkWords = ['hi', 'hello', 'ê', 'hey', '.', '?', 'vcl', 'adu', 'alo'];
-    // Nếu tin nhắn quá ngắn hoặc nằm trong list từ khóa chào hỏi đơn lẻ
-    if (cleanText.length <= 2 || (cleanText.split(' ').length === 1 && junkWords.includes(cleanText))) {
-        return true;
-    }
-    return false;
+  if (!text) return false;
+  const cleanText = text.toLowerCase().trim();
+  const junkWords = ['hi', 'hello', 'ê', 'hey', '.', '?', 'vcl', 'adu', 'alo'];
+  // Nếu tin nhắn quá ngắn hoặc nằm trong list từ khóa chào hỏi đơn lẻ
+  if (cleanText.length <= 2 || (cleanText.split(' ').length === 1 && junkWords.includes(cleanText))) {
+    return true;
+  }
+  return false;
 }
 function containsSensitiveContent(text) {
-    if (!text) return false;
-     const cleanText = normalize(text).replace(/\s/g, '');
-
-    const badWords = [
-  'đm','dm','dmm','đmm','đmẹ','địt','dit','địt mẹ','dit me',
-  'vcl','vl','vkl','vcc','vãi','vãi lồn','vai lon',
-  'đcm','dcm','đcmm','dcmm','đc mẹ','dc me',
-  'lồn','lon','loz','l*n','l0n',
-  'cặc','cak','c4c','cc','cứt','cut',
-  'cl','cailon','ca lon',
-  'ngu','ngu vl','ngu như chó',
-  'óc chó','oc cho','occho',
-  'đần','đần độn','dumb',
-  'khùng','điên','dở hơi',
-  'súc vật','suc vat',
-  'chó chết','cho chet',
-  'con chó','thằng chó','con đĩ','đĩ','di~',
-  'mẹ mày','me may','ba mày','cha mày',
-  'câm mồm','im mồm','im đi',
-  'biến đi','cút','cut di'
-];
-  
-const sensitiveWords = [
-  'chính trị','chinh tri',
-  'đảng','dang',
-  'nhà nước','nha nuoc',
-  'biểu tình','bieu tinh',
-  'phản động','phan dong',
-  'cách mạng','cach mang',
-  'tuyên truyền','tuyen truyen',
-  'tôn giáo','ton giao',
-  'chúa','chua',
-  'phật','phat',
-  'allah','hồi giáo','hoi giao',
-  'công giáo','cong giao'
-];
-const toxicWords = [
-  'tự tử','tu tu',
-  'chết đi','chet di',
-  'giết','giet',
-  'giết người','giet nguoi',
-  'đập chết','dap chet',
-  'đánh chết','danh chet',
-  'bắn chết','ban chet',
-  'treo cổ','treo co',
-  'uống thuốc độc','thuoc doc'
-];
-
-    const allForbidden = [...badWords, ...sensitiveWords, ...toxicWords]
-     .map(word => normalize(word).replace(/\s/g, ''));
+  if (!text) return false;
+  const cleanText = normalize(text).replace(/\s/g, '');
 
 
-    return allForbidden.some(word => cleanText.includes(word));
+
+  const sensitiveWords = [
+    'chính trị', 'chinh tri',
+    'đảng', 'dang',
+    'nhà nước', 'nha nuoc',
+    'biểu tình', 'bieu tinh',
+    'phản động', 'phan dong',
+    'cách mạng', 'cach mang',
+    'tuyên truyền', 'tuyen truyen',
+    'tôn giáo', 'ton giao',
+    'chúa', 'chua',
+    'phật', 'phat',
+    'allah', 'hồi giáo', 'hoi giao',
+    'công giáo', 'cong giao'
+  ];
+  const toxicWords = [
+    'tự tử', 'tu tu',
+    'chết đi', 'chet di',
+    'giết', 'giet',
+    'giết người', 'giet nguoi',
+    'đập chết', 'dap chet',
+    'đánh chết', 'danh chet',
+    'bắn chết', 'ban chet',
+    'treo cổ', 'treo co',
+    'uống thuốc độc', 'thuoc doc'
+  ];
+
+  const allForbidden = [...sensitiveWords, ...toxicWords]
+    .map(word => normalize(word).replace(/\s/g, ''));
+
+
+  return allForbidden.some(word => cleanText.includes(word));
 }
 
 function buildSystemPrompt() {
-    return `
+  return `
     <ROLE>
     Sứ mệnh của bạn là trò chuyện tự nhiên, thân thiện và thấu hiểu khách hàng như một tư vấn viên con người, nhưng VẪN PHẢI TỰ XƯNG LÀ AI để khách hàng biết.
     ĐẶC BIỆT LƯU Ý: Phải linh hoạt! Nếu khách hàng hỏi ngang (hỏi thời gian, hỏi xe gì, hỏi cách khiêng), PHẢI TRẢ LỜI NGAY LẬP TỨC bằng kiến thức nghiệp vụ dưới đây, sau đó mới khéo léo dẫn dắt khách quay lại các bước khảo sát.
@@ -192,7 +175,7 @@ function buildSystemPrompt() {
     "notes": "các lưu ý của khách"
   }
   \`\`\``;
-  }
+}
 // ─────────────────────────────────────────────────────────────
 // FACEBOOK MESSENGER HELPERS
 // ─────────────────────────────────────────────────────────────
@@ -202,7 +185,7 @@ async function sendTypingIndicator(facebookId, isTyping = true) {
       `https://graph.facebook.com/v25.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
       { recipient: { id: facebookId }, sender_action: isTyping ? 'typing_on' : 'typing_off' }
     );
-  } catch (_) {}
+  } catch (_) { }
 }
 
 async function sendMessageBackToUser(facebookId, text) {
@@ -226,13 +209,13 @@ function createSession() {
     generationConfig: { maxOutputTokens: 4000, temperature: 1 }
   });
   return {
-    chat:                  model.startChat({ history: [] }),
-    visionItems:           [],
-    visionWeight:          0,
-    visionVolume:          0,
-    surveyDataCache:       null,
+    chat: model.startChat({ history: [] }),
+    visionItems: [],
+    visionWeight: 0,
+    visionVolume: 0,
+    surveyDataCache: null,
     calculatedPriceResult: null,
-    calculatedBreakdown:   null
+    calculatedBreakdown: null
   };
 }
 
@@ -240,7 +223,7 @@ function createSession() {
  * Nếu AI trả về block ```json ... ```, parse action và xử lý.
  * Trả về true nếu đã xử lý xong (caller không cần gửi botReply nữa).
  */
-async function handleAIAction(botReply, session, facebookId,chat) {
+async function handleAIAction(botReply, session, facebookId, chat) {
   const jsonMatch = botReply.match(/```json\n([\s\S]*?)\n```/);
   if (!jsonMatch) return false;
 
@@ -261,8 +244,8 @@ async function handleAIAction(botReply, session, facebookId,chat) {
   // ── ACTION: CALCULATE_PRICE ──
   if (aiAction.action === 'CALCULATE_PRICE') {
     const triggerMsg = await handleCalculatePrice(aiAction, session);
-    const followUp   = await chat.sendMessage(triggerMsg);
-    session.history = await chat.getHistory(); 
+    const followUp = await chat.sendMessage(triggerMsg);
+    session.history = await chat.getHistory();
     await sendMessageBackToUser(facebookId, followUp.response.text());
     return true;
   }
@@ -270,7 +253,7 @@ async function handleAIAction(botReply, session, facebookId,chat) {
   // ── ACTION: REQUEST_DISCOUNT ──
   if (aiAction.action === 'REQUEST_DISCOUNT') {
     const triggerMsg = await handleRequestDiscount(aiAction);
-    const followUp   = await chat.sendMessage(triggerMsg);
+    const followUp = await chat.sendMessage(triggerMsg);
     session.history = await chat.getHistory();
     await sendMessageBackToUser(facebookId, followUp.response.text());
     return true;
@@ -307,40 +290,40 @@ async function handleAIAction(botReply, session, facebookId,chat) {
 const facebookService = {
   processUserMessage: async (facebookId, messageText, imageUrl = null) => {
     const now = Date.now();
-      let session = await ChatSession.findOne({ facebookId });
-   if (!session) {
-            session = new ChatSession({ facebookId, history: [], messageCount: 0 });
-        }
-        if (containsSensitiveContent(messageText)) {
-        return sendMessageBackToUser(
-            facebookId, 
-            "Dạ, HOMS là trợ lý AI chuyên hỗ trợ dịch vụ vận chuyển. Em xin phép từ chối trả lời các nội dung không liên quan hoặc thiếu chuẩn mực ạ. Mời anh/chị quay lại hỏi về dịch vụ chuyển nhà nhé!"
-        );
+    let session = await ChatSession.findOne({ facebookId });
+    if (!session) {
+      session = new ChatSession({ facebookId, history: [], messageCount: 0 });
     }
-if (!imageUrl && session.messageCount === 0 && isSpamOrTooShort(messageText)) {
-        return sendMessageBackToUser(facebookId, "Dạ HOMS nghe đây ạ! Anh/chị cần tư vấn chuyển nhà hay thuê xe tải thì nhắn em cụ thể nhé! 😊");
+    if (containsSensitiveContent(messageText)) {
+      return sendMessageBackToUser(
+        facebookId,
+        "Dạ, HOMS là trợ lý AI chuyên hỗ trợ dịch vụ vận chuyển. Em xin phép từ chối trả lời các nội dung không liên quan hoặc thiếu chuẩn mực ạ. Mời anh/chị quay lại hỏi về dịch vụ chuyển nhà nhé!"
+      );
     }
- 
-        if (session.lastMessageAt && (now - session.lastMessageAt < 1500)) {
-            console.log(`[RateLimit] Chặn ${facebookId} nhắn quá nhanh`);
-            return; 
-        }
-        session.lastMessageAt = now;
-        const MAX_QUOTA = 20;
-        if ((session.messageCount || 0) > MAX_QUOTA && !session.calculatedPriceResult) {
-            return sendMessageBackToUser(facebookId, `Dạ, để được hỗ trợ nhanh nhất và chính xác về giá, anh/chị vui lòng truy cập vào trang web ${FRONTEND_URL} để nhân viên tư vấn trực tiếp cho mình nhé! Em xin lỗi vì sự bất tiện này ạ.`);
-        }
-        await sendTypingIndicator(facebookId, true);
-        const historyLimit = session.calculatedPriceResult ? 4 : 10;
- if (session.history.length > historyLimit) {
-            session.history = session.history.slice(-historyLimit);
-        }
+    if (!imageUrl && session.messageCount === 0 && isSpamOrTooShort(messageText)) {
+      return sendMessageBackToUser(facebookId, "Dạ HOMS nghe đây ạ! Anh/chị cần tư vấn chuyển nhà hay thuê xe tải thì nhắn em cụ thể nhé! 😊");
+    }
+
+    if (session.lastMessageAt && (now - session.lastMessageAt < 1500)) {
+      console.log(`[RateLimit] Chặn ${facebookId} nhắn quá nhanh`);
+      return;
+    }
+    session.lastMessageAt = now;
+    const MAX_QUOTA = 20;
+    if ((session.messageCount || 0) > MAX_QUOTA && !session.calculatedPriceResult) {
+      return sendMessageBackToUser(facebookId, `Dạ, để được hỗ trợ nhanh nhất và chính xác về giá, anh/chị vui lòng truy cập vào trang web ${FRONTEND_URL} để nhân viên tư vấn trực tiếp cho mình nhé! Em xin lỗi vì sự bất tiện này ạ.`);
+    }
+    await sendTypingIndicator(facebookId, true);
+    const historyLimit = session.calculatedPriceResult ? 4 : 10;
+    if (session.history.length > historyLimit) {
+      session.history = session.history.slice(-historyLimit);
+    }
     // 2. Khởi tạo Gemini Chat từ history của DB
-    const model = genAI.getGenerativeModel({ 
-        model: 'gemini-2.5-flash',
-        systemInstruction: buildSystemPrompt() 
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      systemInstruction: buildSystemPrompt()
     });
-   const chat = model.startChat({ history: session.history });
+    const chat = model.startChat({ history: session.history });
 
     // 3. Xử lý ảnh
     let finalMessage = messageText;
@@ -369,33 +352,33 @@ if (!imageUrl && session.messageCount === 0 && isSpamOrTooShort(messageText)) {
     }
 
     // 5. Xử lý Action và gửi tin
-    const handled = await handleAIAction(botReply, session, facebookId, chat); 
+    const handled = await handleAIAction(botReply, session, facebookId, chat);
     if (!handled) {
-        await sendMessageBackToUser(facebookId, botReply.replace(/[*_#]/g, ''));
+      await sendMessageBackToUser(facebookId, botReply.replace(/[*_#]/g, ''));
     }
- if (session.history.length > 10) {
-        session.history = session.history.slice(-10);
+    if (session.history.length > 10) {
+      session.history = session.history.slice(-10);
     }
-   try {
+    try {
       await ChatSession.findOneAndUpdate(
-  { facebookId },
-  {
-    history: session.history,
-    messageCount: session.messageCount,
-    lastMessageAt: session.lastMessageAt,
-    visionItems: session.visionItems,
-    visionWeight: session.visionWeight,
-    surveyDataCache: session.surveyDataCache,
-    calculatedPriceResult: session.calculatedPriceResult
-  },
-  { upsert: true }
-);
+        { facebookId },
+        {
+          history: session.history,
+          messageCount: session.messageCount,
+          lastMessageAt: session.lastMessageAt,
+          visionItems: session.visionItems,
+          visionWeight: session.visionWeight,
+          surveyDataCache: session.surveyDataCache,
+          calculatedPriceResult: session.calculatedPriceResult
+        },
+        { upsert: true }
+      );
     } catch (err) {
-        if (err.name === 'VersionError') {
-            console.warn('Xung đột phiên bản, bỏ qua save lần này');
-        } else {
-            throw err;
-        }
+      if (err.name === 'VersionError') {
+        console.warn('Xung đột phiên bản, bỏ qua save lần này');
+      } else {
+        throw err;
+      }
     }
   },
 
