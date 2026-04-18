@@ -7,21 +7,7 @@ const { handleCalculatePrice, handleRequestDiscount, handleCreateOrder } = requi
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const genAI = new GoogleGenerativeAI(process.env.REACT_APP_GEMINI_API_KEY);
 const ChatSession = require('../models/ChatSession');
-function normalize(text) {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/0/g, 'o')
-    .replace(/1/g, 'i')
-    .replace(/3/g, 'e')
-    .replace(/4/g, 'a')
-    .replace(/5/g, 's')
-    .replace(/7/g, 't')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+
 function isSpamOrTooShort(text) {
   if (!text) return false;
   const cleanText = text.toLowerCase().trim();
@@ -293,12 +279,6 @@ const facebookService = {
     let session = await ChatSession.findOne({ facebookId });
     if (!session) {
       session = new ChatSession({ facebookId, history: [], messageCount: 0 });
-    }
-    if (containsSensitiveContent(messageText)) {
-      return sendMessageBackToUser(
-        facebookId,
-        "Dạ, HOMS là trợ lý AI chuyên hỗ trợ dịch vụ vận chuyển. Em xin phép từ chối trả lời các nội dung không liên quan hoặc thiếu chuẩn mực ạ. Mời anh/chị quay lại hỏi về dịch vụ chuyển nhà nhé!"
-      );
     }
     if (!imageUrl && session.messageCount === 0 && isSpamOrTooShort(messageText)) {
       return sendMessageBackToUser(facebookId, "Dạ HOMS nghe đây ạ! Anh/chị cần tư vấn chuyển nhà hay thuê xe tải thì nhắn em cụ thể nhé! 😊");
