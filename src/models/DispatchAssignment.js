@@ -100,4 +100,13 @@ const dispatchAssignmentSchema = new mongoose.Schema({
 
 }, { timestamps: true });
 
+// Index for checking staff overlapping shifts
+dispatchAssignmentSchema.index({
+  status: 1,
+  "assignments.pickupTime": 1,
+  "assignments.deliveryTime": 1,
+  "assignments.driverIds": 1,
+  "assignments.staffIds": 1
+});
+
 module.exports = mongoose.model('DispatchAssignment', dispatchAssignmentSchema);

@@ -192,67 +192,6 @@ class InvoiceService {
   }
 
   /**
-   * Phân công vehicles + staff (CONFIRMED → ASSIGNED)
-   */
-  async dispatchVehicles(invoiceId, dispatcherId, dispatchData) {
-    const invoice = await Invoice.findById(invoiceId);
-    if (!invoice) {
-      throw new AppError('Invoice không tồn tại', 404);
-    }
-
-    if (invoice.status !== 'CONFIRMED') {
-      throw new AppError(
-        `Cannot dispatch from status ${invoice.status}`,
-        400
-      );
-    }
-
-    // Check dispatcher
-    if (invoice.dispatcherId?.toString() !== dispatcherId) {
-      throw new AppError('Bạn không được assign invoice này', 403);
-    }
-
-    // Validate dispatch data
-    if (!dispatchData.vehicleIds || dispatchData.vehicleIds.length === 0) {
-      throw new AppError('Phải chọn ít nhất 1 xe', 400);
-    }
-
-    if (dispatchData.estimatedPickupTime && dispatchData.estimatedDeliveryTime) {
-      const pickupTime = new Date(dispatchData.estimatedPickupTime);
-      const deliveryTime = new Date(dispatchData.estimatedDeliveryTime);
-      if (deliveryTime <= pickupTime) {
-        throw new AppError('estimatedDeliveryTime phải > estimatedPickupTime', 400);
-      }
-    }
-
-    // Create dispatch assignment
-    const assignment = new DispatchAssignment({
-      invoiceId,
-      assignments: dispatchData.vehicleIds?.map(vehicleId => ({
-        vehicleId,
-        pickupTime: dispatchData.estimatedPickupTime,
-        deliveryTime: dispatchData.estimatedDeliveryTime
-      })) || [],
-      createdBy: dispatcherId
-    });
-
-    await assignment.save();
-
-    // Update invoice
-    invoice.dispatchAssignmentId = assignment._id;
-    invoice.status = 'ASSIGNED';
-    invoice.timeline.push({
-      status: 'ASSIGNED',
-      updatedBy: dispatcherId,
-      updatedAt: new Date(),
-      notes: `Assigned ${dispatchData.vehicleIds.length} vehicle(s)`
-    });
-
-    await invoice.save();
-    return invoice;
-  }
-
-  /**
    * Cập nhật status invoice
    */
   async updateStatus(invoiceId, newStatus, updatedBy, notes = '') {

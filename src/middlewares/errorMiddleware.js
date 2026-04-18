@@ -12,6 +12,7 @@ const errorMiddleware = (err, req, res, next) => {
         success: false,
         statusCode,
         message,
+        data: err.data,
         stack: process.env.NODE_ENV === 'production' ? null : err.stack
     });
 };

@@ -17,8 +17,6 @@ router.get('/ticket/:ticketId', authenticate, invoiceController.getInvoiceByTick
 router.get('/:invoiceId/timeline', authenticate, invoiceController.getTimeline);
 
 router.post('/from-ticket/:requestTicketId', authenticate, invoiceController.createInvoiceFromTicket, invoiceController.confirmInvoice);
-router.post('/optimal-squad', authenticate, invoiceController.suggestOptimalSquad);
-router.post('/:invoiceId/dispatch', authenticate, invoiceController.dispatchVehicles);
 
 router.put('/:invoiceId/cancel', authenticate, invoiceController.cancelInvoice);
 
