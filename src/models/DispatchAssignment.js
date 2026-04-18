@@ -100,13 +100,10 @@ const dispatchAssignmentSchema = new mongoose.Schema({
 
 }, { timestamps: true });
 
-// Index for checking staff overlapping shifts
-dispatchAssignmentSchema.index({
-  status: 1,
-  "assignments.pickupTime": 1,
-  "assignments.deliveryTime": 1,
-  "assignments.driverIds": 1,
-  "assignments.staffIds": 1
-});
+// Query-Shaped Indexes for Atomic Overlap Checking
+// Order: Equality -> Range
+dispatchAssignmentSchema.index({ "assignments.driverIds": 1, "assignments.pickupTime": 1, "assignments.deliveryTime": 1, status: 1 });
+dispatchAssignmentSchema.index({ "assignments.staffIds": 1, "assignments.pickupTime": 1, "assignments.deliveryTime": 1, status: 1 });
+dispatchAssignmentSchema.index({ "assignments.vehicleId": 1, "assignments.pickupTime": 1, "assignments.deliveryTime": 1, status: 1 });
 
 module.exports = mongoose.model('DispatchAssignment', dispatchAssignmentSchema);
