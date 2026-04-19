@@ -236,7 +236,7 @@ function createSession() {
  * Trả về true nếu đã xử lý xong (caller không cần gửi botReply nữa).
  */
 async function handleAIAction(botReply, session, facebookId, chat) {
-  const jsonMatch = botReply.match(/```json\n([\s\S]*?)\n```/);
+  const jsonMatch = botReply.match(/```json\s*([\s\S]*?)\s*```/);
   if (!jsonMatch) return false;
 
   let aiAction;
@@ -282,7 +282,8 @@ async function handleAIAction(botReply, session, facebookId, chat) {
       }
       const replyMessage = await handleCreateOrder(aiAction, session, facebookId);
       await sendMessageBackToUser(facebookId, replyMessage);
-      facebookService.clearMemory(facebookId); // Giải phóng RAM sau khi chốt đơn
+      facebookService.clearMemory(facebookId);
+       session.isCleared = true; 
     } catch (error) {
       console.error('🔥 LỖI KHI CHỐT ĐƠN TỪ FB:', error.message);
       await sendMessageBackToUser(
@@ -299,7 +300,7 @@ const userMessageQueues = new Map();
 
 async function processNextMessage(facebookId) {
   const userQueue = userMessageQueues.get(facebookId);
-  
+
   if (!userQueue || userQueue.isProcessing || userQueue.messages.length === 0) {
     return;
   }
@@ -380,7 +381,9 @@ async function _processSingleUserMessage(facebookId, messageText, imageUrl) {
   if (session.history.length > 10) {
     session.history = session.history.slice(-10);
   }
-
+if (session.isCleared) {
+   return; 
+}
   // Lưu DB
   try {
     await ChatSession.findOneAndUpdate(
