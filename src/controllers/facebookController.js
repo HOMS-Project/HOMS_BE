@@ -41,9 +41,9 @@ const facebookController = {
         for (const webhookEvent of entry.messaging) {
           if (!webhookEvent?.message) continue;
 
+
           const senderId = webhookEvent.sender.id;
           const message = webhookEvent.message;
-          const mid = message.mid;
 
           // Bỏ qua echo (tin nhắn từ chính page gửi đi)
           if (message.is_echo) continue;
@@ -55,6 +55,11 @@ const facebookController = {
           if (message.attachments?.length > 0) {
             for (const attachment of message.attachments) {
               if (attachment.type === 'image') {
+                if (attachment.payload?.sticker_id) {
+                  console.log(`[FB] Khách ${senderId} gửi Sticker/Icon. Bỏ qua không quét AI.`);
+                  continue;
+                }
+
                 // Lấy URL ảnh thật từ Facebook
                 imageUrl = attachment.payload?.url || null;
                 console.log(`📸 Ảnh từ ${senderId}: ${imageUrl}`);
@@ -72,15 +77,9 @@ const facebookController = {
               continue;
             }
           }
-
-          // Không có gì để xử lý (quick reply chưa có text, ...)
-          if (!messageText) {
-            console.log(`[FB] Bỏ qua message không có text/image từ ${senderId}`);
-            continue;
-          }
-
-          // ── Ném vào service xử lý ─────────────────
-          await facebookService.processUserMessage(senderId, messageText, imageUrl, mid);
+          if (!messageText) continue;
+          facebookService.processUserMessage(senderId, messageText, imageUrl)
+            .catch(err => console.error(`[FB] Lỗi khi xử lý tin nhắn của ${senderId}:`, err));
         }
       }
     } catch (error) {
