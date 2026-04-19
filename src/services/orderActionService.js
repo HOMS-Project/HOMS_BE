@@ -253,21 +253,42 @@ const email = aiAction.email;
   if (!email) {
     return '[HỆ_THỐNG_BÁO_LỖI]: Bạn chưa xin Email của khách hàng. Hãy khéo léo xin Email để gửi OTP ký hợp đồng ngay lập tức!';
   }
-let user = await User.findOne({ email });
-  let isReturningCustomer = false;
+   let isReturningCustomer = false;
   let fullName = 'Khách hàng Facebook';
+  let user = null;
+  const userByEmail = await User.findOne({ email });
+ const userByFb = await User.findOne({ facebookId });
 
-  if (user) {
-    // KHÁCH HÀNG CŨ: Đã có tài khoản bằng Email này
+if (userByEmail) {
+    
+    user = userByEmail;
     isReturningCustomer = true;
     fullName = user.fullName;
-    // Nếu tài khoản này chưa từng liên kết FB, thì map luôn facebookId vào
-    if (!user.facebookId) {
+
+    
+    if (userByFb && userByFb._id.toString() !== user._id.toString()) {
+      await User.findByIdAndUpdate(userByFb._id, { $unset: { facebookId: 1 } });
+    }
+
+   
+    if (user.facebookId !== facebookId) {
       user.facebookId = facebookId;
+      if (user.provider === 'local') user.provider = 'local_and_facebook';
       await user.save();
     }
+
+  } else if (userByFb) {
+    
+    user = userByFb;
+    isReturningCustomer = true; 
+    fullName = user.fullName;
+    
+   
+    user.email = email;
+    await user.save();
+
   } else {
-    // KHÁCH HÀNG MỚI: Lấy tên từ FB và tạo tài khoản tạm
+   
     try {
       const fbRes = await axios.get(
         `https://graph.facebook.com/${facebookId}?fields=first_name,last_name&access_token=${PAGE_ACCESS_TOKEN}`
@@ -279,11 +300,11 @@ let user = await User.findOne({ email });
 
     user = new User({ 
       facebookId, 
-      email, // Đã có sẵn email từ bot
+      email, 
       provider: 'facebook', 
       fullName, 
       role: 'customer', 
-      status: 'Pending_Password' // Trạng thái chờ đặt pass
+      status: 'Pending_Password'
     });
     await user.save();
   }

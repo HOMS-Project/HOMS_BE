@@ -1,14 +1,8 @@
-/**
- * facebookController.js
- *
- * Thay đổi chính:
- *  - Extract imageUrl thật từ Facebook attachment và truyền vào processUserMessage
- *  - Xử lý đúng các trường hợp: text, ảnh, ảnh + text, icon like / file khác
- */
-
 const facebookService = require('../services/facebookAIService');
 
 const VERIFY_TOKEN = process.env.FB_VERIFY_TOKEN || 'homs_bi_mat_123';
+
+const processedMids = new Set();
 
 const facebookController = {
   verifyWebhook: (req, res) => {
@@ -25,60 +19,78 @@ const facebookController = {
 
   handleIncomingWebhook: async (req, res) => {
     const body = req.body;
-
-    // Facebook yêu cầu trả 200 ngay, không được để timeout
+    
     if (body.object !== 'page') {
       return res.sendStatus(404);
     }
 
     res.status(200).send('EVENT_RECEIVED');
 
-    // Xử lý bất đồng bộ sau khi đã trả 200
     try {
       for (const entry of body.entry) {
-          if (!entry.messaging) continue;
+        if (!entry.messaging) continue;
 
-     for (const webhookEvent of entry.messaging) {
+        for (const webhookEvent of entry.messaging) {
           if (!webhookEvent?.message) continue;
 
+          const senderId = webhookEvent.sender.id;
+          const message = webhookEvent.message;
+          
 
-        const senderId = webhookEvent.sender.id;
-        const message = webhookEvent.message;
+          if (message.is_echo) continue;
 
-        // Bỏ qua echo (tin nhắn từ chính page gửi đi)
-        if (message.is_echo) continue;
+          if (message.mid) {
+            if (processedMids.has(message.mid)) continue;
+            processedMids.add(message.mid);
+            
+            if (processedMids.size > 5000) processedMids.clear();
+          }
 
-        let messageText = message.text || null;
-        let imageUrl = null;
+          console.log(`[FB] Bắt đầu xử lý tin nhắn từ ${senderId}:`, message.text);
 
-        // ── Xử lý attachments ─────────────────────
-        if (message.attachments?.length > 0) {
-          for (const attachment of message.attachments) {
-            if (attachment.type === 'image') {
-               if (attachment.payload?.sticker_id) {
-                  console.log(`[FB] Khách ${senderId} gửi Sticker/Icon. Bỏ qua không quét AI.`);
+          let messageText = message.text || null;
+          let imageUrl = null;
+
+          // ── Xử lý attachments (Chặn triệt để Icon Like) ───────────
+          if (message.attachments?.length > 0) {
+            for (const attachment of message.attachments) {
+              if (attachment.type === 'image') {
+                const url = attachment.payload?.url || '';
+                
+              
+                const isSticker = attachment.payload?.sticker_id || 
+                                  url.includes('stickers') || 
+                                  url.includes('369239266556155') || 
+                                  url.includes('851557_');
+
+                if (isSticker) {
+                  console.log(`[FB] Khách ${senderId} gửi Sticker/Like. Bỏ qua không quét AI.`);
                   continue; 
                 }
 
-              // Lấy URL ảnh thật từ Facebook
-              imageUrl = attachment.payload?.url || null;
-              console.log(`📸 Ảnh từ ${senderId}: ${imageUrl}`);
-              // Nếu khách chỉ gửi ảnh mà không kèm text
-              if (!messageText) {
-                messageText = '[Khách hàng vừa gửi ảnh đồ đạc]';
+
+                imageUrl = url || null;
+                console.log(`📸 Ảnh từ ${senderId}: ${imageUrl}`);
+                
+                if (!messageText) {
+                  messageText = '[Khách hàng vừa gửi ảnh đồ đạc]';
+                }
+                break;
               }
-              break; // Chỉ xử lý ảnh đầu tiên
             }
           }
 
-          // Attachment không phải ảnh (file, video, sticker like, audio...)
-          if (!imageUrl && !messageText) {
-            console.log(`[FB] Bỏ qua attachment không phải ảnh từ ${senderId}`);
+
+          if (messageText === '(y)' || messageText === '👍') {
             continue;
           }
-        }
-         if (!messageText) continue;
-        facebookService.processUserMessage(senderId, messageText, imageUrl)
+
+          if (!messageText && !imageUrl) {
+            console.log(`[FB] Bỏ qua vì không có nội dung từ ${senderId}`);
+            continue;
+          }
+
+          facebookService.processUserMessage(senderId, messageText, imageUrl)
             .catch(err => console.error(`[FB] Lỗi khi xử lý tin nhắn của ${senderId}:`, err));
         }
       }
