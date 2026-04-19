@@ -8,6 +8,7 @@ const chatSessionSchema = new mongoose.Schema({
   visionVolume: { type: Number, default: 0 },
   surveyDataCache: { type: Object, default: null },
   calculatedPriceResult: { type: Object, default: null },
+  processedMids: { type: [String], default: [] }, // Danh sách các message ID đã xử lý
   lastActive: { type: Date, default: Date.now, expires: 86400 } 
 });
 
