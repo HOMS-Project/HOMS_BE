@@ -300,12 +300,27 @@ async function handleAIAction(botReply, session, facebookId, chat) {
 // MAIN SERVICE
 // ─────────────────────────────────────────────────────────────
 const facebookService = {
-  processUserMessage: async (facebookId, messageText, imageUrl = null) => {
+  processUserMessage: async (facebookId, messageText, imageUrl = null, mid = null) => {
     const now = Date.now();
     let session = await ChatSession.findOne({ facebookId });
     if (!session) {
-      session = new ChatSession({ facebookId, history: [], messageCount: 0 });
+      session = new ChatSession({ facebookId, history: [], messageCount: 0, processedMids: [] });
     }
+
+    // 1. Khử trùng (Deduplication) dựa trên mid
+    if (mid && session.processedMids && session.processedMids.includes(mid)) {
+      console.log(`[Deduplication] Bỏ qua message trùng mid: ${mid}`);
+      return;
+    }
+    if (mid) {
+      session.processedMids = session.processedMids || [];
+      session.processedMids.push(mid);
+      // Giữ lại 100 mid gần nhất để tránh tràn mảng
+      if (session.processedMids.length > 100) {
+        session.processedMids = session.processedMids.slice(-100);
+      }
+    }
+
     if (!imageUrl && session.messageCount === 0 && isSpamOrTooShort(messageText)) {
       return sendMessageBackToUser(facebookId, "Dạ HOMS nghe đây ạ! Anh/chị cần tư vấn chuyển nhà hay thuê xe tải thì nhắn em cụ thể nhé! 😊");
     }
@@ -375,7 +390,8 @@ const facebookService = {
           visionItems: session.visionItems,
           visionWeight: session.visionWeight,
           surveyDataCache: session.surveyDataCache,
-          calculatedPriceResult: session.calculatedPriceResult
+          calculatedPriceResult: session.calculatedPriceResult,
+          processedMids: session.processedMids
         },
         { upsert: true }
       );

@@ -36,49 +36,52 @@ const facebookController = {
     // Xử lý bất đồng bộ sau khi đã trả 200
     try {
       for (const entry of body.entry) {
-        // Mỗi entry có thể có nhiều events; lấy event đầu tiên
-        const webhookEvent = entry.messaging?.[0];
-        if (!webhookEvent?.message) continue;
+        if (!entry.messaging) continue;
 
-        const senderId = webhookEvent.sender.id;
-        const message = webhookEvent.message;
+        for (const webhookEvent of entry.messaging) {
+          if (!webhookEvent?.message) continue;
 
-        // Bỏ qua echo (tin nhắn từ chính page gửi đi)
-        if (message.is_echo) continue;
+          const senderId = webhookEvent.sender.id;
+          const message = webhookEvent.message;
+          const mid = message.mid;
 
-        let messageText = message.text || null;
-        let imageUrl = null;
+          // Bỏ qua echo (tin nhắn từ chính page gửi đi)
+          if (message.is_echo) continue;
 
-        // ── Xử lý attachments ─────────────────────
-        if (message.attachments?.length > 0) {
-          for (const attachment of message.attachments) {
-            if (attachment.type === 'image') {
-              // Lấy URL ảnh thật từ Facebook
-              imageUrl = attachment.payload?.url || null;
-              console.log(`📸 Ảnh từ ${senderId}: ${imageUrl}`);
-              // Nếu khách chỉ gửi ảnh mà không kèm text
-              if (!messageText) {
-                messageText = '[Khách hàng vừa gửi ảnh đồ đạc]';
+          let messageText = message.text || null;
+          let imageUrl = null;
+
+          // ── Xử lý attachments ─────────────────────
+          if (message.attachments?.length > 0) {
+            for (const attachment of message.attachments) {
+              if (attachment.type === 'image') {
+                // Lấy URL ảnh thật từ Facebook
+                imageUrl = attachment.payload?.url || null;
+                console.log(`📸 Ảnh từ ${senderId}: ${imageUrl}`);
+                // Nếu khách chỉ gửi ảnh mà không kèm text
+                if (!messageText) {
+                  messageText = '[Khách hàng vừa gửi ảnh đồ đạc]';
+                }
+                break; // Chỉ xử lý ảnh đầu tiên
               }
-              break; // Chỉ xử lý ảnh đầu tiên
+            }
+
+            // Attachment không phải ảnh (file, video, sticker like, audio...)
+            if (!imageUrl && !messageText) {
+              console.log(`[FB] Bỏ qua attachment không phải ảnh từ ${senderId}`);
+              continue;
             }
           }
 
-          // Attachment không phải ảnh (file, video, sticker like, audio...)
-          if (!imageUrl && !messageText) {
-            console.log(`[FB] Bỏ qua attachment không phải ảnh từ ${senderId}`);
+          // Không có gì để xử lý (quick reply chưa có text, ...)
+          if (!messageText) {
+            console.log(`[FB] Bỏ qua message không có text/image từ ${senderId}`);
             continue;
           }
-        }
 
-        // Không có gì để xử lý (quick reply chưa có text, ...)
-        if (!messageText) {
-          console.log(`[FB] Bỏ qua message không có text/image từ ${senderId}`);
-          continue;
+          // ── Ném vào service xử lý ─────────────────
+          await facebookService.processUserMessage(senderId, messageText, imageUrl, mid);
         }
-
-        // ── Ném vào service xử lý ─────────────────
-        await facebookService.processUserMessage(senderId, messageText, imageUrl);
       }
     } catch (error) {
       console.error('[FB] Lỗi xử lý webhook:', error);
