@@ -7,7 +7,7 @@ const { handleCalculatePrice, handleRequestDiscount, handleCreateOrder } = requi
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.REACT_APP_GEMINI_API_KEY);
 const ChatSession = require('../models/ChatSession');
-
+const FRONTEND_URL = process.env.FRONTEND_URL
 function normalize(text) {
   return text
     .toLowerCase()
@@ -282,7 +282,9 @@ async function handleAIAction(botReply, session, facebookId, chat) {
       }
       const replyMessage = await handleCreateOrder(aiAction, session, facebookId);
       await sendMessageBackToUser(facebookId, replyMessage);
-      facebookService.clearMemory(facebookId); // Giải phóng RAM sau khi chốt đơn
+      await ChatSession.deleteOne({ facebookId });
+       console.log(`[DB] Đã xóa session của ${facebookId} sau khi chốt đơn.`);
+        return 'DELETED'; 
     } catch (error) {
       console.error('🔥 LỖI KHI CHỐT ĐƠN TỪ FB:', error.message);
       await sendMessageBackToUser(
@@ -359,9 +361,11 @@ const facebookService = {
 
     // 5. Xử lý Action và gửi tin
     const handled = await handleAIAction(botReply, session, facebookId, chat);
+       if (handled === 'DELETED') return; 
     if (!handled) {
       await sendMessageBackToUser(facebookId, botReply.replace(/[*_#]/g, ''));
     }
+  
     if (session.history.length > 10) {
       session.history = session.history.slice(-10);
     }
