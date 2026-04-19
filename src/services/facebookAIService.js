@@ -8,6 +8,7 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.REACT_APP_GEMINI_API_KEY);
 const ChatSession = require('../models/ChatSession');
 const FRONTEND_URL = process.env.FRONTEND_URL
+const processingUsers = new Set();
 function normalize(text) {
   return text
     .toLowerCase()
@@ -283,8 +284,8 @@ async function handleAIAction(botReply, session, facebookId, chat) {
       const replyMessage = await handleCreateOrder(aiAction, session, facebookId);
       await sendMessageBackToUser(facebookId, replyMessage);
       await ChatSession.deleteOne({ facebookId });
-       console.log(`[DB] Đã xóa session của ${facebookId} sau khi chốt đơn.`);
-        return 'DELETED'; 
+      console.log(`[DB] Đã xóa session của ${facebookId} sau khi chốt đơn.`);
+      return 'DELETED';
     } catch (error) {
       console.error('🔥 LỖI KHI CHỐT ĐƠN TỪ FB:', error.message);
       await sendMessageBackToUser(
@@ -302,112 +303,107 @@ async function handleAIAction(botReply, session, facebookId, chat) {
 // MAIN SERVICE
 // ─────────────────────────────────────────────────────────────
 const facebookService = {
-  processUserMessage: async (facebookId, messageText, imageUrl = null, mid = null) => {
-    const now = Date.now();
-    let session = await ChatSession.findOne({ facebookId });
-    if (!session) {
-      session = new ChatSession({ facebookId, history: [], messageCount: 0, processedMids: [] });
-    }
+  processUserMessage: async (facebookId, messageText, imageUrl = null) => {
 
-    // 1. Khử trùng (Deduplication) dựa trên mid
-    if (mid && session.processedMids && session.processedMids.includes(mid)) {
-      console.log(`[Deduplication] Bỏ qua message trùng mid: ${mid}`);
+    if (processingUsers.has(facebookId)) {
+      console.log(`[Lock] Đang bận xử lý request của ${facebookId}, bỏ qua request trùng...`);
       return;
     }
-    if (mid) {
-      session.processedMids = session.processedMids || [];
-      session.processedMids.push(mid);
-      // Giữ lại 100 mid gần nhất để tránh tràn mảng
-      if (session.processedMids.length > 100) {
-        session.processedMids = session.processedMids.slice(-100);
-      }
-    }
 
-    if (!imageUrl && session.messageCount === 0 && isSpamOrTooShort(messageText)) {
-      return sendMessageBackToUser(facebookId, "Dạ HOMS nghe đây ạ! Anh/chị cần tư vấn chuyển nhà hay thuê xe tải thì nhắn em cụ thể nhé! 😊");
-    }
 
-    if (session.lastMessageAt && (now - session.lastMessageAt < 1500)) {
-      console.log(`[RateLimit] Chặn ${facebookId} nhắn quá nhanh`);
-      return;
-    }
-    session.lastMessageAt = now;
-    const MAX_QUOTA = 20;
-    if ((session.messageCount || 0) > MAX_QUOTA && !session.calculatedPriceResult) {
-      return sendMessageBackToUser(facebookId, `Dạ, để được hỗ trợ nhanh nhất và chính xác về giá, anh/chị vui lòng truy cập vào trang web ${FRONTEND_URL} để nhân viên tư vấn trực tiếp cho mình nhé! Em xin lỗi vì sự bất tiện này ạ.`);
-    }
-    await sendTypingIndicator(facebookId, true);
-    const historyLimit = session.calculatedPriceResult ? 6 : 20;
-    if (session.history.length > historyLimit) {
-      session.history = session.history.slice(-historyLimit);
-    }
-    // 2. Khởi tạo Gemini Chat từ history của DB
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      systemInstruction: buildSystemPrompt()
-    });
-    const chat = model.startChat({ history: session.history });
+    processingUsers.add(facebookId);
 
-    // 3. Xử lý ảnh
-    let finalMessage = messageText;
-    if (imageUrl) {
-      await sendMessageBackToUser(facebookId, 'Dạ em đang quét ảnh, anh/chị đợi xíu nhé! ⏳');
-      const visionResult = await processIncomingImage(imageUrl);
-      if (visionResult) {
-        session.visionItems = visionResult.items;
-        session.visionWeight += visionResult.totalWeight;
-        finalMessage = visionResult.systemMessage;
-      } else {
-        finalMessage = '[THÔNG_BÁO_HỆ_THỐNG]: Lỗi AI quét ảnh, nhờ khách liệt kê tay.';
-      }
-    }
-
-    // 4. Gọi Gemini
-    let botReply;
     try {
-      const result = await chat.sendMessage(finalMessage);
-      botReply = result.response.text();
-      session.history = await chat.getHistory();
-      session.messageCount = (session.messageCount || 0) + 1;
-    } catch (err) {
-      console.error('[Chat] Lỗi Gemini:', err);
-      return sendMessageBackToUser(facebookId, 'Dạ hệ thống đang bận, anh/chị nhắn lại nhé!');
-    }
-
-    // 5. Xử lý Action và gửi tin
-    const handled = await handleAIAction(botReply, session, facebookId, chat);
-       if (handled === 'DELETED') return; 
-    if (!handled) {
-      await sendMessageBackToUser(facebookId, botReply.replace(/[*_#]/g, ''));
-    }
-  
-    if (session.history.length > 10) {
-      session.history = session.history.slice(-10);
-    }
-    try {
-      await ChatSession.findOneAndUpdate(
-        { facebookId },
-        {
-          history: session.history,
-          messageCount: session.messageCount,
-          lastMessageAt: session.lastMessageAt,
-          visionItems: session.visionItems,
-          visionWeight: session.visionWeight,
-          surveyDataCache: session.surveyDataCache,
-          calculatedPriceResult: session.calculatedPriceResult,
-          processedMids: session.processedMids
-        },
-        { upsert: true }
-      );
-    } catch (err) {
-      if (err.name === 'VersionError') {
-        console.warn('Xung đột phiên bản, bỏ qua save lần này');
-      } else {
-        throw err;
+      const now = Date.now();
+      let session = await ChatSession.findOne({ facebookId });
+      if (!session) {
+        session = new ChatSession({ facebookId, history: [], messageCount: 0 });
       }
+
+      if (!imageUrl && session.messageCount === 0 && isSpamOrTooShort(messageText)) {
+        await sendMessageBackToUser(facebookId, "Dạ HOMS nghe đây ạ! Anh/chị cần tư vấn chuyển nhà hay thuê xe tải thì nhắn em cụ thể nhé! 😊");
+        return;
+      }
+      if (session.lastActive && (now - session.lastActive.getTime() < 1500)) {
+        return;
+      }
+      session.lastActive = new Date(now);
+      const MAX_QUOTA = 20;
+      if ((session.messageCount || 0) > MAX_QUOTA && !session.calculatedPriceResult) {
+        await sendMessageBackToUser(facebookId, `Dạ, để được hỗ trợ nhanh nhất và chính xác về giá, anh/chị vui lòng truy cập vào trang web ${FRONTEND_URL} nhé!`);
+        return;
+      }
+
+      await sendTypingIndicator(facebookId, true);
+      const historyLimit = session.calculatedPriceResult ? 6 : 20;
+      if (session.history.length > historyLimit) {
+        session.history = session.history.slice(-historyLimit);
+      }
+
+      const model = genAI.getGenerativeModel({
+        model: 'gemini-2.5-flash',
+        systemInstruction: buildSystemPrompt()
+      });
+      const chat = model.startChat({ history: session.history });
+
+      let finalMessage = messageText;
+      if (imageUrl) {
+        await sendMessageBackToUser(facebookId, 'Dạ em đang quét ảnh, anh/chị đợi xíu nhé! ⏳');
+        const visionResult = await processIncomingImage(imageUrl);
+        if (visionResult) {
+          session.visionItems = visionResult.items;
+          session.visionWeight += visionResult.totalWeight;
+          finalMessage = visionResult.systemMessage;
+        } else {
+          finalMessage = '[THÔNG_BÁO_HỆ_THỐNG]: Lỗi AI quét ảnh, nhờ khách liệt kê tay.';
+        }
+      }
+
+      let botReply;
+      try {
+        const result = await chat.sendMessage(finalMessage);
+        botReply = result.response.text();
+        session.history = await chat.getHistory();
+        session.messageCount = (session.messageCount || 0) + 1;
+      } catch (err) {
+        console.error('[Chat] Lỗi Gemini:', err);
+        await sendMessageBackToUser(facebookId, 'Dạ hệ thống đang bận, anh/chị nhắn lại nhé!');
+        return;
+      }
+
+      const handled = await handleAIAction(botReply, session, facebookId, chat);
+      if (handled === 'DELETED') return;
+
+      if (!handled) {
+        await sendMessageBackToUser(facebookId, botReply.replace(/[*_#]/g, ''));
+      }
+
+      if (session.history.length > 10) {
+        session.history = session.history.slice(-10);
+      }
+
+      // Lưu DB
+      try {
+        await ChatSession.findOneAndUpdate(
+          { facebookId },
+          {
+            history: session.history,
+            messageCount: session.messageCount,
+            lastActive: session.lastActive,
+            visionItems: session.visionItems,
+            visionWeight: session.visionWeight,
+            surveyDataCache: session.surveyDataCache,
+            calculatedPriceResult: session.calculatedPriceResult
+          },
+          { upsert: true }
+        );
+      } catch (err) {
+        if (err.name !== 'VersionError') console.error(err);
+      }
+    } finally {
+      processingUsers.delete(facebookId);
     }
   },
-
   clearMemory: async (facebookId) => {
     await ChatSession.deleteOne({ facebookId });
   }
