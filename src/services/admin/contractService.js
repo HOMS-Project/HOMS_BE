@@ -56,9 +56,9 @@ exports.updateTemplate = async (id, updateData, adminId) => {
 /**
  * Sinh hợp đồng từ Template cho một RequestTicket cụ thể
  */
-exports.generateContract = async (data, adminId) => {
+exports.generateContract = async (data, adminId,options={}) => {
   const { templateId, requestTicketId, customerId, customData } = data;
-
+const { session } = options;
   const template = await ContractTemplate.findById(templateId);
   if (!template) throw new Error('Template not found');
 
@@ -107,7 +107,7 @@ exports.generateContract = async (data, adminId) => {
     newContract.status = 'SENT';
   }
 
-  return await newContract.save();
+   return await newContract.save({ session }); 
 };
 
 /**
