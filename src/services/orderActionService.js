@@ -130,12 +130,8 @@ async function handleCalculatePrice(aiAction, session) {
   const pickupDistrict   = await GeocodeService.reverseGeocode(fromCoords.lat, fromCoords.lng);
   const deliveryDistrict = await GeocodeService.reverseGeocode(toCoords.lat, toCoords.lng);
 
-  // 3. Thời gian chuyển
-  let pickupTime = new Date();
-  if (data.movingTime) {
-    const parsed = new Date(data.movingTime);
-    if (!isNaN(parsed.getTime())) pickupTime = parsed;
-  }
+  // 3. Thời gian chuyển (Đã xử lý ở trên)
+
 
   // 4. Xe & nhân viên
   const vol = session.visionVolume || 1;
