@@ -51,12 +51,12 @@ class TruckRentalStrategy extends BaseStrategy {
       const PriceList = require('../../../models/PriceList');
 
       // 1. BE calculates resources based on the AI items array
-      const estimate = await SurveyService.estimateResources(
-        data.items, 
-        data.distanceKm || 0, 
-        0, 
-        false 
-      );
+      const estimate = await SurveyService.estimateResources({
+        items: data.items, 
+        distanceKm: data.distanceKm || 0, 
+        floors: 0, 
+        hasElevator: false 
+      });
 
       // 2. Try to get a Dry-Run price based on BE resources
       let estimatedPrice = 0;

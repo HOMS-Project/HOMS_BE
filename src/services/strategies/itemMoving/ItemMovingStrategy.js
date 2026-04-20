@@ -40,12 +40,12 @@ class ItemMovingStrategy extends BaseStrategy {
       const PriceList = require('../../../models/PriceList');
 
       // 1. BE calculates resources based on the AI items array (ignoring AI's vehicle/staff suggestion)
-      const estimate = await SurveyService.estimateResources(
-        data.items, 
-        data.distanceKm || 0, 
-        0, // floors typically unknown initially
-        false // elevator unknown initially
-      );
+      const estimate = await SurveyService.estimateResources({
+        items: data.items, 
+        distanceKm: data.distanceKm || 0, 
+        floors: 0, // floors typically unknown initially
+        hasElevator: false // elevator unknown initially
+      });
 
       // 2. Perform a Dry-Run Pricing Calculation to get an Estimated Price for the UI
       let estimatedPrice = 0;
