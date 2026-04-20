@@ -110,7 +110,7 @@ function buildSystemPrompt() {
     - Chuyển nhà trọn gói (HOMS lo từ A-Z)
     - Vận chuyển đồ lẻ (Thuê xe & người khiêng)
     - Thuê xe tải (Khách tự bốc xếp)
-  - Hỏi xem khách đang quan tâm dịch vụ nào. Chỉ qua Bước 2 khi khách chọn xong.
+  - Hỏi xem khách đang quan tâm dịch vụ nào.Khi khách chốt dịch vụ, hãy ghi rõ loại dịch vụ vào JSON: movingType: 'TRUCK_RENTAL' | 'SINGLE_ITEMS' | 'FULL_HOUSE' Chỉ qua Bước 2 khi khách chọn xong.
   - Lắng nghe nhu cầu của khách để tư vấn dịch vụ phù hợp nhất. CHỈ chuyển sang Bước 2 khi khách đã chốt được dịch vụ.
 
   ━━━ BƯỚC 2: KHẢO SÁT ĐỒ ĐẠC ━━━
@@ -135,6 +135,7 @@ function buildSystemPrompt() {
   \`\`\`json
   {
     "action": "CALCULATE_PRICE",
+    "movingType": "FULL_HOUSE", // Gợi ý: TRUCK_RENTAL, SPECIFIC_ITEMS, hoặc FULL_HOUSE
     "data": { 
       "from": "Số nhà, Tên đường, Phường, Quận, Đà Nẵng", 
       "to": "Số nhà, Tên đường, Phường, Quận, Đà Nẵng", 

@@ -105,7 +105,7 @@ function suggestVehicleAndStaff(vol, wgt) {
  */
 async function handleCalculatePrice(aiAction, session) {
   const data = aiAction.data;
-
+ const moveType = aiAction.movingType || 'FULL_HOUSE';
   if (!data.from || !data.to || data.from === 'địa chỉ đi') {
     return '[HỆ_THỐNG_BÁO_LỖI]: Bạn chưa lấy đủ địa chỉ ĐI và ĐẾN chi tiết. Hãy khéo léo xin lỗi và hỏi lại khách hàng ngay lập tức!';
   }
@@ -180,7 +180,7 @@ async function handleCalculatePrice(aiAction, session) {
   let finalPrice = 0;
   try {
     const priceList   = await PricingCalculationService.getActivePriceList();
-    const priceResult = await PricingCalculationService.calculatePricing(surveyData, priceList);
+    const priceResult = await PricingCalculationService.calculatePricing(surveyData, priceList,moveType);
     finalPrice                   = priceResult.totalPrice;
     session.calculatedPriceResult = priceResult;
     session.calculatedBreakdown   = priceResult.breakdown;
