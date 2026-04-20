@@ -76,17 +76,35 @@ async function getRouteDistance(originCoords, destCoords) {
   return 5; // Fallback mặc định
 }
 
-/** Ước tính số giờ dựa trên khoảng cách, tầng lầu, số nhân viên */
-function computeEstimatedHours({ distanceKm = 0, floors = 0, suggestedStaffCount = 2 }) {
+
+function computeEstimatedHours({ distanceKm = 0, floors = 0, suggestedStaffCount = 2, moveType }) {
   let hours = 2;
+  
+  if (moveType === 'TRUCK_RENTAL' || moveType === 'SPECIFIC_ITEMS') {
+    hours = 1; 
+  }
+
   hours += distanceKm * 0.1;
-  hours += floors * 0.5;
-  if (suggestedStaffCount <= 2) hours += 1;
+
+  if (moveType === 'FULL_HOUSE') {
+    hours += floors * 0.5;
+    if (suggestedStaffCount <= 2) hours += 1;
+  }
+  
   return Math.ceil(hours);
 }
 
 /** Chọn loại xe và số nhân viên phù hợp dựa trên khối lượng/thể tích */
-function suggestVehicleAndStaff(vol, wgt) {
+function suggestVehicleAndStaff(vol, wgt,moveType) {
+   let staffCount = 2; 
+  if (moveType === 'TRUCK_RENTAL') {
+    staffCount = 1; // Chỉ có 1 tài xế, không bốc xếp
+  }  else if (moveType === 'SPECIFIC_ITEMS') {
+    staffCount = 2; // Tài xế + 1 phụ khiêng đồ nặng
+  } else {
+    if (vol > 10 || wgt > 1500) staffCount = 3;
+    else if (vol > 6  || wgt > 1000) staffCount = 2;
+  }
   if (vol > 10 || wgt > 1500) return { vehicleType: '2TON',   staffCount: 3 };
   if (vol > 6  || wgt > 1000) return { vehicleType: '1.5TON', staffCount: 2 };
   if (vol > 3  || wgt > 500)  return { vehicleType: '1TON',   staffCount: 2 };
@@ -131,7 +149,6 @@ async function handleCalculatePrice(aiAction, session) {
   const deliveryDistrict = await GeocodeService.reverseGeocode(toCoords.lat, toCoords.lng);
 
   // 3. Thời gian chuyển
-  let pickupTime = new Date();
   if (data.movingTime) {
     const parsed = new Date(data.movingTime);
     if (!isNaN(parsed.getTime())) pickupTime = parsed;
@@ -140,9 +157,9 @@ async function handleCalculatePrice(aiAction, session) {
   // 4. Xe & nhân viên
   const vol = session.visionVolume || 1;
   const wgt = session.visionWeight || 100;
-  const { vehicleType: tempVehicleType, staffCount: tempStaffCount } = suggestVehicleAndStaff(vol, wgt);
+  const { vehicleType: tempVehicleType, staffCount: tempStaffCount } = suggestVehicleAndStaff(vol, wgt,moveType);
   const floors         = Number(data.floors) || 0;
-  const estimatedHours = computeEstimatedHours({ distanceKm, floors, suggestedStaffCount: tempStaffCount });
+  const estimatedHours = computeEstimatedHours({ distanceKm, floors, suggestedStaffCount: tempStaffCount,moveType });
 
   // 5. Validate lộ trình
   const routeValidation = await RouteValidationService.validateRoute(null, {
@@ -187,7 +204,7 @@ async function handleCalculatePrice(aiAction, session) {
   let finalPrice = 0;
   try {
     const priceList   = await PricingCalculationService.getActivePriceList();
-    const priceResult = await PricingCalculationService.calculatePricing(surveyData, priceList,moveType);
+    const priceResult = await PricingCalculationService.calculatePricing(surveyData, priceList, moveType);
     finalPrice                   = priceResult.totalPrice;
     session.calculatedPriceResult = priceResult;
     session.calculatedBreakdown   = priceResult.breakdown;
@@ -267,55 +284,44 @@ async function handleCreateOrder(aiAction, session, facebookId) {
   let fullName = 'Khách hàng Facebook';
   let user = null;
   let isUnverifiedClaim = false; 
-  let needToUpdateUser = false; // Flag kiểm tra xem có cần update user trong transaction không
+  let needToUpdateUser = false; 
 
   const userByFb = await User.findOne({ facebookId });
   const userByEmail = await User.findOne({ email });
 
-  // ─────────────────────────────────────────────────────────────
-  // BƯỚC 1: XÁC ĐỊNH DANH TÍNH (User Identity)
-  // ─────────────────────────────────────────────────────────────
-  if (userByFb) {
+  if (userByFb && userByEmail) {
+    if (userByFb._id.toString() !== userByEmail._id.toString()) {
+      // Trường hợp: FB này đang thuộc User A, nhưng email lại thuộc User B
+      // Đây là lỗi xung đột dữ liệu. Nên ưu tiên User theo Facebook (người đang chat)
+      // hoặc thông báo khách là email này đã được sử dụng bởi người khác.
+      return `[HỆ_THỐNG_BÁO]: Email ${email} đã được đăng ký bởi một tài khoản khác. Vui lòng liên hệ hỗ trợ hoặc sử dụng email khác.`;
+    }
+    user = userByFb; // Cả 2 là 1
+  } else if (userByFb) {
+    // FB đã tồn tại, cập nhật email mới cho nó
     user = userByFb;
-    isReturningCustomer = !!user.password;
-    fullName = user.fullName;
-
-    if (user.email !== email) {
-      if (userByEmail) {
-        return `[HỆ_THỐNG_BÁO]: Email ${email} đã được đăng ký cho một tài khoản khác. Vui lòng sử dụng email khác hoặc đăng nhập bằng email gốc trên website.`;
-      } else {
-        user.email = email;
-        needToUpdateUser = true; 
-      }
-    }
+    user.email = email;
+    needToUpdateUser = true;
+  } else if (userByEmail) {
+    // FB mới tinh, nhưng email đã tồn tại -> Đây là khách cũ dùng email cũ
+    user = userByEmail;
+    // Vì FB này chưa gắn vào user này, ta đánh dấu là Unverified
+    isUnverifiedClaim = true; 
   } else {
-    if (userByEmail) {
-    
-      user = userByEmail;
-     isReturningCustomer = !!user.password; 
-      fullName = user.fullName;
-      isUnverifiedClaim = true; 
-    } else {
-      // Kịch bản B2: Khách mới hoàn toàn
-      isReturningCustomer = false;
-      try {
-        const fbRes = await axios.get(`https://graph.facebook.com/${facebookId}?fields=first_name,last_name&access_token=${PAGE_ACCESS_TOKEN}`);
-        if (fbRes.data) fullName = `${fbRes.data.last_name || ''} ${fbRes.data.first_name || ''}`.trim();
-      } catch (e) {
-        console.log('[CreateOrder] Lấy tên FB lỗi', e.message);
-      }
-
-      user = new User({ 
-        facebookId, 
-        email, 
-        provider: 'facebook', 
-        fullName, 
-        role: 'customer', 
-        status: 'Pending_Password'
-      });
-      needToUpdateUser = true; 
-    }
+    // Khách mới hoàn toàn
+    user = new User({ 
+      facebookId, 
+      email, 
+      provider: 'facebook', 
+      fullName: 'Khách hàng', // Lấy từ FB Graph sau
+      role: 'customer', 
+      status: 'Pending_Password'
+    });
+    needToUpdateUser = true;
   }
+
+  isReturningCustomer = !!user.password;
+  fullName = user.fullName;
 
   // ─────────────────────────────────────────────────────────────
   // BƯỚC 2: CHUẨN BỊ DỮ LIỆU ĐỌC 
@@ -328,7 +334,7 @@ async function handleCreateOrder(aiAction, session, facebookId) {
     baseTransportFee: finalTotalPrice, vehicleFee: 0, laborFee: 0, stairsFee: 0, packingFee: 0, assemblingFee: 0
   };
 
-  const actualMoveType = session.surveyDataCache.movingType || 'FULL_HOUSE';
+  const actualMoveType = session.surveyDataCache.movingType;
   const pricingDataObjectId = new mongoose.Types.ObjectId();
   const randomString = crypto.randomBytes(2).toString('hex').toUpperCase();
   const code = `REQ-${new Date().getFullYear()}-${randomString}`;

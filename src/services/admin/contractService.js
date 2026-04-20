@@ -59,14 +59,12 @@ exports.updateTemplate = async (id, updateData, adminId) => {
 exports.generateContract = async (data, adminId,options={}) => {
   const { templateId, requestTicketId, customerId, customData } = data;
 const { session } = options;
-  const template = await ContractTemplate.findById(templateId);
+  const template = await ContractTemplate.findById(templateId).session(session);
   if (!template) throw new Error('Template not found');
 
-  const requestTicket = await RequestTicket.findById(requestTicketId);
+  const requestTicket = await RequestTicket.findById(requestTicketId).session(session);
   if (!requestTicket) throw new Error('Request Ticket not found');
 
-  // Giả lập bind data vào nội dung HTML
-  // Trong thực tế sẽ dùng thư viện template engine như Handlebars (handlebars.compile)
   let finalContent = template.content;
 
   // Replace cơ bản (demo)
