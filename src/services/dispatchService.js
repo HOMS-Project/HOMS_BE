@@ -195,6 +195,54 @@ class DispatchService {
     return slots;
   }
 
+  extractUniqueIdsFromAssignments(assignments, fieldName) {
+    const idSet = new Set();
+    (assignments || []).forEach((item) => {
+      const ids = Array.isArray(item?.[fieldName]) ? item[fieldName] : [];
+      ids.forEach((id) => {
+        if (id) idSet.add(id.toString());
+      });
+    });
+    return Array.from(idSet);
+  }
+
+  async notifyDriversOnAssignment(context) {
+    const candidateIds = Array.isArray(context?.driverIds) ? context.driverIds : [];
+    if (candidateIds.length === 0) return;
+
+    // Some dispatcher flows may place a driver account into staffIds.
+    // We notify by role=driver to ensure real drivers always receive assignment alerts.
+    const driverUsers = await User.find({
+      _id: { $in: candidateIds },
+      role: 'driver'
+    })
+      .select('_id')
+      .lean();
+
+    const driverIds = [...new Set(driverUsers.map((u) => u._id.toString()))];
+    if (driverIds.length === 0) return;
+
+    const message = context?.requestCode
+      ? `Bạn vừa được phân công yêu cầu ${context.requestCode}. Vui lòng kiểm tra chi tiết để thực hiện.`
+      : 'Bạn vừa được phân công một yêu cầu mới. Vui lòng kiểm tra chi tiết để thực hiện.';
+
+    const jobs = driverIds.map((driverId) =>
+      NotificationService.createNotification({
+        userId: driverId,
+        title: 'Bạn có yêu cầu mới được phân công',
+        message,
+        type: 'Assignment',
+        ticketId: context?.ticketId || undefined
+      })
+    );
+
+    const results = await Promise.allSettled(jobs);
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length > 0) {
+      console.error(`[BE] notifyDriversOnAssignment: ${failed.length} notifications failed`);
+    }
+  }
+
   /**
    * Calculate required vehicles to fulfill load capacity
    */
@@ -522,6 +570,7 @@ class DispatchService {
 
     const session = await mongoose.startSession();
     let resultAssignment;
+    let driverNotificationContext = null;
 
     try {
       await session.withTransaction(async () => {
@@ -587,6 +636,17 @@ class DispatchService {
         assignment.totalStaff = totalStaff;
         assignment.totalCapacity = totalCapacity;
         assignment.status = 'ASSIGNED';
+
+        const explicitDriverIds = this.extractUniqueIdsFromAssignments(assignmentRecords, 'driverIds');
+        const roleCandidateIds = this.extractUniqueIdsFromAssignments(assignmentRecords, 'staffIds');
+        const driverIds = [...new Set([...explicitDriverIds, ...roleCandidateIds])];
+        const requestCode = invoice.requestTicketId?.code || invoice.code || null;
+        driverNotificationContext = {
+          driverIds,
+          ticketId: invoice.requestTicketId?._id || invoice.requestTicketId || null,
+          requestCode
+        };
+
         if (dispatchData.forceProceed === true) {
           assignment.understaffed = true;
           
@@ -624,6 +684,13 @@ class DispatchService {
 
         resultAssignment = assignment;
       });
+
+      try {
+        await this.notifyDriversOnAssignment(driverNotificationContext);
+      } catch (notificationErr) {
+        // Driver notification is best-effort and must not block dispatch flow.
+        console.error('[BE] createDispatchAssignment: Driver notification failed', notificationErr);
+      }
 
       return resultAssignment;
     } catch (error) {

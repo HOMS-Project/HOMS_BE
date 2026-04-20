@@ -25,6 +25,12 @@ router.get("/orders", staffController.getAssignedOrders);
 // Get detail of a specific order
 router.get("/orders/:invoiceId", staffController.getOrderDetails);
 
+// Staff starts moving job and triggers customer email notification
+router.put("/orders/:id/start", staffController.startOrder);
+
+// Staff completes moving job and triggers customer email notification
+router.put("/orders/:id/complete", staffController.completeOrder);
+
 // Proxy OSRM route for mobile map (fixes network errors)
 router.get("/routing/osrm", staffController.getProxyRoute);
 

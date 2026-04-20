@@ -6,6 +6,7 @@ const Route = require("../models/Route");
 const SurveyData = require("../models/SurveyData");
 const AppError = require("../utils/appErrors");
 const staffEvidenceService = require("../services/staffEvidenceService");
+const staffOrderLifecycleService = require("../services/staffOrderLifecycleService");
 
 const stripSecTag = (value) => {
   if (typeof value !== "string") return value;
@@ -113,7 +114,13 @@ exports.getOrderDetails = async (req, res, next) => {
   try {
     const { invoiceId } = req.params;
 
-    const invoice = await Invoice.findById(invoiceId)
+    const isValidId = /^[0-9a-fA-F]{24}$/.test(invoiceId);
+    let query = { _id: invoiceId };
+    if (isValidId) {
+      query = { $or: [{ _id: invoiceId }, { requestTicketId: invoiceId }] };
+    }
+
+    const invoice = await Invoice.findOne(query)
       .populate({
         path: "requestTicketId",
         populate: {
@@ -150,7 +157,7 @@ exports.getOrderDetails = async (req, res, next) => {
     const staffId = req.user.userId || req.user._id || req.user.id;
     const normalizedStaffId = normalizeId(staffId);
     const da = await DispatchAssignment.findOne({
-      invoiceId,
+      invoiceId: invoice._id,
       $or: [
         { "assignments.driverIds": staffId },
         { "assignments.staffIds": staffId },
@@ -514,6 +521,56 @@ exports.submitDropoffProof = async (req, res, next) => {
       success: true,
       message: "Arrival evidence uploaded",
       data: { imageUrls, note: note || null },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PUT /api/staff/orders/:id/start
+ * Staff bắt đầu thực hiện đơn hàng.
+ * Email thông báo được gửi cho khách hàng nhưng không làm hỏng API nếu gửi lỗi.
+ */
+exports.startOrder = async (req, res, next) => {
+  try {
+    const invoiceId = req.params.id;
+    const staffId = req.user?.userId || req.user?._id || req.user?.id;
+
+    const result = await staffOrderLifecycleService.startOrderByStaff({
+      invoiceId,
+      staffId,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Đã bắt đầu đơn hàng.",
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PUT /api/staff/orders/:id/complete
+ * Staff hoàn tất đơn hàng.
+ * Email thông báo được gửi cho khách hàng nhưng không làm hỏng API nếu gửi lỗi.
+ */
+exports.completeOrder = async (req, res, next) => {
+  try {
+    const invoiceId = req.params.id;
+    const staffId = req.user?.userId || req.user?._id || req.user?.id;
+
+    const result = await staffOrderLifecycleService.completeOrderByStaff({
+      invoiceId,
+      staffId,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Đã hoàn tất đơn hàng.",
+      data: result,
     });
   } catch (error) {
     next(error);
