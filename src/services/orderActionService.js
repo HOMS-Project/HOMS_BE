@@ -10,6 +10,7 @@ const InvoiceService = require('./invoiceService');
 const GeocodeService = require('./geocodeService');
 const PricingCalculationService = require('./pricingCalculationService');
 const RouteValidationService = require('./routeValidationService');
+const SurveyService = require('./surveyService');
 const SurveyData = require('../models/SurveyData');
 const PricingData = require('../models/PricingData');
 const Promotion = require('../models/Promotion');
@@ -85,14 +86,6 @@ function computeEstimatedHours({ distanceKm = 0, floors = 0, suggestedStaffCount
   return Math.ceil(hours);
 }
 
-/** Chọn loại xe và số nhân viên phù hợp dựa trên khối lượng/thể tích */
-function suggestVehicleAndStaff(vol, wgt) {
-  if (vol > 10 || wgt > 1500) return { vehicleType: '2TON',   staffCount: 3 };
-  if (vol > 6  || wgt > 1000) return { vehicleType: '1.5TON', staffCount: 2 };
-  if (vol > 3  || wgt > 500)  return { vehicleType: '1TON',   staffCount: 2 };
-  return { vehicleType: '500KG', staffCount: 2 };
-}
-
 // ─────────────────────────────────────────────────────────────
 // ACTION: TÍNH GIÁ
 // ─────────────────────────────────────────────────────────────
@@ -131,12 +124,34 @@ async function handleCalculatePrice(aiAction, session) {
     if (!isNaN(parsed.getTime())) pickupTime = parsed;
   }
 
-  // 4. Xe & nhân viên
-  const vol = session.visionVolume || 1;
-  const wgt = session.visionWeight || 100;
-  const { vehicleType: tempVehicleType, staffCount: tempStaffCount } = suggestVehicleAndStaff(vol, wgt);
-  const floors         = Number(data.floors) || 0;
-  const estimatedHours = computeEstimatedHours({ distanceKm, floors, suggestedStaffCount: tempStaffCount });
+  // 4. Xe & nhân viên qua Estimate Resources Engine
+  const finalItems = (session.visionItems && session.visionItems.length > 0)
+    ? session.visionItems
+    : (data.items || []);
+  const floors = Number(data.floors) || 0;
+  const carryMeter = Number(data.carryMeter) || 0;
+  const hasElevator = data.hasElevator || false;
+  const needsAssembling = data.needsAssembling || false;
+  const needsPacking = data.needsPacking || false;
+
+  const resourceEstimate = await SurveyService.estimateResources({
+    items: finalItems,
+    distanceKm,
+    floors,
+    hasElevator,
+    carryMeter,
+    needsAssembling,
+    needsPacking
+  });
+
+  const tempVehicleType = resourceEstimate.suggestedVehicle;
+  const tempStaffCount = resourceEstimate.suggestedStaffCount;
+  const vol = resourceEstimate.totalVolume || session.visionVolume || 1;
+  const wgt = resourceEstimate.totalWeight || session.visionWeight || 100;
+  const estimatedHours = Math.ceil((resourceEstimate.estimatedMinutes || computeEstimatedHours({ distanceKm, floors, suggestedStaffCount: tempStaffCount }) * 60) / 60);
+
+  // Ghi log lý do ước tính để debug (ẩn với user)
+  console.log('[AI Resource Estimation]:', JSON.stringify({ ...resourceEstimate, debug: undefined }, null, 2));
 
   // 5. Validate lộ trình
   const routeValidation = await RouteValidationService.validateRoute(null, {
@@ -149,19 +164,15 @@ async function handleCalculatePrice(aiAction, session) {
   });
 
   // 6. Build surveyData
-  const finalItems = (session.visionItems && session.visionItems.length > 0)
-    ? session.visionItems
-    : (data.items || []);
-
   const surveyData = {
     pickup:           { address: data.from,  coordinates: fromCoords,  district: pickupDistrict },
     delivery:         { address: data.to,    coordinates: toCoords,    district: deliveryDistrict },
     distanceKm,
-    carryMeter:       Number(data.carryMeter) || 0,
+    carryMeter,
     floors,
-    hasElevator:      data.hasElevator      || false,
-    needsAssembling:  data.needsAssembling  || false,
-    needsPacking:     data.needsPacking     || false,
+    hasElevator,
+    needsAssembling,
+    needsPacking,
     items:            finalItems,
     scheduledTime:    pickupTime,
     suggestedVehicle: tempVehicleType,

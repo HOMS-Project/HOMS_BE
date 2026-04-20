@@ -16,6 +16,8 @@ const User = require('../models/User');
 const RouteValidationService = require('./routeValidationService');
 const AppError = require('../utils/appErrors');
 const NotificationService = require('./notificationService');
+const LogisticsEngine = require('./logisticsEngine');
+const RequestTicket = require('../models/RequestTicket');
 const turf = require('@turf/turf');
 
 class DispatchService {
@@ -98,8 +100,8 @@ class DispatchService {
    * Phase 2: Penalty-Based Heuristic Routing
    * Suggests available resources fulfilling limits via optimization scoring (70% Efficiency, 30% Fairness).
    */
-  async suggestResources(pickupTime, estimatedDuration, rules = {}) {
-    const { requiredLeaders = 0, requiredDrivers = 0, requiredHelpers = 0 } = rules;
+  async suggestResources(pickupTime, estimatedDuration, parameters = {}) {
+    const { requiredLeaders = 0, requiredDrivers = 0, requiredHelpers = 0, pickupLocation } = parameters;
     
     // Evaluate constraint limits and tight schedules
     const availability = await this.checkResourceAvailability(pickupTime, estimatedDuration);
@@ -109,6 +111,10 @@ class DispatchService {
     targetDate.setHours(0, 0, 0, 0); 
     const scheduleViews = await ResourceScheduleView.find({ date: targetDate }).lean();
     const workloadMap = new Map(scheduleViews.map(view => [view.resourceId.toString(), view.workloadCount]));
+
+    const pickupPoint = (pickupLocation && pickupLocation.coordinates && pickupLocation.coordinates.length === 2)
+      ? turf.point(pickupLocation.coordinates)
+      : null;
 
     const scoreResource = (resource) => {
       let breakdown = {
@@ -127,10 +133,18 @@ class DispatchService {
         breakdown.tags.push('tight_schedule');
       }
       
-      // Heuristic: If we lack real-time GPS coordinate data, assume average fixed risk
+      // Proximity Scoring
       if (!resource.currentLocation?.coordinates) {
         efficiencyScore -= 10;
         breakdown.tags.push('far_from_depot_or_unknown');
+      } else if (pickupPoint) {
+        const resourcePoint = turf.point(resource.currentLocation.coordinates);
+        const distanceKm = turf.distance(pickupPoint, resourcePoint, { units: 'kilometers' });
+        
+        // Example penalty: 1 penalty point per km, max 20
+        const distancePenalty = Math.min(Math.round(distanceKm), 20);
+        efficiencyScore -= distancePenalty;
+        breakdown.tags.push(`distance_${distanceKm.toFixed(1)}km`);
       }
 
       // 2. Fairness Penalty (30% of base) -> Balanced workload distribution
@@ -492,6 +506,16 @@ class DispatchService {
       const assignmentRecords = [];
       let totalStaff = 0;
 
+      // Make a copy of lists to distribute safely
+      const availableDrivers = [...(dispatchData.driverIds || [])];
+      const availableStaff = [...(dispatchData.staffIds || [])];
+      let leaderIdToAssign = dispatchData.leaderId;
+
+      // Pre-validation: Ensure we have at least one driver per vehicle
+      if (availableDrivers.length < fleetAssignments.length) {
+        throw new AppError(`Not enough drivers assigned. Allocated ${fleetAssignments.length} vehicles but only received ${availableDrivers.length} drivers. A vehicle cannot be dispatched without a driver.`, 400);
+      }
+
       for (const fleetItem of fleetAssignments) {
         const {
           vehicle,
@@ -503,40 +527,80 @@ class DispatchService {
           validation
         } = fleetItem;
 
-        // Assign drivers & helpers
-        const staffAssignment = await this.assignStaff({
-          vehicleId: vehicle._id,
-          leaderId: dispatchData.leaderId,
-          driverIds: dispatchData.driverIds || [],
-          staffIds: dispatchData.staffIds || [],
-          pickupTime: pickupTime,
-          deliveryTime: deliveryTime,
-          session: session
-        });
+        // Determine capacity
+        const maxCapacity = vehicle.maxStaff || 2;
+        let currentCapacity = 0;
+        
+        const vehicleDrivers = [];
+        const vehicleStaff = [];
+        let vehicleLeader = null;
 
-        const assignmentRecord = {
-          vehicleId: vehicle._id,
-          driverIds: staffAssignment.driverIds,
-          staffIds: staffAssignment.staffIds,
-          staffCount: staffAssignment.staffCount,
-          staffRole: staffAssignment.staffRole,
-          pickupTime: pickupTime,
-          deliveryTime: deliveryTime,
-          estimatedDuration: estimatedDuration,
-          loadWeight: dispatchData.totalWeight,
-          loadVolume: dispatchData.totalVolume,
-          capacityStatus: this.determineCapacityStatus(
-            vehicleType,
-            dispatchData.totalWeight
-          ),
-          routeId: targetRouteId,
-          routeValidation: validation,
-          status: 'PENDING',
-          assignedAt: new Date()
-        };
+        // 1. Assign exactly one driver to the vehicle first
+        if (availableDrivers.length > 0 && currentCapacity < maxCapacity) {
+          vehicleDrivers.push(availableDrivers.shift());
+          currentCapacity++;
+        }
 
-        assignmentRecords.push(assignmentRecord);
-        totalStaff += staffAssignment.staffCount;
+        // 2. Assign leader if available and capacity permits
+        if (leaderIdToAssign && currentCapacity < maxCapacity) {
+          vehicleLeader = leaderIdToAssign;
+          leaderIdToAssign = null;
+          currentCapacity++;
+        }
+
+        // 3. Fill remaining capacity with helpers
+        while (availableStaff.length > 0 && currentCapacity < maxCapacity) {
+          vehicleStaff.push(availableStaff.shift());
+          currentCapacity++;
+        }
+
+        // Process assignment only if there are people assigned to it
+        if (vehicleDrivers.length > 0 || vehicleStaff.length > 0 || vehicleLeader) {
+          const staffAssignment = await this.assignStaff({
+            vehicleId: vehicle._id,
+            leaderId: vehicleLeader,
+            driverIds: vehicleDrivers,
+            staffIds: vehicleStaff,
+            pickupTime: pickupTime,
+            deliveryTime: deliveryTime,
+            session: session
+          });
+
+          const assignmentRecord = {
+            vehicleId: vehicle._id,
+            driverIds: staffAssignment.driverIds,
+            staffIds: staffAssignment.staffIds,
+            staffCount: staffAssignment.staffCount,
+            staffRole: staffAssignment.staffRole,
+            pickupTime: pickupTime,
+            deliveryTime: deliveryTime,
+            estimatedDuration: estimatedDuration,
+            loadWeight: dispatchData.totalWeight,
+            loadVolume: dispatchData.totalVolume,
+            capacityStatus: this.determineCapacityStatus(
+              vehicleType,
+              dispatchData.totalWeight
+            ),
+            routeId: targetRouteId,
+            routeValidation: validation,
+            status: 'PENDING',
+            assignedAt: new Date()
+          };
+
+          assignmentRecords.push(assignmentRecord);
+          totalStaff += staffAssignment.staffCount;
+        } else {
+          // Empty vehicle, no staff capacity available, throw error or log warning
+          console.warn(`[BE] allocatePersonnel: Vehicle ${vehicle._id} has no staff assigned due to lack of personnel.`);
+        }
+      }
+
+      // Check overflow
+      const overflowCount = availableDrivers.length + availableStaff.length + (leaderIdToAssign ? 1 : 0);
+      if (overflowCount > 0) {
+          // If we have remaining staff but all cargo vehicles are full,
+          // throw an error to alert the admin that they need more passenger vehicles
+          throw new AppError(`Not enough seats in dispatched vehicles. ${overflowCount} staff members are left without seats. Please assign a passenger vehicle or remove staff.`, 400);
       }
 
       console.log(`[BE] allocatePersonnel: Assigned total of ${totalStaff} staff members.`);
@@ -690,7 +754,8 @@ class DispatchService {
         const optimalSuggestion = await this.suggestResources(requestedTime, logDurationMs / 60000, {
           requiredDrivers: dispatchData.driverIds?.length || 1,
           requiredHelpers: dispatchData.staffIds?.length || 1,
-          requiredLeaders: dispatchData.leaderId ? 1 : 0
+          requiredLeaders: dispatchData.leaderId ? 1 : 0,
+          pickupLocation: invoice.requestTicketId?.pickup || null
         });
 
         const decisionLog = new DispatchDecisionLog({
@@ -868,14 +933,88 @@ class DispatchService {
 
   /**
    * Gợi ý Smart Squad (Xe + Leader + Driver + Helper)
+   * Integrates the new constraint-aware LogisticsEngine for precise resource allocation
    */
-  async getOptimalSquad(totalWeight, totalVolume, pickupLocation, requiredSkills = []) {
-    // 1. Tính toán xe cần thiết
-    const vehicleNeeds = await this.calculateVehicleNeeds(totalWeight, totalVolume);
-    const primaryNeed = vehicleNeeds[0];
+  async getOptimalSquad(totalWeight, totalVolume, pickupLocation, requiredSkills = [], options = {}) {
+    let logisticsPlan = null;
+    let chosenVehicleType = null;
+    let neededTotalStaff = null;
+    
+    // 1. Run through LogisticsEngine if ticket ID provided
+    if (options.requestTicketId) {
+      try {
+        const ticket = await RequestTicket.findById(options.requestTicketId).populate('surveyDataId');
+        if (ticket) {
+          const surveyData = ticket.surveyDataId ? ticket.surveyDataId : {};
+          
+          // Use SurveyData items if available, else ticket items
+          let rawItems = [];
+          if (surveyData && Array.isArray(surveyData.items) && surveyData.items.length > 0) {
+            rawItems = surveyData.items;
+          } else if (ticket.items) {
+             Object.values(ticket.items.toJSON ? ticket.items.toJSON() : ticket.items).forEach(catItems => {
+               if (Array.isArray(catItems)) {
+                 catItems.forEach(item => {
+                   rawItems.push(item);
+                 });
+               }
+             });
+          }
 
-    // 2. Tìm xe phù hợp
-    const vehicles = await this.findAvailableVehicles(primaryNeed.vehicleType, 1);
+          // Normalize items format for the engine
+          let itemsToProcess = rawItems.map(item => ({
+            name: item.name,
+            volume: item.actualVolume || (item.width && item.length && item.height ? (item.width * item.length * item.height / 1000000) : 0.1),
+            weight: item.actualWeight || item.weight || 10,
+            requiresPacking: item.requiresManualHandling || (Array.isArray(item.services) && item.services.includes('PACKING'))
+          }));
+
+          // If no items are found but we have total volume/weight, generate a dummy item to proxy the workload
+          if (itemsToProcess.length === 0 && (surveyData.totalActualWeight || surveyData.totalActualVolume)) {
+            itemsToProcess.push({
+              name: 'Bulk Cargo',
+              volume: surveyData.totalActualVolume || 1,
+              weight: surveyData.totalActualWeight || 50,
+              requiresPacking: false
+            });
+          }
+
+          logisticsPlan = LogisticsEngine.generateDispatchPlan({
+            items: itemsToProcess,
+            surveyData: surveyData,
+            constraints: { roadBanWeightLimit: 5000 }
+          });
+
+          // Trust Survey Explicit overrides for specific suggestions rather than pure heuristics if they exist and are explicitly set
+          if (surveyData.suggestedVehicle && logisticsPlan.vehicles && logisticsPlan.vehicles.length > 0) {
+             // You can choose whether to override entirely or just align types
+             logisticsPlan.vehicles[0].type = surveyData.suggestedVehicle;
+          }
+          if (surveyData.suggestedStaffCount) {
+             logisticsPlan.staffTotal = surveyData.suggestedStaffCount;
+          }
+          
+          if (logisticsPlan && logisticsPlan.vehicles && logisticsPlan.vehicles.length > 0) {
+            chosenVehicleType = logisticsPlan.vehicles[0].type;
+            neededTotalStaff = logisticsPlan.staffTotal;
+          }
+        }
+      } catch (e) {
+        console.error('[DispatchService] Error running LogisticsEngine fallback to legacy:', e);
+      }
+    }
+
+    // 2. Legacy fallback
+    if (!chosenVehicleType) {
+      const vehicleNeeds = await this.calculateVehicleNeeds(totalWeight, totalVolume);
+      chosenVehicleType = vehicleNeeds[0].vehicleType;
+    }
+
+    // 3. Find suitable vehicle
+    const vehicles = await this.findAvailableVehicles(chosenVehicleType, 1);
+    if (!vehicles || vehicles.length === 0) {
+      throw new AppError(`No vehicles available for the capacity: ${chosenVehicleType}`, 400);
+    }
     const vehicle = vehicles[0];
     
     let vehicleDistance = null;
@@ -885,24 +1024,29 @@ class DispatchService {
       vehicleDistance = turf.distance(p1, p2, { units: 'kilometers' });
     }
 
-    // 3. Tìm nhân sự
-    const neededCapacity = vehicle.maxStaff || 2;
+    // 4. Find staff
+    // neededCapacity defines the true number of staff required. If not derived from the new engine, fallback to driver+1
+    const neededCapacity = neededTotalStaff !== null ? neededTotalStaff : (vehicle.maxStaff || 2);
+    
     const drivers = await this.findNearestAvailableStaff(pickupLocation, 'driver', 1, requiredSkills);
+    const driverAssigned = drivers.length > 0 ? drivers[0] : null;
     
     let leader = null;
-    const staffs = await this.findNearestAvailableStaff(pickupLocation, 'staff', neededCapacity - 1);
+    // We deduct 1 for the driver when assigning staff (unless driver acts as leader, but logic says find separate staff)
+    const staffsToFind = Math.max(1, neededCapacity - 1);
+    const staffs = await this.findNearestAvailableStaff(pickupLocation, 'staff', staffsToFind);
     
     if (staffs.length > 0) {
       leader = staffs[0];
     }
-
-    const helpers = staffs.slice(1, neededCapacity - 1);
+    const helpers = staffs.length > 1 ? staffs.slice(1, staffsToFind) : [];
 
     return {
       vehicle: { ...vehicle.toObject(), distance: vehicleDistance },
-      driver: drivers[0] || null,
+      driver: driverAssigned || null,
       leader: leader || null,
       helpers: helpers || [],
+      logisticsPlan // Includes equipment, transport details, staff counts natively
     };
   }
 }
