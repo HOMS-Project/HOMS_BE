@@ -52,12 +52,12 @@ exports.estimateResources = async (req, res, next) => {
       throw new AppError('Thiếu thông báo khoảng cách hoặc số tầng', 400);
     }
 
-    const estimate = await SurveyService.estimateResources(
+    const estimate = await SurveyService.estimateResources({
       items,
-      Number(distanceKm),
-      Number(floors),
-      Boolean(hasElevator)
-    );
+      distanceKm: Number(distanceKm),
+      floors: Number(floors),
+      hasElevator: Boolean(hasElevator)
+    });
 
     res.json({
       success: true,

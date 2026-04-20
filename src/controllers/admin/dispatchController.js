@@ -46,12 +46,13 @@ exports.getAssignmentsByVehicle = async (req, res, next) => {
  */
 exports.suggestOptimalSquad = async (req, res, next) => {
   try {
-    const { totalWeight, totalVolume, pickupLocation, requiredSkills } = req.body;
+    const { totalWeight, totalVolume, pickupLocation, requiredSkills, requestTicketId } = req.body;
     const squad = await DispatchService.getOptimalSquad(
       totalWeight || 1000,
       totalVolume || 10,
       pickupLocation,
-      requiredSkills || []
+      requiredSkills || [],
+      { requestTicketId }
     );
 
     res.status(200).json({
