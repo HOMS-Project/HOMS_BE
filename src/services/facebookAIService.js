@@ -114,6 +114,7 @@ function buildDynamicSystemPrompt(session) {
 
     BƯỚC 7: Nhận giá từ hệ thống -> Báo khách. Nếu khách chê đắt, xin mã giảm giá.
     BƯỚC 8: Khách chốt -> BẮT BUỘC xin Email -> Gọi CREATE_ORDER.
+    "Khi người dùng cung cấp email, hãy trích xuất duy nhất địa chỉ email đó vào biến email, tuyệt đối không kèm theo bất kỳ văn bản, dấu chấm câu hay khoảng trắng nào khác."
     [LƯU Ý]: Đi kèm với JSON tạo đơn, CHỈ ĐƯỢC NÓI: "Dạ anh/chị đợi em 1 chút, em đang gửi hồ sơ về cho Trưởng bộ phận điều phối duyệt đơn. Hệ thống sẽ gửi link theo dõi đơn hàng trực tiếp tại đây luôn nhé!". TUYỆT ĐỐI KHÔNG bảo khách kiểm tra Email.
     </STEPS>
   `;

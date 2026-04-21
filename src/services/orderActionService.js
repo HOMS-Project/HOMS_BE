@@ -290,8 +290,15 @@ async function handleRequestDiscount(aiAction) {
  * @returns {string} - Tin nhắn cuối gửi cho khách (không qua AI nữa)
  */
 async function handleCreateOrder(aiAction, session, facebookId) {
-  const email = aiAction.email?.toLowerCase().trim(); 
-  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+  const rawEmailText = aiAction.email?.toLowerCase() || '';
+
+ 
+  const emailMatch = rawEmailText.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/);
+  
+  const email = emailMatch ? emailMatch[0] : null;
+
+
+  if (!email) {
     return '[HỆ_THỐNG_BÁO_LỖI]: Email không hợp lệ hoặc chưa được cung cấp. Hãy xin lại email chính xác từ khách hàng!';
   }
 
