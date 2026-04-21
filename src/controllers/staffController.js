@@ -88,6 +88,7 @@ exports.getAssignedOrders = async (req, res, next) => {
           invoiceId: invoice._id,
           id: invoice._id, // Trả thêm ID dự phòng cho mobile
           orderCode: ticket.code,
+          invoiceCode: invoice.code,
           status: personalAssignment ? personalAssignment.status : da.status,
           routeId: personalAssignment ? personalAssignment.routeId : null,
           pickup: ticket.pickup,
