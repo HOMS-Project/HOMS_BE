@@ -16,6 +16,7 @@ const User = require('../models/User');
 const RouteValidationService = require('./routeValidationService');
 const AppError = require('../utils/appErrors');
 const NotificationService = require('./notificationService');
+const T = require('../utils/notificationTemplates');
 const LogisticsEngine = require('./logisticsEngine');
 const RequestTicket = require('../models/RequestTicket');
 const turf = require('@turf/turf');
@@ -326,9 +327,7 @@ class DispatchService {
     const jobs = driverIds.map((driverId) =>
       NotificationService.createNotification({
         userId: driverId,
-        title: 'Bạn có yêu cầu mới được phân công',
-        message,
-        type: 'Assignment',
+        ...T.DRIVER_NEW_ASSIGNMENT({ requestCode: context?.requestCode }),
         ticketId: context?.ticketId || undefined
       })
     );
@@ -406,6 +405,7 @@ class DispatchService {
         pickupTime = null,
         deliveryTime = null,
         excludeAssignmentId = null,
+        allowOverflow = false,
         session = null
       } = options;
 
@@ -419,7 +419,9 @@ class DispatchService {
 
       const totalStaff = allDriverIds.length + staffIds.length;
       if (vehicle.maxStaff && totalStaff > vehicle.maxStaff) {
-        throw new AppError(`Cannot assign ${totalStaff} staff. Vehicle ${vehicle.vehicleType} max capacity is ${vehicle.maxStaff}.`, 400);
+        if (!allowOverflow) {
+          throw new AppError(`Cannot assign ${totalStaff} staff. Vehicle ${vehicle.vehicleType} max capacity is ${vehicle.maxStaff}.`, 400);
+        }
       }
 
       // Validate user existence
@@ -494,7 +496,9 @@ class DispatchService {
 
       // Determine necessary vehicles OR use manual override
       let vehicleNeeds;
-      if (dispatchData.vehicleType && dispatchData.vehicleCount) {
+      if (dispatchData.vehicles && dispatchData.vehicles.length > 0) {
+        vehicleNeeds = dispatchData.vehicles.map(v => ({ vehicleType: v.vehicleType, count: parseInt(v.count) }));
+      } else if (dispatchData.vehicleType && dispatchData.vehicleCount) {
         vehicleNeeds = [{ vehicleType: dispatchData.vehicleType, count: parseInt(dispatchData.vehicleCount) }];
       } else {
         vehicleNeeds = await this.calculateVehicleNeeds(
@@ -505,6 +509,9 @@ class DispatchService {
 
       const fleetAssignments = [];
       let totalCapacity = 0;
+
+      // Calculate total number of vehicles across all needs to split load per vehicle for validation
+      const totalVehicleCount = vehicleNeeds.reduce((sum, n) => sum + (parseInt(n.count) || 1), 0);
 
       // Assign vehicles
       for (const need of vehicleNeeds) {
@@ -519,14 +526,23 @@ class DispatchService {
             estimatedDuration: estimatedDuration
           });
 
+          // When multiple vehicles are dispatched, split weight/volume evenly across all of them
+          // so capacity validation is per-vehicle, not against the full load.
+          const perVehicleWeight = totalVehicleCount > 1
+            ? Math.ceil((dispatchData.totalWeight || 0) / totalVehicleCount)
+            : (dispatchData.totalWeight || 0);
+          const perVehicleVolume = totalVehicleCount > 1
+            ? ((dispatchData.totalVolume || 0) / totalVehicleCount)
+            : (dispatchData.totalVolume || 0);
+
           // Validate route restrictions
           const targetRouteId = dispatchData.routeId || invoice.routeId;
           const validation = await RouteValidationService.validateRoute(
             targetRouteId,
             {
               vehicleType: need.vehicleType,
-              totalWeight: dispatchData.totalWeight,
-              totalVolume: dispatchData.totalVolume,
+              totalWeight: perVehicleWeight,
+              totalVolume: perVehicleVolume,
               pickupTime: assignedPickupTime,
               deliveryTime: assignedDeliveryTime,
               pickupAddress: ticket?.pickup?.address || '',
@@ -583,7 +599,10 @@ class DispatchService {
         throw new AppError(`Not enough drivers assigned. Allocated ${fleetAssignments.length} vehicles but only received ${potentialDriverCount} potential drivers (including leader). A vehicle cannot be dispatched without a driver.`, 400);
       }
 
-      for (const fleetItem of fleetAssignments) {
+      for (let i = 0; i < fleetAssignments.length; i++) {
+        const fleetItem = fleetAssignments[i];
+        const isLastVehicle = i === fleetAssignments.length - 1;
+
         const {
           vehicle,
           vehicleType,
@@ -602,23 +621,41 @@ class DispatchService {
         const vehicleStaff = [];
         let vehicleLeader = null;
 
-        // 1. Assign exactly one driver to the vehicle first
-        if (availableDrivers.length > 0 && currentCapacity < maxCapacity) {
-          vehicleDrivers.push(availableDrivers.shift());
-          currentCapacity++;
-        }
-
-        // 2. Assign leader if available and capacity permits
+        // 1. Assign exactly ONE primary driver to the vehicle (Leader takes priority)
+        let hasPrimaryDriver = false;
         if (leaderIdToAssign && currentCapacity < maxCapacity) {
           vehicleLeader = leaderIdToAssign;
           leaderIdToAssign = null;
           currentCapacity++;
+          hasPrimaryDriver = true;
+        } else if (availableDrivers.length > 0 && currentCapacity < maxCapacity) {
+          vehicleDrivers.push(availableDrivers.shift());
+          currentCapacity++;
+          hasPrimaryDriver = true;
         }
 
-        // 3. Fill remaining capacity with helpers
+        // 2. Fill remaining capacity with helpers
         while (availableStaff.length > 0 && currentCapacity < maxCapacity) {
           vehicleStaff.push(availableStaff.shift());
           currentCapacity++;
+        }
+
+        // 3. If there are still empty seats, and we have surplus drivers (not needed for remaining vehicles), allow them to sit
+        const remainingVehiclesCount = fleetAssignments.length - 1 - i;
+        while (availableDrivers.length > remainingVehiclesCount && currentCapacity < maxCapacity) {
+          vehicleDrivers.push(availableDrivers.shift());
+          currentCapacity++;
+        }
+
+        // 4. Attach any remaining overflow staff to the last vehicle (they will travel via personal vehicles)
+        if (isLastVehicle) {
+          if (leaderIdToAssign) {
+            if (!vehicleLeader) vehicleLeader = leaderIdToAssign;
+            else vehicleStaff.push(leaderIdToAssign);
+            leaderIdToAssign = null;
+          }
+          while (availableDrivers.length > 0) vehicleDrivers.push(availableDrivers.shift());
+          while (availableStaff.length > 0) vehicleStaff.push(availableStaff.shift());
         }
 
         // Process assignment only if there are people assigned to it
@@ -630,6 +667,7 @@ class DispatchService {
             staffIds: vehicleStaff,
             pickupTime: pickupTime,
             deliveryTime: deliveryTime,
+            allowOverflow: isLastVehicle,
             session: session
           });
 
@@ -665,8 +703,7 @@ class DispatchService {
       // Check overflow
       const overflowCount = availableDrivers.length + availableStaff.length + (leaderIdToAssign ? 1 : 0);
       if (overflowCount > 0) {
-        // If we have remaining staff but all cargo vehicles are full,
-        // throw an error to alert the admin that they need more passenger vehicles
+        // This should normally be 0 now since the last vehicle absorbs the overflow
         throw new AppError(`Not enough seats in dispatched vehicles. ${overflowCount} staff members are left without seats. Please assign a passenger vehicle or remove staff.`, 400);
       }
 
@@ -694,7 +731,7 @@ class DispatchService {
         const invoice = await Invoice.findById(invoiceId)
           .populate({
             path: 'requestTicketId',
-            select: 'pickup delivery scheduledTime customerId surveyDataId items',
+            select: 'code pickup delivery scheduledTime customerId dispatcherId surveyDataId items',
             populate: { path: 'surveyDataId' }
           })
           .session(session);
@@ -782,15 +819,10 @@ class DispatchService {
 
           if (invoice.requestTicketId?.customerId) {
             const ticket = invoice.requestTicketId;
-            // We need 'const io = require('../socket/socket').getIO();' or pass null if io is not strictly required.
-            // NotificationService handles standard socket if passed, or we just rely on DB. 
-            // I will leave 'io' undefined as many other places do when they don't have access.
             try {
               await NotificationService.createNotification({
                 userId: ticket.customerId,
-                title: "Thông báo về nhân sự đơn hàng",
-                message: "Đơn hàng của bạn đã được điều phối nhưng có thể thiếu nhân sự so với dự kiến. Vui lòng thông cảm hoặc liên hệ tổng đài.",
-                type: "WARNING",
+                ...T.DISPATCH_UNDERSTAFFED(),
                 ticketId: ticket._id
               });
             } catch (notifErr) {
@@ -833,45 +865,67 @@ class DispatchService {
           invoice.routeId = dispatchData.routeId;
         }
 
+        // ── Scenario B: Time change → propose to customer instead of silently updating ──
         let isTimeChanged = false;
-        let originalTimeFormatted = "";
-        let newTimeFormatted = "";
+        let newTimeFormatted = '';
 
         if (dispatchData.dispatchTime) {
           const newTime = new Date(dispatchData.dispatchTime);
           const originalTime = invoice.requestTicketId?.scheduledTime || invoice.scheduledTime;
-          invoice.scheduledTime = newTime;
 
-          if (originalTime && originalTime.getTime() !== newTime.getTime() && invoice.requestTicketId?.customerId) {
+          if (originalTime && Math.abs(originalTime.getTime() - newTime.getTime()) > 60000 && invoice.requestTicketId?.customerId) {
+            // Time differs by more than 1 min — propose, don't update yet
             isTimeChanged = true;
             const dayjs = require('dayjs');
-            originalTimeFormatted = dayjs(originalTime).format('HH:mm DD/MM/YYYY');
             newTimeFormatted = dayjs(newTime).format('HH:mm DD/MM/YYYY');
+
+            invoice.proposedDispatchTime = newTime;
+            invoice.rescheduleStatus = 'PENDING_APPROVAL';
+            // scheduledTime remains unchanged until customer approves
+          } else {
+            // Same time or negligible diff → update directly
+            invoice.scheduledTime = newTime;
           }
         }
+
         invoice.status = 'ASSIGNED';
         await invoice.save({ session });
 
+        // ── Scenario A: Dispatch success notification ───────────────────────────────────
+        try {
+          const ticket = invoice.requestTicketId;
+          let ioInstance = null;
+          try { const { getIo } = require('../utils/socket'); ioInstance = getIo(); } catch (_) { /* no-op */ }
+          const dayjs = require('dayjs');
+          await NotificationService.createNotification({
+            userId: ticket.customerId,
+            ...T.DISPATCH_SUCCESS({
+              ticketCode: ticket?.code || 'Không xác định',
+              dispatchTime: dayjs(invoice.proposedDispatchTime || invoice.scheduledTime).format('HH:mm DD/MM/YYYY'),
+              vehicleCount: fleetAssignments ? fleetAssignments.length : 1
+            }),
+            ticketId: ticket._id
+          }, ioInstance);
+        } catch (notifErr) {
+          console.error('[BE] Warning: Failed to send dispatch success notification', notifErr);
+        }
+
+        // ── Scenario B: Notify customer of proposed reschedule ─────────────────────────
         if (isTimeChanged) {
           try {
             const ticket = invoice.requestTicketId;
             let ioInstance = null;
-            try {
-              const { getIo } = require('../utils/socket');
-              ioInstance = getIo();
-            } catch (ioErr) {
-              // Ignore if io is not initialized
-            }
-
+            try { const { getIo } = require('../utils/socket'); ioInstance = getIo(); } catch (_) { /* no-op */ }
             await NotificationService.createNotification({
               userId: ticket.customerId,
-              title: "Thay đổi thời gian vận chuyển",
-              message: `Đơn hàng ${ticket.code} đã được dời lịch vận chuyển từ ${originalTimeFormatted} sang ${newTimeFormatted} theo kế hoạch điều phối.`,
-              type: "Assignment",
+              ...T.DISPATCH_RESCHEDULE_PROPOSED({
+                ticketCode: ticket?.code || 'Không xác định',
+                proposedTime: newTimeFormatted
+              }),
               ticketId: ticket._id
             }, ioInstance);
           } catch (notifErr) {
-            console.error('[BE] Warning: Failed to send time change notification', notifErr);
+            console.error('[BE] Warning: Failed to send reschedule proposal notification', notifErr);
           }
         }
 
@@ -1113,7 +1167,12 @@ class DispatchService {
           });
 
           // Trust Survey Explicit overrides for specific suggestions rather than pure heuristics if they exist and are explicitly set
-          if (surveyData.suggestedVehicle && logisticsPlan.vehicles && logisticsPlan.vehicles.length > 0) {
+          if (surveyData.suggestedVehicles && surveyData.suggestedVehicles.length > 0) {
+            logisticsPlan.vehicles = surveyData.suggestedVehicles.map(v => ({
+               type: v.vehicleType,
+               trips: v.count || 1
+            }));
+          } else if (surveyData.suggestedVehicle && logisticsPlan.vehicles && logisticsPlan.vehicles.length > 0) {
             // You can choose whether to override entirely or just align types
             logisticsPlan.vehicles[0].type = surveyData.suggestedVehicle;
           }
@@ -1161,10 +1220,19 @@ class DispatchService {
     }
     const requestedTime = options.dispatchTime || (ticket ? ticket.scheduledTime : null) || new Date();
 
+    let totalVehicles = 1;
+    if (logisticsPlan && logisticsPlan.vehicles) {
+      totalVehicles = logisticsPlan.vehicles.reduce((sum, v) => sum + (v.trips || 1), 0);
+    }
+
+    const requiredLeaders = 1;
+    const requiredDrivers = Math.max(0, totalVehicles - 1);
+    const requiredHelpers = Math.max(0, neededCapacity - totalVehicles);
+
     const rules = {
-      requiredLeaders: 1,
-      requiredHelpers: Math.max(0, neededCapacity - 1),
-      requiredDrivers: 0,
+      requiredLeaders,
+      requiredHelpers,
+      requiredDrivers,
       pickupLocation
     };
 
@@ -1174,6 +1242,7 @@ class DispatchService {
     return {
       vehicle: { ...vehicle.toObject(), distance: vehicleDistance },
       driver: suggested.rawTeam.drivers.length > 0 ? suggested.rawTeam.drivers[0] : null,
+      drivers: suggested.rawTeam.drivers || [],
       leader: suggested.rawTeam.leader || null,
       helpers: suggested.rawTeam.helpers || [],
       logisticsPlan, // Includes equipment, transport details, staff counts natively

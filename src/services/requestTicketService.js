@@ -9,6 +9,7 @@ const AppError = require('../utils/appErrors');
 const PaymentService = require('../services/paymentService')
 const payos = require("../config/payos");
 const NotificationService = require("./notificationService");
+const T = require('../utils/notificationTemplates');
 const { getIo } = require("../utils/socket");
 const GeocodeService = require('./geocodeService');
 const StrategyFactory = require('./strategies/StrategyFactory');
@@ -143,13 +144,7 @@ class RequestTicketService {
     await ticket.save();
     const io = getIo();
     await NotificationService.createNotification(
-      {
-        userId: ticket.customerId,
-        title: "Dispatcher đề xuất đổi lịch khảo sát",
-        message: "Dispatcher đã đề xuất thời gian khảo sát mới cho đơn của bạn",
-        type: "System",
-        ticketId: ticket._id
-      },
+      { userId: ticket.customerId, ...T.DISPATCHER_PROPOSES_RESCHEDULE(), ticketId: ticket._id },
       io
     );
     return ticket;
@@ -172,9 +167,10 @@ class RequestTicketService {
       await NotificationService.createNotification(
         {
           userId: ticket.dispatcherId,
-          title: "Lịch khảo sát được chấp nhận",
-          message: `Khách hàng đã chấp nhận lịch khảo sát: ${new Date(selectedTime).toLocaleString('vi-VN')} cho đơn ${ticket.code}`,
-          type: "System",
+          ...T.CUSTOMER_ACCEPTED_SURVEY_TIME({
+            selectedTime: new Date(selectedTime).toLocaleString('vi-VN'),
+            ticketCode: ticket.code
+          }),
           ticketId: ticket._id
         },
         io
@@ -229,9 +225,7 @@ class RequestTicketService {
       await NotificationService.createNotification(
         {
           userId: dId,
-          title: "Khách hàng yêu cầu đổi giờ khảo sát",
-          message: `Đơn ${ticket.code} đã được khách hàng yêu cầu đổi lịch: ${reason}`,
-          type: "System",
+          ...T.CUSTOMER_REJECTED_SURVEY_TIME({ ticketCode: ticket.code, reason }),
           ticketId: ticket._id
         },
         io
@@ -285,9 +279,7 @@ class RequestTicketService {
     await NotificationService.createNotification(
       {
         userId: ticket.customerId,
-        title: "Lịch khảo sát đã được thống nhất",
-        message: `Điều phối viên đã chấp nhận giờ khảo sát bạn đề xuất: ${new Date(selectedTime).toLocaleString('vi-VN')}`,
-        type: "System",
+        ...T.DISPATCHER_CONFIRMED_SURVEY_TIME({ selectedTime: new Date(selectedTime).toLocaleString('vi-VN') }),
         ticketId: ticket._id
       },
       io

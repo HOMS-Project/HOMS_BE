@@ -3,6 +3,7 @@ const AppError = require('../../../utils/appErrors');
 const SurveyData = require('../../../models/SurveyData');
 const AutoAssignmentService = require('../../AutoAssignmentService');
 const NotificationService = require('../../notificationService');
+const T = require('../../../utils/notificationTemplates');
 const User = require('../../../models/User');
 const TicketStateMachine = require('../../TicketStateMachine');
 
@@ -100,10 +101,14 @@ class ItemMovingStrategy extends BaseStrategy {
     }
   }
 
-  async handleApproval(ticket, approverId, additionalData, io) {
+  async handleApproval(ticket, approverId, additionalData = {}, io) {
     await TicketStateMachine.transition(ticket, 'WAITING_REVIEW');
 
-    const assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
+    let assignedDispatcherId = additionalData.surveyorId;
+
+    if (!assignedDispatcherId) {
+      assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
+    }
 
     if (assignedDispatcherId) {
       // Auto-assignment successful — district dispatcher will review AI data and quote
@@ -113,9 +118,7 @@ class ItemMovingStrategy extends BaseStrategy {
       await NotificationService.createNotification(
         {
           userId: ticket.customerId,
-          title: 'Đơn hàng đã được tiếp nhận',
-          message: 'Yêu cầu của bạn đã được xác nhận và đang được xử lý bởi nhân viên điều phối.',
-          type: 'System',
+          ...T.ORDER_ACCEPTED_ITEM_MOVING(),
           ticketId: ticket._id
         },
         io
@@ -136,9 +139,7 @@ class ItemMovingStrategy extends BaseStrategy {
         await NotificationService.createNotification(
           {
             userId: hd._id,
-            title: `Phân công tự động thất bại — Đơn #${ticket.code}`,
-            message: 'Tất cả nhân viên điều phối đang quá tải. Vui lòng phân công thủ công.',
-            type: 'System',
+            ...T.AUTO_ASSIGNMENT_FAILED_ITEM_MOVING({ ticketCode: ticket.code }),
             ticketId: ticket._id
           },
           io

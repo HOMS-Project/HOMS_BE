@@ -3,6 +3,7 @@ const AppError = require('../../../utils/appErrors');
 const SurveyData = require('../../../models/SurveyData');
 const AutoAssignmentService = require('../../AutoAssignmentService');
 const NotificationService = require('../../notificationService');
+const T = require('../../../utils/notificationTemplates');
 const User = require('../../../models/User');
 const TicketStateMachine = require('../../TicketStateMachine');
 
@@ -124,9 +125,7 @@ class TruckRentalStrategy extends BaseStrategy {
     await NotificationService.createNotification(
       {
         userId: ticket.customerId,
-        title: 'Đơn hàng đã được tiếp nhận',
-        message: 'Yêu cầu của bạn đã được xác nhận. Chúng tôi sẽ sớm gửi báo giá chi tiết.',
-        type: 'System',
+        ...T.ORDER_ACCEPTED_TRUCK_RENTAL(),
         ticketId: ticket._id
       },
       io

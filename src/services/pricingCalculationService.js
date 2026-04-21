@@ -46,6 +46,7 @@ class PricingCalculationService {
   _calcTruckRental(surveyData, priceList) {
     const {
       suggestedVehicle,
+      suggestedVehicles = [],
       rentalDurationHours,
       estimatedHours,
       withDriver = true,
@@ -56,19 +57,28 @@ class PricingCalculationService {
       needsPacking = false
     } = surveyData;
 
+    let vehiclesToCalc = [...suggestedVehicles];
+    if (vehiclesToCalc.length === 0 && suggestedVehicle) {
+      vehiclesToCalc = [{ vehicleType: suggestedVehicle, count: 1 }];
+    }
+
     const duration = rentalDurationHours || estimatedHours || 1;
     // For TRUCK_RENTAL, suggestedStaffCount includes the driver.
     // We only charge for helpers (extra staff).
     const totalStaff = Math.max(0, (Number(suggestedStaffCount) || 1) - 1);
 
-    const vehicleConfig = priceList.vehiclePricing?.find(
-      (v) => v.vehicleType === suggestedVehicle
-    );
-    if (!vehicleConfig) {
-      throw new AppError(`Không tìm thấy thông tin giá cho xe ${suggestedVehicle}`, 400);
+    if (vehiclesToCalc.length === 0) {
+      throw new AppError(`Không có thông tin xe nào được chọn`, 400);
     }
 
-    const truckRentalFee = (vehicleConfig.pricePerHour || 0) * duration;
+    let truckRentalFee = 0;
+    vehiclesToCalc.forEach(v => {
+      const vehicleConfig = priceList.vehiclePricing?.find((vp) => vp.vehicleType === v.vehicleType);
+      if (!vehicleConfig) {
+        throw new AppError(`Không tìm thấy thông tin giá cho xe ${v.vehicleType}`, 400);
+      }
+      truckRentalFee += (vehicleConfig.pricePerHour || 0) * duration * (v.count || 1);
+    });
 
     let driverFee = 0;
     const laborConfig = priceList.laborCost || {};
@@ -146,6 +156,7 @@ class PricingCalculationService {
   _calcFullHouse(surveyData, priceList) {
     const {
       suggestedVehicle,
+      suggestedVehicles = [],
       suggestedStaffCount = 0,
       distanceKm = 0,
       carryMeter = 0,
@@ -158,6 +169,12 @@ class PricingCalculationService {
       declaredValue = 0
     } = surveyData;
 
+    // Normalizing vehicles
+    let vehiclesToCalc = [...suggestedVehicles];
+    if (vehiclesToCalc.length === 0 && suggestedVehicle) {
+      vehiclesToCalc = [{ vehicleType: suggestedVehicle, count: 1 }];
+    }
+
     // 1️⃣ Ước tính giờ cơ bản
     let estimatedHours = surveyData.estimatedHours;
     if (!estimatedHours) {
@@ -169,28 +186,34 @@ class PricingCalculationService {
     let transportTierFee = 0;
     let vehicleFee = 0;
 
-    const vehicleConfig = priceList.vehiclePricing?.find((v) => v.vehicleType === suggestedVehicle);
-    
-    if (vehicleConfig) {
-      const kmFee =
-        (vehicleConfig.basePriceForFirstXKm || 0) +
-        Math.max(0, distanceKm - (vehicleConfig.limitKm || 0)) * (vehicleConfig.pricePerNextKm || 0);
-      const timeFee = estimatedHours * (vehicleConfig.pricePerHour || 0);
-      vehicleFee = kmFee + timeFee;
-    }
+    // 🚛 CHỌN PHÍ VẬN CHUYỂN ĐỘC QUYỀN (Nếu có mảng suggestedVehicles hoặc suggestedVehicle)
+    if (vehiclesToCalc.length > 0) {
+      let maxBase = 0;
+      let totalKmFee = 0;
 
-    // 🚛 CHỌN PHÍ VẬN CHUYỂN ĐỘC QUYỀN (Ghi đè nếu có suggestedVehicle)
-    if (suggestedVehicle) {
-      const vConfig = {
-        '500KG': { base: 500000, perKm: 8000, limit: 5 },
-        '1TON': { base: 700000, perKm: 12000, limit: 5 },
-        '1.5TON': { base: 900000, perKm: 15000, limit: 5 },
-        '2TON': { base: 1200000, perKm: 20000, limit: 5 }
-      }[suggestedVehicle];
+      vehiclesToCalc.forEach(v => {
+        const vConfig = {
+          '500KG': { base: 500000, perKm: 8000, limit: 5 },
+          '1TON': { base: 700000, perKm: 12000, limit: 5 },
+          '1.5TON': { base: 900000, perKm: 15000, limit: 5 },
+          '2TON': { base: 1200000, perKm: 20000, limit: 5 }
+        }[v.vehicleType];
 
-      if (vConfig) {
-        vehicleFee = vConfig.base + Math.max(0, distanceKm - vConfig.limit) * vConfig.perKm;
-      }
+        if (vConfig) {
+          if (vConfig.base > maxBase) maxBase = vConfig.base;
+          totalKmFee += Math.max(0, distanceKm - vConfig.limit) * vConfig.perKm * (v.count || 1);
+        } else {
+          // Fallback reading from priceList if not in hardcoded configs
+          const dynamicConfig = priceList.vehiclePricing?.find((vp) => vp.vehicleType === v.vehicleType);
+          if (dynamicConfig) {
+            const dynamicBase = dynamicConfig.basePriceForFirstXKm || 0;
+            if (dynamicBase > maxBase) maxBase = dynamicBase;
+            totalKmFee += Math.max(0, distanceKm - (dynamicConfig.limitKm || 0)) * (dynamicConfig.pricePerNextKm || 0) * (v.count || 1);
+          }
+        }
+      });
+
+      vehicleFee = maxBase + totalKmFee;
       transportTierFee = 0;
     } else {
       if (distanceKm <= 5) transportTierFee = 500000;

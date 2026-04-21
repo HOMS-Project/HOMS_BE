@@ -7,6 +7,7 @@ const RequestTicket = require('../models/RequestTicket');
 const AppError = require('../utils/appErrors');
 const PricingCalculationService = require('./pricingCalculationService');
 const NotificationService = require("./notificationService");
+const T = require("../utils/notificationTemplates");
 const RecommendationService = require('./recommendationService');
 const PricingAdjustmentService = require('./pricingAdjustmentService');
 const { getIo } = require("../utils/socket");
@@ -64,9 +65,7 @@ class SurveyService {
     await NotificationService.createNotification(
       {
         userId: ticket.customerId,
-        title: "Lịch khảo sát đã được xác nhận",
-        message: `Khảo sát được lên lịch vào ${schedDate.toLocaleString()}`,
-        type: "System",
+        ...T.SURVEY_SCHEDULED({ scheduledDate: schedDate.toLocaleString('vi-VN') }),
         ticketId: ticket._id
       },
       io
@@ -100,6 +99,7 @@ class SurveyService {
     // 2️⃣ Destructure đúng field mới
     const {
       suggestedVehicle,
+      suggestedVehicles,
       suggestedStaffCount,
       distanceKm,
       carryMeter = 0,
@@ -116,7 +116,7 @@ class SurveyService {
     } = surveyData;
 
     // Validate
-    if (!suggestedVehicle || suggestedStaffCount == null) {
+    if ((!suggestedVehicle && (!suggestedVehicles || suggestedVehicles.length === 0)) || suggestedStaffCount == null) {
       throw new AppError('Thiếu dữ liệu khảo sát bắt buộc', 400);
     }
 
@@ -143,6 +143,7 @@ class SurveyService {
         status: 'COMPLETED',
         completedDate: new Date(),
         suggestedVehicle,
+        suggestedVehicles,
         suggestedStaffCount,
         distanceKm,
         carryMeter,
