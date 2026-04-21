@@ -66,7 +66,8 @@ exports.getAssignedOrders = async (req, res, next) => {
           select: "code pickup delivery items customerId",
         },
       })
-      .populate("assignments.routeId");
+      .populate("assignments.routeId")
+      .lean(); // Tối ưu: trả về plain JS object để tăng tốc độ và giảm RAM
 
     // Lọc ra các assignment cụ thể mà staffId tham gia và định dạng lại dữ liệu
     const formattedOrders = assignments
@@ -132,7 +133,8 @@ exports.getOrderDetails = async (req, res, next) => {
         path: "customerId",
         select: "fullName phone phoneNumber email avatar",
       })
-      .populate("routeId");
+      .populate("routeId")
+      .lean(); // Tối ưu query
 
     if (!invoice) {
       throw new AppError("Invoice not found", 404);
@@ -166,7 +168,8 @@ exports.getOrderDetails = async (req, res, next) => {
       .populate("assignments.routeId")
       .populate("assignments.vehicleId", "plateNumber vehicleType")
       .populate("assignments.driverIds", "fullName phone avatar")
-      .populate("assignments.staffIds", "fullName phone avatar");
+      .populate("assignments.staffIds", "fullName phone avatar")
+      .lean(); // Tối ưu query
 
     // Find personal assignment once and reuse it
     let personalAssignment = null;
