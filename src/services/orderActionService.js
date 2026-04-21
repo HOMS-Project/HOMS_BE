@@ -283,7 +283,7 @@ async function handleRequestDiscount(aiAction) {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Tạo đơn hàng, hợp đồng, invoice và trả về tin nhắn gửi thẳng cho khách.
+ * Tạo đơn hàng,  trả về tin nhắn gửi thẳng cho khách.
  * @param {object}   aiAction
  * @param {object}   session
  * @param {string}   facebookId
@@ -357,13 +357,9 @@ async function handleCreateOrder(aiAction, session, facebookId) {
   const randomString = crypto.randomBytes(2).toString('hex').toUpperCase();
   const code = `REQ-${new Date().getFullYear()}-${randomString}`;
 
-  const ticketStatus = isUnverifiedClaim ? 'CREATED' : 'ACCEPTED';
-  const ticketNotes = aiAction.notes 
-    ? `${aiAction.notes} (Bot chốt)` 
-    : (isUnverifiedClaim ? 'Chốt qua Bot (Chờ KH xác thực email)' : 'Chốt đơn tự động qua Facebook AI Bot');
+  const ticketStatus = 'WAITING_REVIEW'; 
+  const ticketNotes = `[TẠO TỪ AI BOT - CẦN DISPATCHER KIỂM TRA LẠI DỮ LIỆU] ${aiAction.notes || ''}`;
 
-  // Đọc Template & PriceList trước khi khóa DB
-  const template = await ContractTemplate.findOne({ isActive: true });
   let activePriceList = await PricingCalculationService.getActivePriceList().catch(() => null);
 
   // ─────────────────────────────────────────────────────────────
@@ -381,7 +377,7 @@ async function handleCreateOrder(aiAction, session, facebookId) {
     }
 
     // 2. Tạo RequestTicket
-    newTicket = new RequestTicket({
+     newTicket = new RequestTicket({
       code,
       customerId: user._id,
       moveType: actualMoveType,
@@ -416,23 +412,6 @@ async function handleCreateOrder(aiAction, session, facebookId) {
       dynamicAdjustment: priceCache?.dynamicAdjustment || null
     });
     await newPricing.save({ session: dbSession });
-
-    // 5. Tạo Contract
-const customData = {
-    customerName: fullName,
-    customerPhone: 'Sẽ cập nhật sau',
-    totalPrice: finalTotalPrice.toLocaleString('vi-VN')
-};
-
-const contractData = {
-    templateId: template ? template._id : null,
-    requestTicketId: newTicket._id,
-    customerId: user._id,
-    customData: customData
-};
-
-
-await ContractService.generateContract(contractData, null, { session: dbSession });
 
     // 6. Cập nhật Mã khuyến mãi (Bảo mật Race Condition bằng $inc và $expr)
     if (aiAction.discount_code && aiAction.discount_code !== 'NONE') {
@@ -478,24 +457,16 @@ await ContractService.generateContract(contractData, null, { session: dbSession 
   // BƯỚC 4: SINH LINK VÀ TIN NHẮN TRẢ VỀ
   // ─────────────────────────────────────────────────────────────
   const FE_URL = process.env.FRONTEND_URL ;
-
-  if (isReturningCustomer) {
-    let redirectPath = `/customer/sign-contract/${newTicket._id}`;
+ const targetPath = `/customer/order`; 
+if (isReturningCustomer) {
+    let redirectPath = targetPath;
     if (isUnverifiedClaim) {
       redirectPath += `?link_fb=${facebookId}`; 
     }
-    
-    // Encode URI để truyền an toàn vào param redirect
     const directLink = `${FE_URL}/login?redirect=${encodeURIComponent(redirectPath)}`;
-    let msg = `Dạ em thấy email ${email} đã có tài khoản trên hệ thống HOMS! 🎉\n\n`;
-    
-    if (isUnverifiedClaim) {
-      msg += `Để bảo mật và tự động liên kết Facebook này với tài khoản của anh/chị, đơn hàng tạm lưu ở dạng Nháp. `;
-    } else {
-      msg += `Hợp đồng đã được tạo thành công. `;
-    }
-    
-    msg += `Anh/chị vui lòng truy cập link dưới đây, đăng nhập bằng mật khẩu để xác nhận và ký hợp đồng nhé:\n👉 ${directLink}`;
+        let msg = `Dạ em thấy email ${email} đã có tài khoản trên hệ thống HOMS!\n\n`;
+    msg += `Hồ sơ yêu cầu của anh/chị đã được AI tạo xong. Tuy nhiên để đảm bảo tính chính xác 100%, **Trưởng bộ phận điều phối (Dispatcher) bên em sẽ kiểm tra lại khối lượng đồ đạc một chút và chốt lại đơn chính thức cho mình trong vài phút tới nhé!**\n\n`;
+    msg += `Anh/chị vui lòng truy cập link dưới đây để đăng nhập và theo dõi tiến độ đơn hàng ạ:\n👉 ${directLink}`;
     return msg;
 
   } else {
@@ -505,10 +476,11 @@ await ContractService.generateContract(contractData, null, { session: dbSession 
       process.env.JWT_SECRET || 'SECRET',
       { expiresIn: '1d' }
     );
-    const magicLink = `${FE_URL}/magic?token=${setupToken}&redirect=${encodeURIComponent(`/customer/sign-contract/${newTicket._id}`)}`;
+    const magicLink = `${FE_URL}/magic?token=${setupToken}&redirect=${encodeURIComponent(targetPath)}`;
     return (
-      `Dạ em đã lên hồ sơ hợp đồng xong rồi ạ! 🎉\n\n` +
-      `Đây là lần đầu tiên anh/chị sử dụng dịch vụ. Vui lòng nhấn vào link dưới để thiết lập mật khẩu bảo mật và tiến hành ký hợp đồng nhé:\n👉 ${magicLink}`
+      `Dạ em đã lên hồ sơ hệ thống xong rồi ạ! 🎉\n\n` +
+      `Vì AI ước lượng đồ đôi khi có sai số, **Đội ngũ điều phối viên bên em sẽ double-check lại lộ trình và chốt đơn chính thức cho mình ngay lập tức ạ.**\n\n` +
+      `Đây là lần đầu anh/chị dùng HOMS, hãy click vào link dưới đây để thiết lập mật khẩu bảo mật và theo dõi tiến độ duyệt đơn nhé:\n👉 ${magicLink}`
     );
   }
 }

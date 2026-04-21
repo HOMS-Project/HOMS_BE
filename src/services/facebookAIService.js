@@ -27,7 +27,7 @@ function buildDynamicSystemPrompt(session) {
   return `
     <ROLE>
     Bạn là Trợ lý AI của HOMS - Tư vấn viên dịch vụ chuyển nhà, thuê xe tải thân thiện. LUÔN TỰ XƯNG LÀ AI.
-    Nhiệm vụ: Tư vấn, báo giá, xin email và chốt đơn hợp đồng.
+    Nhiệm vụ: Tư vấn, báo giá, xin email và chốt đơn để chờ điều phối viên xem xét .
     QUY TẮC SỐ 1: Phải xác định rõ khách hàng đang chọn 1 trong 3 dịch vụ: 
     - Thuê xe tải (TRUCK_RENTAL)
     - Chuyển đồ lẻ (SPECIFIC_ITEMS)
@@ -102,8 +102,9 @@ Nếu thiếu 1 trong các thông tin trên, tuyệt đối KHÔNG trả về JS
     \`\`\`
     BƯỚC 7: Nhận giá từ hệ thống -> Báo khách. Nếu khách chê đắt, xin mã giảm giá
     BƯỚC 8: Khách chốt -> BẮT BUỘC xin Email -> Gọi CREATE_ORDER
-    LƯU Ý TỐI QUAN TRỌNG: Đi kèm với JSON, bạn CHỈ ĐƯỢC NÓI: "Dạ anh/chị đợi em 1 chút, hệ thống đang lên đơn và sẽ gửi link hợp đồng trực tiếp tại đoạn chat này luôn nhé!".
+    LƯU Ý TỐI QUAN TRỌNG: Đi kèm với JSON, bạn CHỈ ĐƯỢC NÓI:"Dạ anh/chị đợi em 1 chút, em đang gửi hồ sơ về cho Trưởng bộ phận điều phối kiểm tra lại dữ liệu và duyệt đơn. Hệ thống sẽ gửi link theo dõi đơn hàng trực tiếp tại đây luôn nhé!"
     TUYỆT ĐỐI KHÔNG ĐƯỢC YÊU CẦU KHÁCH KIỂM TRA EMAIL (Vì hệ thống sẽ gửi thẳng link vào Messenger).
+    .
     </STEPS>
   `;
 }
@@ -148,46 +149,66 @@ async function sendMessageBackToUser(facebookId, text) {
 // ==============================================================
 async function handleAIAction(botReply, session, facebookId, chat) {
   let jsonString = null;
-   let jsonMatch = botReply.match(/```(?:json)?\s*(\{[\s\S]*?"action"[\s\S]*?\})\s*```/i);
-  if (!jsonMatch) {
-    jsonMatch = botReply.match(/(\{[\s\S]*?"action"[\s\S]*?\})/i);
-    if (jsonMatch) jsonString = jsonMatch[1];
+  let textPart = botReply;
+  const mdMatch = botReply.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
+  if (mdMatch) {
+    jsonString = mdMatch[1];
+    textPart = botReply.replace(mdMatch[0], '').trim();
   } else {
-    jsonString = jsonMatch[1];
+    const firstIdx = botReply.indexOf('{');
+    const lastIdx = botReply.lastIndexOf('}');
+    if (firstIdx !== -1 && lastIdx !== -1 && lastIdx > firstIdx && botReply.includes('"action"')) {
+      jsonString = botReply.substring(firstIdx, lastIdx + 1);
+      textPart = botReply.replace(jsonString, '').trim();
+    }
   }
-
   if (!jsonString) return false;
 
   let aiAction;
-  try { 
+  try {
     aiAction = JSON.parse(jsonString); 
+  
     if(aiAction.action === 'CALCULATEPRICE') aiAction.action = 'CALCULATE_PRICE';
+    if(aiAction.action === 'REQUESTDISCOUNT') aiAction.action = 'REQUEST_DISCOUNT';
+    if(aiAction.action === 'CREATEORDER') aiAction.action = 'CREATE_ORDER';
+
+    if(aiAction.movingType === 'TRUCKRENTAL') aiAction.movingType = 'TRUCK_RENTAL';
+    if(aiAction.movingType === 'SPECIFICITEMS') aiAction.movingType = 'SPECIFIC_ITEMS';
+    if(aiAction.movingType === 'FULLHOUSE') aiAction.movingType = 'FULL_HOUSE';
+
   } 
   catch (err) { 
-    console.error('[JSON Parse Error]', err);
-    return false; 
+    console.error('[JSON Parse Error]', err.message, '\nRaw JSON bị lỗi:', jsonString);
+    if (textPart) {
+      await sendMessageBackToUser(facebookId, textPart.replace(/[*_#]/g, ''));
+    }
+    await chat.sendMessage("JSON bạn vừa tạo bị lỗi cú pháp, vui lòng kiểm tra lại cấu trúc dấu ngoặc.");
+    return true; 
   }
 
-   let textPart = botReply.replace(jsonMatch[0], '').replace(/```json/gi, '').replace(/```/g, '').trim();
+  // 5. Gửi phần Text mào đầu (VD: "Mình sẽ gửi yêu cầu...") cho khách hàng
   if (textPart) {
     await sendMessageBackToUser(facebookId, textPart.replace(/[*_#]/g, ''));
   }
 
   try {
+    // ---- XỬ LÝ CALCULATE_PRICE ----
     if (aiAction.action === 'CALCULATE_PRICE') {
-    if(!session.surveyDataCache) session.surveyDataCache = {};
-    session.surveyDataCache.movingType = aiAction.movingType; 
-    const systemResult = await handleCalculatePrice(aiAction, session);
-    const shortPrompt = `Hệ thống tính xong giá là ${systemResult}. 
-                         Hãy báo giá này cho khách cực kỳ NGẮN GỌN và hỏi khách có đồng ý không. 
-                         Không nhắc lại các thông tin thừa thãi.`;
-    
-    const followUp = await chat.sendMessage(shortPrompt);
-    session.history = await chat.getHistory();
-    await sendMessageBackToUser(facebookId, followUp.response.text().replace(/[*_#]/g, ''));
-    return true;
-}
+        if(!session.surveyDataCache) session.surveyDataCache = {};
+        session.surveyDataCache.movingType = aiAction.movingType; 
+        
+        const systemResult = await handleCalculatePrice(aiAction, session);
+        const shortPrompt = `Hệ thống tính xong giá là ${systemResult}. 
+                             Hãy báo giá này cho khách cực kỳ NGẮN GỌN và hỏi khách có đồng ý không. 
+                             Không nhắc lại các thông tin thừa thãi.`;
+        
+        const followUp = await chat.sendMessage(shortPrompt);
+        session.history = await chat.getHistory();
+        await sendMessageBackToUser(facebookId, followUp.response.text().replace(/[*_#]/g, ''));
+        return true;
+    }
 
+    // ---- XỬ LÝ REQUEST_DISCOUNT ----
     if (aiAction.action === 'REQUEST_DISCOUNT') {
       const triggerMsg = await handleRequestDiscount(aiAction);
       const followUp = await chat.sendMessage(triggerMsg);
@@ -196,37 +217,37 @@ async function handleAIAction(botReply, session, facebookId, chat) {
       return true;
     }
 
+    // ---- XỬ LÝ CREATE_ORDER ----
     if (aiAction.action === 'CREATE_ORDER') {
       if (!session.surveyDataCache) {
-        await sendMessageBackToUser(facebookId, 'Dạ anh/chị cho em xin lại địa chỉ chính xác để em tính giá trước khi lên hợp đồng nhé ạ.');
+        await sendMessageBackToUser(facebookId, 'Dạ anh/chị cho em xin lại địa chỉ chính xác để em tính giá cho đơn của mình nhé ạ.');
         return true;
       }
       const replyMessage = await handleCreateOrder(aiAction, session, facebookId);
       if (replyMessage.includes('[HỆ_THỐNG_BÁO]') || replyMessage.toLowerCase().includes('lỗi')) {
-      
         const systemPromptToAI = `Hệ thống vừa trả về lỗi khi tạo đơn: "${replyMessage}". 
         Dựa vào lỗi này, hãy đóng vai nhân viên chăm sóc khách hàng:
         1. Xin lỗi khách hàng.
         2. Báo lỗi một cách tự nhiên, lịch sự (KHÔNG output nguyên văn [HỆ_THỐNG_BÁO]).
-        3. Xin khách hàng một email khác để tiếp tục.`;
+        3. Xin khách hàng một email/thông tin khác để tiếp tục.`;
         
         const followUp = await chat.sendMessage(systemPromptToAI);
         session.history = await chat.getHistory();     
         await sendMessageBackToUser(facebookId, followUp.response.text().replace(/[*_#]/g, ''));
-        
-       
         return true; 
-    }
-     await sendMessageBackToUser(facebookId, replyMessage);
+      }
+      
+      await sendMessageBackToUser(facebookId, replyMessage);
       facebookService.clearMemory(facebookId);
       session.isCleared = true; 
       return true;
-  }
+    }
   } catch (error) {
     console.error('[Action Error]', error);
     await sendMessageBackToUser(facebookId, 'Dạ hệ thống đang xử lý tác vụ này bị lỗi, em đã báo kỹ thuật. Anh/chị đợi chút nhé!');
     return true;
   }
+  
   return false;
 }
 
