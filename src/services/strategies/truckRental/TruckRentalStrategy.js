@@ -117,6 +117,9 @@ class TruckRentalStrategy extends BaseStrategy {
   }
 
   async handleApproval(ticket, approverId, additionalData, io) {
+    // For TRUCK_RENTAL, we want Head Dispatcher to accept and set personnel directly.
+    // ApproverId is expected to be the Head Dispatcher who calls approveTicket.
+    // Transition ticket into WAITING_REVIEW and assign approver as dispatcher to skip district auto-assignment.
     await TicketStateMachine.transition(ticket, 'WAITING_REVIEW');
     await NotificationService.createNotification(
       {

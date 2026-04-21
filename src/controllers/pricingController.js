@@ -60,3 +60,36 @@ exports.getPricingByTicket = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * POST /api/pricing/calculate
+ * Tính giá tạm thời cho một yêu cầu (không lưu vào DB)
+ * Body: surveyData-like object. For truck rental we expect fields like:
+ *  - rentalDetails: { truckType, rentalDurationHours, withDriver }
+ *  - movingDate, distanceKm, suggestedStaffCount
+ */
+exports.calculatePricing = async (req, res, next) => {
+  try {
+    const body = req.body || {};
+
+    // Map incoming payload to the surveyData shape expected by service
+    // Accept either rentalDetails or flattened suggestedVehicle/rentalDurationHours
+    const rental = body.rentalDetails || {};
+    const surveyData = {
+      suggestedVehicle: rental.truckType || body.suggestedVehicle || null,
+      rentalDurationHours: rental.rentalDurationHours || body.rentalDurationHours || null,
+      withDriver: rental.withDriver !== undefined ? rental.withDriver : body.withDriver,
+      suggestedStaffCount: body.suggestedStaffCount || 1,
+      distanceKm: body.distanceKm || 0,
+      estimatedHours: body.estimatedHours || null,
+      scheduledTime: body.movingDate || body.scheduledTime || null
+    };
+
+    const priceList = await require('../services/pricingCalculationService').getActivePriceList();
+    const result = await require('../services/pricingCalculationService').calculatePricing(surveyData, priceList, 'TRUCK_RENTAL');
+
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+};

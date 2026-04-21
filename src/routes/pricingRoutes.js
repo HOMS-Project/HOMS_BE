@@ -25,4 +25,7 @@ router.get(
   pricingController.getPricingByTicket
 );
 
+// POST /api/pricing/calculate - Tính báo giá tạm thời (public)
+router.post('/calculate', pricingController.calculatePricing);
+
 module.exports = router;
