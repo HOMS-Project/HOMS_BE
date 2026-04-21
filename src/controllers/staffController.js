@@ -116,9 +116,13 @@ exports.getOrderDetails = async (req, res, next) => {
     const { invoiceId } = req.params;
 
     const isValidId = /^[0-9a-fA-F]{24}$/.test(invoiceId);
-    let query = { _id: invoiceId };
+    let query;
     if (isValidId) {
       query = { $or: [{ _id: invoiceId }, { requestTicketId: invoiceId }] };
+    } else {
+      // Nếu ID không phải là định dạng 24-character hex hợp lệ của MongoDB
+      // Throw error ở đây để chặn sớm, tránh lỗi ngầm CastError 500 từ Mongoose
+      throw new AppError("Mã đơn hàng không hợp lệ", 400);
     }
 
     const invoice = await Invoice.findOne(query)
@@ -158,18 +162,26 @@ exports.getOrderDetails = async (req, res, next) => {
     // Find the assignment specifically for this staff/driver to get its route validation
     const staffId = req.user.userId || req.user._id || req.user.id;
     const normalizedStaffId = normalizeId(staffId);
-    const da = await DispatchAssignment.findOne({
-      invoiceId: invoice._id,
-      $or: [
-        { "assignments.driverIds": staffId },
-        { "assignments.staffIds": staffId },
-      ],
-    })
-      .populate("assignments.routeId")
-      .populate("assignments.vehicleId", "plateNumber vehicleType")
-      .populate("assignments.driverIds", "fullName phone avatar")
-      .populate("assignments.staffIds", "fullName phone avatar")
-      .lean(); // Tối ưu query
+    
+    // Tối ưu: Chạy song song 2 câu truy vấn không phụ thuộc nhau để giảm thời gian phản hồi API
+    const [da, survey] = await Promise.all([
+      DispatchAssignment.findOne({
+        invoiceId: invoice._id,
+        $or: [
+          { "assignments.driverIds": staffId },
+          { "assignments.staffIds": staffId },
+        ],
+      })
+        .populate("assignments.routeId")
+        .populate("assignments.vehicleId", "plateNumber vehicleType")
+        .populate("assignments.driverIds", "fullName phone avatar")
+        .populate("assignments.staffIds", "fullName phone avatar")
+        .lean(), // Tối ưu query
+        
+      SurveyData.findOne({
+        requestTicketId: ticket._id,
+      }).lean()
+    ]);
 
     // Find personal assignment once and reuse it
     let personalAssignment = null;
@@ -204,10 +216,7 @@ exports.getOrderDetails = async (req, res, next) => {
         }))
       : [];
 
-    // Lấy dữ liệu khảo sát (nếu có) cho ticket này
-    const survey = await SurveyData.findOne({
-      requestTicketId: ticket._id,
-    }).lean();
+
 
     const ticketItems = Array.isArray(ticket.items) ? ticket.items : [];
     const surveyItems = Array.isArray(survey?.items) ? survey.items : [];
@@ -342,14 +351,16 @@ exports.updateAssignmentStatus = async (req, res, next) => {
       da.assignments[assignmentIndex].confirmedAt = new Date();
     }
 
-    await da.save();
-
     // Nếu tất cả các assignment con đều COMPLETED, cập nhật trạng thái cha
     const allCompleted = da.assignments.every((a) => a.status === "COMPLETED");
     if (allCompleted) {
       da.status = "COMPLETED";
-      await da.save();
+    }
 
+    // Gộp lại: Chỉ lưu database duy nhất 1 lần ở đây (thế vì 2 lần)
+    await da.save();
+
+    if (allCompleted) {
       await Invoice.findByIdAndUpdate(da.invoiceId, {
         status: "COMPLETED",
         $push: {
