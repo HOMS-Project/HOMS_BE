@@ -116,48 +116,47 @@ class TruckRentalStrategy extends BaseStrategy {
   }
 
   async handleApproval(ticket, approverId, additionalData, io) {
+    // For TRUCK_RENTAL, we want Head Dispatcher to accept and set personnel directly.
+    // ApproverId is expected to be the Head Dispatcher who calls approveTicket.
+    // Transition ticket into WAITING_REVIEW and assign approver as dispatcher to skip district auto-assignment.
     await TicketStateMachine.transition(ticket, 'WAITING_REVIEW');
 
-    const assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
-
-    if (assignedDispatcherId) {
-      // Auto-assignment successful — district dispatcher will review AI data and quote
-      ticket.dispatcherId = assignedDispatcherId;
+    if (approverId) {
+      ticket.dispatcherId = approverId;
       await ticket.save();
 
       await NotificationService.createNotification(
         {
           userId: ticket.customerId,
-          title: 'Đơn hàng đã được tiếp nhận',
-          message: 'Yêu cầu của bạn đã được xác nhận và đang được xử lý bởi nhân viên điều phối.',
+          title: 'Đơn hàng đã được tiếp nhận bởi Điều phối tổng',
+          message: 'Yêu cầu thuê xe đã được gửi đến Điều phối tổng để xác nhận và phân công nhân sự.',
+          type: 'System',
+          ticketId: ticket._id
+        },
+        io
+      );
+
+      // Also notify the approver/dispatcher that they are assigned
+      await NotificationService.createNotification(
+        {
+          userId: approverId,
+          title: `Bạn được phân công đơn #${ticket.code}`,
+          message: 'Vui lòng chốt nhân sự và xác nhận lịch cho đơn thuê xe.',
           type: 'System',
           ticketId: ticket._id
         },
         io
       );
     } else {
-      // Auto-assignment failed — escalate to Head Dispatcher
-      await TicketStateMachine.transition(ticket, 'ASSIGNMENT_FAILED', {
-        comment: 'Auto assignment failed for requested driver/porters.'
-      });
-
-      // Notify Head Dispatcher (admins / isGeneral dispatchers)
-      const headDispatchers = await User.find({
-        role: 'dispatcher',
-        'dispatcherProfile.isGeneral': true
-      }).select('_id');
-
-      for (const hd of headDispatchers) {
-        await NotificationService.createNotification(
-          {
-            userId: hd._id,
-            title: `Phân công tự động thất bại — Đơn #${ticket.code}`,
-            message: 'Tất cả nhân viên điều phối đang quá tải. Vui lòng phân công thủ công.',
-            type: 'System',
-            ticketId: ticket._id
-          },
-          io
-        );
+      // Fallback: if no approverId provided, behave like before and attempt auto-assignment
+      const assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
+      if (assignedDispatcherId) {
+        ticket.dispatcherId = assignedDispatcherId;
+        await ticket.save();
+      } else {
+        await TicketStateMachine.transition(ticket, 'ASSIGNMENT_FAILED', {
+          comment: 'Auto assignment failed for requested driver/porters.'
+        });
       }
     }
 

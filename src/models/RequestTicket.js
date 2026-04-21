@@ -27,6 +27,9 @@ const requestTicketSchema = new mongoose.Schema({
     withHelper: { type: Boolean, default: false }
   },
 
+  // distance in kilometers for pricing (optional)
+  distanceKm: Number,
+
   pickup: {
     address: String,
     district: String,
