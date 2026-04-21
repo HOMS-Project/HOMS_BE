@@ -85,9 +85,14 @@ class SurveyService {
       throw new AppError('Request ticket không tồn tại', 404);
     }
 
-    if (!['WAITING_SURVEY', 'WAITING_REVIEW', 'SURVEYED'].includes(ticket.status)) {
+    const allowedStatuses = ['WAITING_SURVEY', 'WAITING_REVIEW', 'SURVEYED'];
+    if (ticket.moveType === 'TRUCK_RENTAL') {
+      allowedStatuses.push('CREATED');
+    }
+
+    if (!allowedStatuses.includes(ticket.status)) {
       throw new AppError(
-        `Không thể hoàn tất từ trạng thái ${ticket.status}. Phải là WAITING_SURVEY, WAITING_REVIEW hoặc SURVEYED`,
+        `Không thể hoàn tất từ trạng thái ${ticket.status}. Phải là ${allowedStatuses.join(', ')}`,
         400
       );
     }
@@ -199,7 +204,7 @@ class SurveyService {
     }
 
     // 5.3 Apply Dynamic Adjustments
-    const finalPricingResult = recommendation 
+    const finalPricingResult = recommendation
       ? await PricingAdjustmentService.applyAdjustments(basePricing, recommendation)
       : basePricing;
 
@@ -220,6 +225,38 @@ class SurveyService {
       survey: freshSurvey,
       pricing: pricingData
     };
+  }
+
+  /**
+   * Xem trước giá (không lưu)
+   */
+  async previewPricing(requestTicketId, surveyData) {
+    const ticket = await RequestTicket.findById(requestTicketId);
+    if (!ticket) throw new AppError('Ticket không tồn tại', 404);
+
+    const priceList = await PricingCalculationService.getActivePriceList();
+
+    // 1. Tính giá cơ sở
+    const basePricing = await PricingCalculationService.calculatePricing(
+      surveyData,
+      priceList,
+      ticket.moveType
+    );
+
+    // 2. Lấy gợi ý & điều chỉnh (nếu có)
+    let recommendation = null;
+    try {
+      const moveDate = ticket.scheduledTime || new Date();
+      const location = ticket.pickup?.address || 'Ho Chi Minh City';
+      const distanceKm = surveyData.distanceKm || 0;
+      recommendation = await RecommendationService.getRecommendations(moveDate, location, distanceKm);
+    } catch (e) { console.error(e); }
+
+    const finalPricingResult = recommendation
+      ? await PricingAdjustmentService.applyAdjustments(basePricing, recommendation)
+      : basePricing;
+
+    return finalPricingResult;
   }
 
   /**

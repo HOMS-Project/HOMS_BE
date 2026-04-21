@@ -34,7 +34,9 @@ const pricingDataSchema = new mongoose.Schema({
     insuranceFee: { type: Number, default: 0 },
     managementFee: { type: Number, default: 0 },
     itemServiceFee: { type: Number, default: 0 },
-    estimatedHours: { type: Number, default: 0 }
+    estimatedHours: { type: Number, default: 0 },
+    suggestedVehicle: { type: String },
+    suggestedStaffCount: { type: Number }
   },
 
   subtotal: { type: Number, required: true },
