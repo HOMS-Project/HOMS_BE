@@ -4,6 +4,7 @@ const Contract = require('../models/Contract');
 const RequestTicket = require('../models/RequestTicket');
 const Invoice = require('../models/Invoice');
 const NotificationService = require('../services/notificationService');
+const T = require('../utils/notificationTemplates');
 const { getIo } = require('../utils/socket');
 
 /**
@@ -61,9 +62,10 @@ function startContractDepositExpiryJob() {
           const io = getIo();
           await NotificationService.createNotification({
             userId:   contract.customerId,
-            title:    '⚠️ Đơn hàng đã bị hủy tự động',
-            message:  `Hợp đồng ${contract.contractNumber} đã bị hủy do bạn không đặt cọc trong ${contract.depositDeadlineHours || 48} giờ sau khi ký.`,
-            type:     'System',
+            ...T.CONTRACT_AUTO_CANCELLED({
+              contractNumber: contract.contractNumber,
+              depositDeadlineHours: contract.depositDeadlineHours
+            }),
             ticketId: contract.requestTicketId
           }, io);
 
