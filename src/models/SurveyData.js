@@ -48,10 +48,25 @@ const surveyDataSchema = new mongoose.Schema({
   totalActualItems: Number,
 
   /* ===== ƯỚC TÍNH TÀI NGUYÊN ===== */
+  // LEGACY FALLBACK
   suggestedVehicle: {
     type: String,
     enum: ['500KG', '1TON', '1.5TON', '2TON']
   },
+  
+  // NEW ARRAY ARCHITECTURE
+  suggestedVehicles: [{
+    vehicleType: {
+      type: String,
+      enum: ['500KG', '1TON', '1.5TON', '2TON'],
+      required: true
+    },
+    count: {
+      type: Number,
+      default: 1,
+      min: 1
+    }
+  }],
 
   suggestedStaffCount: {
     type: Number,

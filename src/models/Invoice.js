@@ -93,6 +93,17 @@ const invoiceSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Scenario B: Dispatcher-proposed reschedule awaiting customer approval
+    proposedDispatchTime: {
+      type: Date,
+      default: null,
+    },
+    rescheduleStatus: {
+      type: String,
+      enum: ['NONE', 'PENDING_APPROVAL', 'ACCEPTED', 'REJECTED'],
+      default: 'NONE',
+    },
+
     paidAmount: {
       type: Number,
       default: 0,
