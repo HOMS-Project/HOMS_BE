@@ -49,6 +49,10 @@ function buildDynamicSystemPrompt(session) {
     2. XE & THỜI GIAN: Xe 500KG, 1 TẤN, 1.5 TẤN, 2 TẤN (có bửng nâng cho đồ nặng: Piano, két sắt).
        Nhà trọ: ~2 tiếng (2 nhân sự). Nhà vừa: ~3 tiếng (3 nhân sự). Nhà lầu/Đồ khó: ~5 tiếng (4-5 nhân sự).
     3. Đồ nặng lầu cao: HOMS cam kết làm được 100% bằng dây đai trợ lực chuyên dụng.
+
+    QUY TẮC THỜI GIAN:
+       - TUYỆT ĐỐI KHÔNG NHẬN LỊCH HẸN TRONG QUÁ KHỨ (So sánh với ngày hôm nay). 
+       - Nếu khách chọn giờ quá khứ, yêu cầu chọn lại.
     </KNOWLEDGE_BASE>
 
     <SECURITY_&_MODERATION>
@@ -62,6 +66,9 @@ function buildDynamicSystemPrompt(session) {
     3. TUYỆT ĐỐI KHÔNG HIỂN THỊ CÁC ĐOẠN JSON CHO KHÁCH HÀNG THẤY.
     4. Trả lời NGẮN GỌN (tối đa 2 ý hỏi/lần). Không hỏi quá nhiều thông tin tránh khách bị ngợp.
     5. Khi báo giá, chỉ nêu con số cuối cùng và hỏi khách cảm thấy thế nào.
+     2. NẾU BẠN GỌI JSON (ACTION):
+       - CHỈ dùng đúng tên action: CALCULATE_PRICE, REQUEST_DISCOUNT, CREATE_ORDER (Tuyệt đối không dính liền chữ).
+       - TUYỆT ĐỐI BỌC JSON TRONG KHỐI \`\`\`json ... \`\`\`.
     </FORMAT_RULES>
 
     <STEPS>
@@ -71,15 +78,15 @@ function buildDynamicSystemPrompt(session) {
 - Ưu tiên câu hỏi trực tiếp. 
     BƯỚC 2: Tùy vào dịch vụ đã chọn:
        - Nếu TRUCK_RENTAL: Chỉ cần hỏi ước lượng đồ nhiều ít (để chọn xe).
-       - Nếu SPECIFIC_ITEMS / FULL_HOUSE: Khảo sát đồ chi tiết (xin ảnh).
+       - Nếu SPECIFIC_ITEMS / FULL_HOUSE: Khảo sát đồ chi tiết (xin ảnh) .
     BƯỚC 3: Lấy địa chỉ ĐI và ĐẾN cụ thể tại Đà Nẵng.
-    BƯỚC 4: Hỏi địa hình (Lầu/Trệt, hẻm, thang máy). Nếu 
-    BƯỚC 5: Lấy thời gian chuyển. Gom tóm tắt xác nhận.
+    BƯỚC 4: Hỏi địa hình (Lầu/Trệt, hẻm, thang máy). Xe tải vào được không
+    BƯỚC 5: Lấy thời gian chuyển (Bắt buộc phải là tương lai). Gom tóm tắt xác nhận.
     TRƯỚC KHI GỌI ACTION TÍNH GIÁ, BẠN BẮT BUỘC PHẢI HỎI KHÁCH:
 1. Xe tải có vào tận nơi được không? (Khoảng cách đi bộ từ xe vào nhà bao nhiêu mét?)
 2. Có cần tháo lắp giường tủ hay đóng gói đồ đạc không?
 Nếu thiếu 1 trong các thông tin trên, tuyệt đối KHÔNG trả về JSON CALCULATE_PRICE, hãy đặt câu hỏi cho khách.
-    BƯỚC 6: Tính giá. Trả về đúng JSON dưới đây:
+    BƯỚC 6: Gọi Action Tính giá (Bắt buộc viết chính xác như sau):
     \`\`\`json
     {
       "action": "CALCULATE_PRICE",
@@ -93,17 +100,10 @@ Nếu thiếu 1 trong các thông tin trên, tuyệt đối KHÔNG trả về JS
       }
     }
     \`\`\`
-    BƯỚC 7: Nhận giá từ hệ thống -> Báo khách. Nếu khách chê đắt, xin mã giảm giá:
-    \`\`\`json
-    { "action": "REQUEST_DISCOUNT", "percent": 5 }
-    \`\`\`
-    BƯỚC 8: Khách chốt -> BẮT BUỘC xin Email -> Gọi JSON tạo đơn:
-    \`\`\`json
-    {
-      "action": "CREATE_ORDER", "email": "khach@gmail.com", 
-      "final_price": "giá chốt", "discount_code": "MÃ (nếu có)"
-    }
-    \`\`\`
+    BƯỚC 7: Nhận giá từ hệ thống -> Báo khách. Nếu khách chê đắt, xin mã giảm giá
+    BƯỚC 8: Khách chốt -> BẮT BUỘC xin Email -> Gọi CREATE_ORDER
+    LƯU Ý TỐI QUAN TRỌNG: Đi kèm với JSON, bạn CHỈ ĐƯỢC NÓI: "Dạ anh/chị đợi em 1 chút, hệ thống đang lên đơn và sẽ gửi link hợp đồng trực tiếp tại đoạn chat này luôn nhé!".
+    TUYỆT ĐỐI KHÔNG ĐƯỢC YÊU CẦU KHÁCH KIỂM TRA EMAIL (Vì hệ thống sẽ gửi thẳng link vào Messenger).
     </STEPS>
   `;
 }
@@ -147,14 +147,28 @@ async function sendMessageBackToUser(facebookId, text) {
 // 2. XỬ LÝ ACTION
 // ==============================================================
 async function handleAIAction(botReply, session, facebookId, chat) {
-  const jsonMatch = botReply.match(/```json\s*([\s\S]*?)\s*```/);
-  if (!jsonMatch) return false;
+  let jsonString = null;
+   let jsonMatch = botReply.match(/```(?:json)?\s*(\{[\s\S]*?"action"[\s\S]*?\})\s*```/i);
+  if (!jsonMatch) {
+    jsonMatch = botReply.match(/(\{[\s\S]*?"action"[\s\S]*?\})/i);
+    if (jsonMatch) jsonString = jsonMatch[1];
+  } else {
+    jsonString = jsonMatch[1];
+  }
+
+  if (!jsonString) return false;
 
   let aiAction;
-  try { aiAction = JSON.parse(jsonMatch[1]); } 
-  catch (err) { return false; }
+  try { 
+    aiAction = JSON.parse(jsonString); 
+    if(aiAction.action === 'CALCULATEPRICE') aiAction.action = 'CALCULATE_PRICE';
+  } 
+  catch (err) { 
+    console.error('[JSON Parse Error]', err);
+    return false; 
+  }
 
-  const textPart = botReply.replace(/```json\n[\s\S]*?\n```/, '').trim();
+   let textPart = botReply.replace(jsonMatch[0], '').replace(/```json/gi, '').replace(/```/g, '').trim();
   if (textPart) {
     await sendMessageBackToUser(facebookId, textPart.replace(/[*_#]/g, ''));
   }

@@ -477,7 +477,7 @@ await ContractService.generateContract(contractData, null, { session: dbSession 
   // ─────────────────────────────────────────────────────────────
   // BƯỚC 4: SINH LINK VÀ TIN NHẮN TRẢ VỀ
   // ─────────────────────────────────────────────────────────────
-  const FE_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const FE_URL = process.env.FRONTEND_URL ;
 
   if (isReturningCustomer) {
     let redirectPath = `/customer/sign-contract/${newTicket._id}`;
