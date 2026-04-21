@@ -157,3 +157,19 @@ exports.getSurveyByTicket = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * POST /api/surveys/:ticketId/preview-pricing
+ */
+exports.previewPricing = async (req, res, next) => {
+  try {
+    const { ticketId } = req.params;
+    const result = await SurveyService.previewPricing(ticketId, req.body);
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+};

@@ -15,6 +15,8 @@ const PricingData = require('../models/PricingData');
 const Promotion = require('../models/Promotion');
 const RequestTicket = require('../models/RequestTicket');
 const ContractService = require('../services/admin/contractService'); 
+const RecommendationService = require('./recommendationService');
+const PricingAdjustmentService = require('./pricingAdjustmentService');
 const GOONG_API_KEY = process.env.GOONG_API_KEY;
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const MAX_AI_DISCOUNT_PERCENT = 15; 
@@ -77,12 +79,21 @@ async function getRouteDistance(originCoords, destCoords) {
   return 5; // Fallback mặc định
 }
 
-/** Ước tính số giờ dựa trên khoảng cách, tầng lầu, số nhân viên */
-function computeEstimatedHours({ distanceKm = 0, floors = 0, suggestedStaffCount = 2 }) {
+
+function computeEstimatedHours({ distanceKm = 0, floors = 0, suggestedStaffCount = 2, moveType }) {
   let hours = 2;
+  
+  if (moveType === 'TRUCK_RENTAL' || moveType === 'SPECIFIC_ITEMS') {
+    hours = 1; 
+  }
+
   hours += distanceKm * 0.1;
-  hours += floors * 0.5;
-  if (suggestedStaffCount <= 2) hours += 1;
+
+  if (moveType === 'FULL_HOUSE') {
+    hours += floors * 0.5;
+    if (suggestedStaffCount <= 2) hours += 1;
+  }
+  
   return Math.ceil(hours);
 }
 
@@ -123,8 +134,11 @@ async function handleCalculatePrice(aiAction, session) {
   const pickupDistrict   = await GeocodeService.reverseGeocode(fromCoords.lat, fromCoords.lng);
   const deliveryDistrict = await GeocodeService.reverseGeocode(toCoords.lat, toCoords.lng);
 
-  // 3. Thời gian chuyển (Đã xử lý ở trên)
-
+  // 3. Thời gian chuyển
+  if (data.movingTime) {
+    const parsed = new Date(data.movingTime);
+    if (!isNaN(parsed.getTime())) pickupTime = parsed;
+  }
 
   // 4. Xe & nhân viên qua Estimate Resources Engine
   const finalItems = (session.visionItems && session.visionItems.length > 0)
@@ -180,7 +194,6 @@ async function handleCalculatePrice(aiAction, session) {
     scheduledTime:    pickupTime,
     suggestedVehicle: tempVehicleType,
     suggestedStaffCount: tempStaffCount,
-    estimatedHours,
     totalActualWeight: wgt,
     totalActualVolume: vol,
     insuranceRequired: false,
@@ -191,11 +204,22 @@ async function handleCalculatePrice(aiAction, session) {
   session.surveyDataCache = surveyData;
 
   // 7. Tính giá
-  let finalPrice = 0;
+   let finalPrice = 0;
   try {
-    const priceList   = await PricingCalculationService.getActivePriceList();
-    const priceResult = await PricingCalculationService.calculatePricing(surveyData, priceList,moveType);
-    finalPrice                   = priceResult.totalPrice;
+    const priceList = await PricingCalculationService.getActivePriceList();
+    const basePricing = await PricingCalculationService.calculatePricing(surveyData, priceList, moveType);  
+    let recommendation = null;
+    try {
+      const location = data.from || 'Đà Nẵng';
+      recommendation = await RecommendationService.getRecommendations(pickupTime, location, distanceKm);
+    } catch (recError) {
+      console.error('Recommendation Error:', recError.message);
+    }
+    const priceResult = recommendation 
+      ? await PricingAdjustmentService.applyAdjustments(basePricing, recommendation)
+      : basePricing;
+
+    finalPrice                    = priceResult.totalPrice;
     session.calculatedPriceResult = priceResult;
     session.calculatedBreakdown   = priceResult.breakdown;
   } catch (pricingErr) {
@@ -255,15 +279,22 @@ async function handleRequestDiscount(aiAction) {
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Tạo đơn hàng, hợp đồng, invoice và trả về tin nhắn gửi thẳng cho khách.
+ * Tạo đơn hàng,  trả về tin nhắn gửi thẳng cho khách.
  * @param {object}   aiAction
  * @param {object}   session
  * @param {string}   facebookId
  * @returns {string} - Tin nhắn cuối gửi cho khách (không qua AI nữa)
  */
 async function handleCreateOrder(aiAction, session, facebookId) {
-  const email = aiAction.email?.toLowerCase().trim(); 
-  if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+  const rawEmailText = aiAction.email?.toLowerCase() || '';
+
+ 
+  const emailMatch = rawEmailText.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/);
+  
+  const email = emailMatch ? emailMatch[0] : null;
+
+
+  if (!email) {
     return '[HỆ_THỐNG_BÁO_LỖI]: Email không hợp lệ hoặc chưa được cung cấp. Hãy xin lại email chính xác từ khách hàng!';
   }
 
@@ -274,55 +305,44 @@ async function handleCreateOrder(aiAction, session, facebookId) {
   let fullName = 'Khách hàng Facebook';
   let user = null;
   let isUnverifiedClaim = false; 
-  let needToUpdateUser = false; // Flag kiểm tra xem có cần update user trong transaction không
+  let needToUpdateUser = false; 
 
   const userByFb = await User.findOne({ facebookId });
   const userByEmail = await User.findOne({ email });
 
-  // ─────────────────────────────────────────────────────────────
-  // BƯỚC 1: XÁC ĐỊNH DANH TÍNH (User Identity)
-  // ─────────────────────────────────────────────────────────────
-  if (userByFb) {
+  if (userByFb && userByEmail) {
+    if (userByFb._id.toString() !== userByEmail._id.toString()) {
+      // Trường hợp: FB này đang thuộc User A, nhưng email lại thuộc User B
+      // Đây là lỗi xung đột dữ liệu. Nên ưu tiên User theo Facebook (người đang chat)
+      // hoặc thông báo khách là email này đã được sử dụng bởi người khác.
+      return `[HỆ_THỐNG_BÁO]: Email ${email} đã được đăng ký bởi một tài khoản khác. Vui lòng liên hệ hỗ trợ hoặc sử dụng email khác.`;
+    }
+    user = userByFb; // Cả 2 là 1
+  } else if (userByFb) {
+    // FB đã tồn tại, cập nhật email mới cho nó
     user = userByFb;
-    isReturningCustomer = !!user.password;
-    fullName = user.fullName;
-
-    if (user.email !== email) {
-      if (userByEmail) {
-        return `[HỆ_THỐNG_BÁO]: Email ${email} đã được đăng ký cho một tài khoản khác. Vui lòng sử dụng email khác hoặc đăng nhập bằng email gốc trên website.`;
-      } else {
-        user.email = email;
-        needToUpdateUser = true; 
-      }
-    }
+    user.email = email;
+    needToUpdateUser = true;
+  } else if (userByEmail) {
+    // FB mới tinh, nhưng email đã tồn tại -> Đây là khách cũ dùng email cũ
+    user = userByEmail;
+    // Vì FB này chưa gắn vào user này, ta đánh dấu là Unverified
+    isUnverifiedClaim = true; 
   } else {
-    if (userByEmail) {
-    
-      user = userByEmail;
-     isReturningCustomer = !!user.password; 
-      fullName = user.fullName;
-      isUnverifiedClaim = true; 
-    } else {
-      // Kịch bản B2: Khách mới hoàn toàn
-      isReturningCustomer = false;
-      try {
-        const fbRes = await axios.get(`https://graph.facebook.com/${facebookId}?fields=first_name,last_name&access_token=${PAGE_ACCESS_TOKEN}`);
-        if (fbRes.data) fullName = `${fbRes.data.last_name || ''} ${fbRes.data.first_name || ''}`.trim();
-      } catch (e) {
-        console.log('[CreateOrder] Lấy tên FB lỗi', e.message);
-      }
-
-      user = new User({ 
-        facebookId, 
-        email, 
-        provider: 'facebook', 
-        fullName, 
-        role: 'customer', 
-        status: 'Pending_Password'
-      });
-      needToUpdateUser = true; 
-    }
+    // Khách mới hoàn toàn
+    user = new User({ 
+      facebookId, 
+      email, 
+      provider: 'facebook', 
+      fullName: 'Khách hàng', // Lấy từ FB Graph sau
+      role: 'customer', 
+      status: 'Pending_Password'
+    });
+    needToUpdateUser = true;
   }
+
+  isReturningCustomer = !!user.password;
+  fullName = user.fullName;
 
   // ─────────────────────────────────────────────────────────────
   // BƯỚC 2: CHUẨN BỊ DỮ LIỆU ĐỌC 
@@ -335,18 +355,14 @@ async function handleCreateOrder(aiAction, session, facebookId) {
     baseTransportFee: finalTotalPrice, vehicleFee: 0, laborFee: 0, stairsFee: 0, packingFee: 0, assemblingFee: 0
   };
 
-  const actualMoveType = session.surveyDataCache.movingType || 'FULL_HOUSE';
+  const actualMoveType = session.surveyDataCache.movingType;
   const pricingDataObjectId = new mongoose.Types.ObjectId();
   const randomString = crypto.randomBytes(2).toString('hex').toUpperCase();
   const code = `REQ-${new Date().getFullYear()}-${randomString}`;
 
-  const ticketStatus = isUnverifiedClaim ? 'CREATED' : 'ACCEPTED';
-  const ticketNotes = aiAction.notes 
-    ? `${aiAction.notes} (Bot chốt)` 
-    : (isUnverifiedClaim ? 'Chốt qua Bot (Chờ KH xác thực email)' : 'Chốt đơn tự động qua Facebook AI Bot');
+  const ticketStatus = 'WAITING_REVIEW'; 
+  const ticketNotes = `[TẠO TỪ AI BOT - CẦN DISPATCHER KIỂM TRA LẠI DỮ LIỆU] ${aiAction.notes || ''}`;
 
-  // Đọc Template & PriceList trước khi khóa DB
-  const template = await ContractTemplate.findOne({ isActive: true });
   let activePriceList = await PricingCalculationService.getActivePriceList().catch(() => null);
 
   // ─────────────────────────────────────────────────────────────
@@ -364,7 +380,7 @@ async function handleCreateOrder(aiAction, session, facebookId) {
     }
 
     // 2. Tạo RequestTicket
-    newTicket = new RequestTicket({
+     newTicket = new RequestTicket({
       code,
       customerId: user._id,
       moveType: actualMoveType,
@@ -387,7 +403,7 @@ async function handleCreateOrder(aiAction, session, facebookId) {
     await newSurvey.save({ session: dbSession });
 
     // 4. Tạo PricingData
-    const newPricing = new PricingData({
+     const newPricing = new PricingData({
       _id: pricingDataObjectId,
       requestTicketId: newTicket._id,
       surveyDataId: newSurvey._id,
@@ -395,26 +411,10 @@ async function handleCreateOrder(aiAction, session, facebookId) {
       totalPrice: finalTotalPrice,
       subtotal: finalSubtotal,
       tax: finalTax,
-      breakdown: finalBreakdown
+      breakdown: finalBreakdown,
+      dynamicAdjustment: priceCache?.dynamicAdjustment || null
     });
     await newPricing.save({ session: dbSession });
-
-    // 5. Tạo Contract
-const customData = {
-    customerName: fullName,
-    customerPhone: 'Sẽ cập nhật sau',
-    totalPrice: finalTotalPrice.toLocaleString('vi-VN')
-};
-
-const contractData = {
-    templateId: template ? template._id : null,
-    requestTicketId: newTicket._id,
-    customerId: user._id,
-    customData: customData
-};
-
-
-await ContractService.generateContract(contractData, null, { session: dbSession });
 
     // 6. Cập nhật Mã khuyến mãi (Bảo mật Race Condition bằng $inc và $expr)
     if (aiAction.discount_code && aiAction.discount_code !== 'NONE') {
@@ -459,25 +459,17 @@ await ContractService.generateContract(contractData, null, { session: dbSession 
   // ─────────────────────────────────────────────────────────────
   // BƯỚC 4: SINH LINK VÀ TIN NHẮN TRẢ VỀ
   // ─────────────────────────────────────────────────────────────
-  const FE_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
-
-  if (isReturningCustomer) {
-    let redirectPath = `/customer/sign-contract/${newTicket._id}`;
+  const FE_URL = process.env.FRONTEND_URL ;
+ const targetPath = `/customer/order`; 
+if (isReturningCustomer) {
+    let redirectPath = targetPath;
     if (isUnverifiedClaim) {
       redirectPath += `?link_fb=${facebookId}`; 
     }
-    
-    // Encode URI để truyền an toàn vào param redirect
     const directLink = `${FE_URL}/login?redirect=${encodeURIComponent(redirectPath)}`;
-    let msg = `Dạ em thấy email ${email} đã có tài khoản trên hệ thống HOMS! 🎉\n\n`;
-    
-    if (isUnverifiedClaim) {
-      msg += `Để bảo mật và tự động liên kết Facebook này với tài khoản của anh/chị, đơn hàng tạm lưu ở dạng Nháp. `;
-    } else {
-      msg += `Hợp đồng đã được tạo thành công. `;
-    }
-    
-    msg += `Anh/chị vui lòng truy cập link dưới đây, đăng nhập bằng mật khẩu để xác nhận và ký hợp đồng nhé:\n👉 ${directLink}`;
+        let msg = `Dạ em thấy email ${email} đã có tài khoản trên hệ thống HOMS!\n\n`;
+    msg += `Hồ sơ yêu cầu của anh/chị đã được AI tạo xong. Tuy nhiên để đảm bảo tính chính xác 100%, **Trưởng bộ phận điều phối (Dispatcher) bên em sẽ kiểm tra lại khối lượng đồ đạc một chút và chốt lại đơn chính thức cho mình trong vài phút tới nhé!**\n\n`;
+    msg += `Anh/chị vui lòng truy cập link dưới đây để đăng nhập và theo dõi tiến độ đơn hàng ạ:\n👉 ${directLink}`;
     return msg;
 
   } else {
@@ -487,10 +479,11 @@ await ContractService.generateContract(contractData, null, { session: dbSession 
       process.env.JWT_SECRET || 'SECRET',
       { expiresIn: '1d' }
     );
-    const magicLink = `${FE_URL}/magic?token=${setupToken}&redirect=${encodeURIComponent(`/customer/sign-contract/${newTicket._id}`)}`;
+    const magicLink = `${FE_URL}/magic?token=${setupToken}&redirect=${encodeURIComponent(targetPath)}`;
     return (
-      `Dạ em đã lên hồ sơ hợp đồng xong rồi ạ! 🎉\n\n` +
-      `Đây là lần đầu tiên anh/chị sử dụng dịch vụ. Vui lòng nhấn vào link dưới để thiết lập mật khẩu bảo mật và tiến hành ký hợp đồng nhé:\n👉 ${magicLink}`
+      `Dạ em đã lên hồ sơ hệ thống xong rồi ạ! 🎉\n\n` +
+      `Vì AI ước lượng đồ đôi khi có sai số, **Đội ngũ điều phối viên bên em sẽ double-check lại lộ trình và chốt đơn chính thức cho mình ngay lập tức ạ.**\n\n` +
+      `Đây là lần đầu anh/chị dùng HOMS, hãy click vào link dưới đây để thiết lập mật khẩu bảo mật và theo dõi tiến độ duyệt đơn nhé:\n👉 ${magicLink}`
     );
   }
 }

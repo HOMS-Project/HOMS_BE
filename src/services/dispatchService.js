@@ -42,7 +42,7 @@ class DispatchService {
 
     const driversList = await User.find({ role: 'driver', status: 'Active' })
       .select('-password -otpResetPassword -otpResetExpires').lean();
-    
+
     // Fallback: If your system uses 'driver' for both or separates them:
     let staffList = await User.find({ role: 'staff', status: 'Active' })
       .select('-password -otpResetPassword -otpResetExpires').lean();
@@ -65,14 +65,14 @@ class DispatchService {
 
       for (const task of activeTasks) {
         if (!task.pickupTime || !task.deliveryTime) continue;
-        
+
         const taskStart = new Date(task.pickupTime).getTime();
         const taskEnd = new Date(task.deliveryTime).getTime();
 
-        const isAssigned = isVehicle 
+        const isAssigned = isVehicle
           ? task.vehicleId?.toString() === item._id.toString()
-          : (task.driverIds?.some(id => id.toString() === item._id.toString()) || 
-             task.staffIds?.some(id => id.toString() === item._id.toString()));
+          : (task.driverIds?.some(id => id.toString() === item._id.toString()) ||
+            task.staffIds?.some(id => id.toString() === item._id.toString()));
 
         if (isAssigned) {
           if (taskStart < targetEnd && taskEnd > targetStart) {
@@ -102,13 +102,13 @@ class DispatchService {
    */
   async suggestResources(pickupTime, estimatedDuration, parameters = {}) {
     const { requiredLeaders = 0, requiredDrivers = 0, requiredHelpers = 0, pickupLocation } = parameters;
-    
+
     // Evaluate constraint limits and tight schedules
     const availability = await this.checkResourceAvailability(pickupTime, estimatedDuration);
-    
+
     // Load snapshot of cached workload for fairness scoring
     const targetDate = new Date(pickupTime);
-    targetDate.setHours(0, 0, 0, 0); 
+    targetDate.setHours(0, 0, 0, 0);
     const scheduleViews = await ResourceScheduleView.find({ date: targetDate }).lean();
     const workloadMap = new Map(scheduleViews.map(view => [view.resourceId.toString(), view.workloadCount]));
 
@@ -132,7 +132,7 @@ class DispatchService {
         efficiencyScore -= 30; // Severe penalty for tight back-to-back schedules
         breakdown.tags.push('tight_schedule');
       }
-      
+
       // Proximity Scoring
       if (!resource.currentLocation?.coordinates) {
         efficiencyScore -= 10;
@@ -140,7 +140,7 @@ class DispatchService {
       } else if (pickupPoint) {
         const resourcePoint = turf.point(resource.currentLocation.coordinates);
         const distanceKm = turf.distance(pickupPoint, resourcePoint, { units: 'kilometers' });
-        
+
         // Example penalty: 1 penalty point per km, max 20
         const distancePenalty = Math.min(Math.round(distanceKm), 20);
         efficiencyScore -= distancePenalty;
@@ -153,14 +153,14 @@ class DispatchService {
       const MULTIPLIER = 10; // e.g. 3 jobs -> 30 penalty = 0 fairness
       const workloadPenalty = Math.min(currentWorkload * MULTIPLIER, 30);
       fairnessScore -= workloadPenalty;
-      
+
       if (currentWorkload > 0) {
         breakdown.tags.push(`workload_count_${currentWorkload}`);
       }
 
       breakdown.penalty = (70 - efficiencyScore) + (30 - fairnessScore);
       breakdown.finalScore = efficiencyScore + fairnessScore;
-      
+
       return { data: resource, breakdown };
     };
 
@@ -178,30 +178,30 @@ class DispatchService {
     let leader = null;
     let helpers = [];
     let suggestedDrivers = [];
-    
+
     let viableDriversPool = [...viableDrivers];
 
     if (requiredLeaders > 0 && viableDriversPool.length > 0) {
       leader = viableDriversPool.shift();
     }
-    
+
     suggestedDrivers = viableDriversPool.slice(0, requiredDrivers);
-    
+
     // Staff pool filtering out already selected valid drivers
-    let remainingStaff = viableStaff.filter(s => 
+    let remainingStaff = viableStaff.filter(s =>
       !suggestedDrivers.some(d => d.data._id.toString() === s.data._id.toString()) &&
       (!leader || leader.data._id.toString() !== s.data._id.toString())
     );
-    
+
     helpers = remainingStaff.slice(0, requiredHelpers);
-    
+
     const missingDrivers = Math.max(0, requiredDrivers - suggestedDrivers.length);
     const missingLeaders = Math.max(0, requiredLeaders - (leader ? 1 : 0));
     const missingHelpers = Math.max(0, requiredHelpers - helpers.length);
-    
+
     // We can force proceed if we have at least minimum core drivers or a leader
     const canForce = (suggestedDrivers.length > 0 || leader !== null);
-    
+
     return {
       suggestedTeam: {
         leaderId: leader ? leader.data._id : null,
@@ -233,13 +233,13 @@ class DispatchService {
    */
   async suggestTimeSlots(pickupTime, estimatedDuration, rules = {}) {
     if (!pickupTime) return [];
-    
+
     const slots = [];
     const baseTime = new Date(pickupTime).getTime();
-    
+
     const availability = await this.checkResourceAvailability(pickupTime, estimatedDuration);
     let conflictEnds = [];
-    
+
     const collectConflicts = (list) => {
       list.forEach(item => {
         if (item.conflictDetails && item.conflictDetails.taskEnd) {
@@ -248,48 +248,96 @@ class DispatchService {
         }
       });
     };
-    
+
     collectConflicts(availability.drivers);
     collectConflicts(availability.staff);
     collectConflicts(availability.vehicles);
-    
+
     conflictEnds = [...new Set(conflictEnds)].sort((a, b) => a - b);
-    
+
     const candidates = [...conflictEnds];
     const hourMs = 60 * 60 * 1000;
-    
+
     // Expand fallback: Check up to 12 hours ahead in 1hr increments
     for (let i = 1; i <= 12; i++) {
-        candidates.push(baseTime + i * hourMs);
+      candidates.push(baseTime + i * hourMs);
     }
-    
+
     // Only test future times compared to baseTime
     const futureCandidates = [...new Set(candidates.filter(c => c > baseTime))].sort((a, b) => a - b);
-    
-    for (const time of futureCandidates) {
-        const avail = await this.checkResourceAvailability(new Date(time), estimatedDuration);
-        const availDrivers = avail.drivers.filter(d => d.availabilityStatus === 'AVAILABLE');
-        const availStaff = avail.staff.filter(s => s.availabilityStatus === 'AVAILABLE');
-        const availVehicles = avail.vehicles.filter(v => v.availabilityStatus === 'AVAILABLE');
-        
-        const neededLeader = rules.requiredLeaders || 0;
-        const neededDrivers = rules.requiredDrivers || 0;
-        const neededHelpers = rules.requiredHelpers || 0;
 
-        // Note: In this system, drivers act as both leader and secondary drivers
-        const totalNeededDrivers = neededLeader + neededDrivers;
-        
-        // Slot is viable only if ALL resource limits are met
-        if (availDrivers.length >= totalNeededDrivers && 
-            availStaff.length >= neededHelpers && 
-            availVehicles.length > 0) {
-            slots.push(new Date(time).toISOString());
-        }
-        
-        if (slots.length >= 3) break;
+    for (const time of futureCandidates) {
+      const avail = await this.checkResourceAvailability(new Date(time), estimatedDuration);
+      const availDrivers = avail.drivers.filter(d => d.availabilityStatus === 'AVAILABLE');
+      const availStaff = avail.staff.filter(s => s.availabilityStatus === 'AVAILABLE');
+      const availVehicles = avail.vehicles.filter(v => v.availabilityStatus === 'AVAILABLE');
+
+      const neededLeader = rules.requiredLeaders || 0;
+      const neededDrivers = rules.requiredDrivers || 0;
+      const neededHelpers = rules.requiredHelpers || 0;
+
+      // Note: In this system, drivers act as both leader and secondary drivers
+      const totalNeededDrivers = neededLeader + neededDrivers;
+
+      // Slot is viable only if ALL resource limits are met
+      if (availDrivers.length >= totalNeededDrivers &&
+        availStaff.length >= neededHelpers &&
+        availVehicles.length > 0) {
+        slots.push(new Date(time).toISOString());
+      }
+
+      if (slots.length >= 3) break;
     }
-    
+
     return slots;
+  }
+
+  extractUniqueIdsFromAssignments(assignments, fieldName) {
+    const idSet = new Set();
+    (assignments || []).forEach((item) => {
+      const ids = Array.isArray(item?.[fieldName]) ? item[fieldName] : [];
+      ids.forEach((id) => {
+        if (id) idSet.add(id.toString());
+      });
+    });
+    return Array.from(idSet);
+  }
+
+  async notifyDriversOnAssignment(context) {
+    const candidateIds = Array.isArray(context?.driverIds) ? context.driverIds : [];
+    if (candidateIds.length === 0) return;
+
+    // Some dispatcher flows may place a driver account into staffIds.
+    // We notify by role=driver to ensure real drivers always receive assignment alerts.
+    const driverUsers = await User.find({
+      _id: { $in: candidateIds },
+      role: 'driver'
+    })
+      .select('_id')
+      .lean();
+
+    const driverIds = [...new Set(driverUsers.map((u) => u._id.toString()))];
+    if (driverIds.length === 0) return;
+
+    const message = context?.requestCode
+      ? `Bạn vừa được phân công yêu cầu ${context.requestCode}. Vui lòng kiểm tra chi tiết để thực hiện.`
+      : 'Bạn vừa được phân công một yêu cầu mới. Vui lòng kiểm tra chi tiết để thực hiện.';
+
+    const jobs = driverIds.map((driverId) =>
+      NotificationService.createNotification({
+        userId: driverId,
+        title: 'Bạn có yêu cầu mới được phân công',
+        message,
+        type: 'Assignment',
+        ticketId: context?.ticketId || undefined
+      })
+    );
+
+    const results = await Promise.allSettled(jobs);
+    const failed = results.filter((r) => r.status === 'rejected');
+    if (failed.length > 0) {
+      console.error(`[BE] notifyDriversOnAssignment: ${failed.length} notifications failed`);
+    }
   }
 
   /**
@@ -386,9 +434,9 @@ class DispatchService {
         throw new AppError('Some staff not found', 404);
       }
 
-        // ==== PREVENT OVERLAPPING SHIFTS (DOUBLE-BOOKING) ATOMICALLY ====
+      // ==== PREVENT OVERLAPPING SHIFTS (DOUBLE-BOOKING) ATOMICALLY ====
       const targetStaffIds = [...new Set([leaderId, ...driverIds, ...staffIds].filter(Boolean))];
-      
+
       if (targetStaffIds.length > 0 && pickupTime && deliveryTime) {
         const query = {
           status: { $in: ['PENDING', 'ASSIGNED', 'CONFIRMED', 'IN_PROGRESS'] },
@@ -549,7 +597,7 @@ class DispatchService {
         // Determine capacity
         const maxCapacity = vehicle.maxStaff || 2;
         let currentCapacity = 0;
-        
+
         const vehicleDrivers = [];
         const vehicleStaff = [];
         let vehicleLeader = null;
@@ -617,9 +665,9 @@ class DispatchService {
       // Check overflow
       const overflowCount = availableDrivers.length + availableStaff.length + (leaderIdToAssign ? 1 : 0);
       if (overflowCount > 0) {
-          // If we have remaining staff but all cargo vehicles are full,
-          // throw an error to alert the admin that they need more passenger vehicles
-          throw new AppError(`Not enough seats in dispatched vehicles. ${overflowCount} staff members are left without seats. Please assign a passenger vehicle or remove staff.`, 400);
+        // If we have remaining staff but all cargo vehicles are full,
+        // throw an error to alert the admin that they need more passenger vehicles
+        throw new AppError(`Not enough seats in dispatched vehicles. ${overflowCount} staff members are left without seats. Please assign a passenger vehicle or remove staff.`, 400);
       }
 
       console.log(`[BE] allocatePersonnel: Assigned total of ${totalStaff} staff members.`);
@@ -639,6 +687,7 @@ class DispatchService {
 
     const session = await mongoose.startSession();
     let resultAssignment;
+    let driverNotificationContext = null;
 
     try {
       await session.withTransaction(async () => {
@@ -649,7 +698,7 @@ class DispatchService {
             populate: { path: 'surveyDataId' }
           })
           .session(session);
-        
+
         if (!invoice) {
           throw new AppError('Invoice not found', 404);
         }
@@ -676,15 +725,15 @@ class DispatchService {
           const allocResult = await this.allocatePersonnel(fleetAssignments, dispatchData, session);
           assignmentRecords = allocResult.assignmentRecords;
           totalStaff = allocResult.totalStaff;
-          
+
           if (totalStaff < idealStaffCount) {
-             throw new AppError('UNDERSTAFFED_ASSIGNMENT', 400);
+            throw new AppError('UNDERSTAFFED_ASSIGNMENT', 400);
           }
         } catch (error) {
           if ((error.message === 'RESOURCE_CONFLICT' || error.message === 'Staff availability conflict' || error.message === 'UNDERSTAFFED_ASSIGNMENT') && dispatchData.forceProceed !== true) {
             const assignedPickupTime = dispatchData.dispatchTime ? new Date(dispatchData.dispatchTime) : (invoice.scheduledTime || invoice.requestTicketId?.scheduledTime || new Date());
             const duration = dispatchData.estimatedDuration || 480;
-            
+
             const vehicleCount = fleetAssignments ? fleetAssignments.length : 1;
             const rules = {
               requiredDrivers: vehicleCount - 1,
@@ -692,10 +741,10 @@ class DispatchService {
               requiredLeaders: 1,
               pickupLocation: invoice.requestTicketId?.pickup || null
             };
-            
+
             const suggestion = await this.suggestResources(assignedPickupTime, duration, rules);
             const nextSlots = await this.suggestTimeSlots(assignedPickupTime, duration, rules);
-            
+
             const err = new AppError('INSUFFICIENT_RESOURCES', 400);
             err.data = {
               requestedTime: assignedPickupTime,
@@ -717,25 +766,36 @@ class DispatchService {
         assignment.totalStaff = totalStaff;
         assignment.totalCapacity = totalCapacity;
         assignment.status = 'ASSIGNED';
+
+        const explicitDriverIds = this.extractUniqueIdsFromAssignments(assignmentRecords, 'driverIds');
+        const roleCandidateIds = this.extractUniqueIdsFromAssignments(assignmentRecords, 'staffIds');
+        const driverIds = [...new Set([...explicitDriverIds, ...roleCandidateIds])];
+        const requestCode = invoice.requestTicketId?.code || invoice.code || null;
+        driverNotificationContext = {
+          driverIds,
+          ticketId: invoice.requestTicketId?._id || invoice.requestTicketId || null,
+          requestCode
+        };
+
         if (dispatchData.forceProceed === true) {
           assignment.understaffed = true;
-          
+
           if (invoice.requestTicketId?.customerId) {
-              const ticket = invoice.requestTicketId;
-              // We need 'const io = require('../socket/socket').getIO();' or pass null if io is not strictly required.
-              // NotificationService handles standard socket if passed, or we just rely on DB. 
-              // I will leave 'io' undefined as many other places do when they don't have access.
-              try {
-                  await NotificationService.createNotification({
-                      userId: ticket.customerId,
-                      title: "Thông báo về nhân sự đơn hàng",
-                      message: "Đơn hàng của bạn đã được điều phối nhưng có thể thiếu nhân sự so với dự kiến. Vui lòng thông cảm hoặc liên hệ tổng đài.",
-                      type: "WARNING",
-                      ticketId: ticket._id
-                  });
-              } catch (notifErr) {
-                  console.error('[BE] Warning: Failed to send understaffed notification', notifErr);
-              }
+            const ticket = invoice.requestTicketId;
+            // We need 'const io = require('../socket/socket').getIO();' or pass null if io is not strictly required.
+            // NotificationService handles standard socket if passed, or we just rely on DB. 
+            // I will leave 'io' undefined as many other places do when they don't have access.
+            try {
+              await NotificationService.createNotification({
+                userId: ticket.customerId,
+                title: "Thông báo về nhân sự đơn hàng",
+                message: "Đơn hàng của bạn đã được điều phối nhưng có thể thiếu nhân sự so với dự kiến. Vui lòng thông cảm hoặc liên hệ tổng đài.",
+                type: "WARNING",
+                ticketId: ticket._id
+              });
+            } catch (notifErr) {
+              console.error('[BE] Warning: Failed to send understaffed notification', notifErr);
+            }
           }
         }
 
@@ -772,7 +832,7 @@ class DispatchService {
         if (dispatchData.routeId) {
           invoice.routeId = dispatchData.routeId;
         }
-        
+
         let isTimeChanged = false;
         let originalTimeFormatted = "";
         let newTimeFormatted = "";
@@ -781,7 +841,7 @@ class DispatchService {
           const newTime = new Date(dispatchData.dispatchTime);
           const originalTime = invoice.requestTicketId?.scheduledTime || invoice.scheduledTime;
           invoice.scheduledTime = newTime;
-          
+
           if (originalTime && originalTime.getTime() !== newTime.getTime() && invoice.requestTicketId?.customerId) {
             isTimeChanged = true;
             const dayjs = require('dayjs');
@@ -818,7 +878,7 @@ class DispatchService {
         // Phase 2: Log the decision & Run Heuristic Scoring
         const logDurationMs = dispatchData.estimatedDuration ? dispatchData.estimatedDuration * 60000 : 480 * 60000;
         const requestedTime = dispatchData.dispatchTime || invoice.scheduledTime;
-        
+
         // Calculate the "Optimal" ML recommendation (even if manual override occurred)
         const vehicleCount = fleetAssignments ? fleetAssignments.length : 1;
         const optimalSuggestion = await this.suggestResources(requestedTime, logDurationMs / 60000, {
@@ -857,15 +917,11 @@ class DispatchService {
         resultAssignment = assignment;
       });
 
-      // Broadcast resource assignment update for real-time UI synchronization
       try {
-        const { getIo } = require('../utils/socket');
-        const io = getIo();
-        if (io) {
-          io.emit('resources_updated', { invoiceId });
-        }
-      } catch (err) {
-        console.error('[BE] Warning: Failed to emit resources_updated', err.message);
+        await this.notifyDriversOnAssignment(driverNotificationContext);
+      } catch (notificationErr) {
+        // Driver notification is best-effort and must not block dispatch flow.
+        console.error('[BE] createDispatchAssignment: Driver notification failed', notificationErr);
       }
 
       return resultAssignment;
@@ -987,11 +1043,11 @@ class DispatchService {
     if (!location || !location.coordinates || staffList.length === 0) return staffList.slice(0, limit);
 
     const point = turf.point(location.coordinates);
-    
+
     // Distance calculation and sorting based on currentLocation of staff
     const sortedStaff = staffList.map(staff => {
-      const coords = (staff.currentLocation && staff.currentLocation.coordinates && staff.currentLocation.coordinates.length === 2) 
-        ? staff.currentLocation.coordinates 
+      const coords = (staff.currentLocation && staff.currentLocation.coordinates && staff.currentLocation.coordinates.length === 2)
+        ? staff.currentLocation.coordinates
         : [108.2022, 16.0544];
       const staffPoint = turf.point(coords);
       const distance = turf.distance(point, staffPoint, { units: 'kilometers' });
@@ -1010,26 +1066,26 @@ class DispatchService {
     let chosenVehicleType = null;
     let neededTotalStaff = null;
     let ticket = null;
-    
+
     // 1. Run through LogisticsEngine if ticket ID provided
     if (options.requestTicketId) {
       try {
         ticket = await RequestTicket.findById(options.requestTicketId).populate('surveyDataId');
         if (ticket) {
           const surveyData = ticket.surveyDataId ? ticket.surveyDataId : {};
-          
+
           // Use SurveyData items if available, else ticket items
           let rawItems = [];
           if (surveyData && Array.isArray(surveyData.items) && surveyData.items.length > 0) {
             rawItems = surveyData.items;
           } else if (ticket.items) {
-             Object.values(ticket.items.toJSON ? ticket.items.toJSON() : ticket.items).forEach(catItems => {
-               if (Array.isArray(catItems)) {
-                 catItems.forEach(item => {
-                   rawItems.push(item);
-                 });
-               }
-             });
+            Object.values(ticket.items.toJSON ? ticket.items.toJSON() : ticket.items).forEach(catItems => {
+              if (Array.isArray(catItems)) {
+                catItems.forEach(item => {
+                  rawItems.push(item);
+                });
+              }
+            });
           }
 
           // Normalize items format for the engine
@@ -1058,13 +1114,13 @@ class DispatchService {
 
           // Trust Survey Explicit overrides for specific suggestions rather than pure heuristics if they exist and are explicitly set
           if (surveyData.suggestedVehicle && logisticsPlan.vehicles && logisticsPlan.vehicles.length > 0) {
-             // You can choose whether to override entirely or just align types
-             logisticsPlan.vehicles[0].type = surveyData.suggestedVehicle;
+            // You can choose whether to override entirely or just align types
+            logisticsPlan.vehicles[0].type = surveyData.suggestedVehicle;
           }
           if (surveyData.suggestedStaffCount) {
-             logisticsPlan.staffTotal = surveyData.suggestedStaffCount;
+            logisticsPlan.staffTotal = surveyData.suggestedStaffCount;
           }
-          
+
           if (logisticsPlan && logisticsPlan.vehicles && logisticsPlan.vehicles.length > 0) {
             chosenVehicleType = logisticsPlan.vehicles[0].type;
             neededTotalStaff = logisticsPlan.staffTotal;
@@ -1087,7 +1143,7 @@ class DispatchService {
       throw new AppError(`No vehicles available for the capacity: ${chosenVehicleType}`, 400);
     }
     const vehicle = vehicles[0];
-    
+
     let vehicleDistance = null;
     if (pickupLocation && pickupLocation.coordinates && vehicle.currentLocation?.coordinates) {
       const p1 = turf.point(pickupLocation.coordinates);
@@ -1098,18 +1154,18 @@ class DispatchService {
     // 4. Find staff
     // neededCapacity defines the true number of staff required. If not derived from the new engine, fallback to driver+1
     const neededCapacity = neededTotalStaff !== null ? neededTotalStaff : (vehicle.maxStaff || 2);
-    
+
     let duration = 480;
     if (logisticsPlan && logisticsPlan.estimatedMinutes) {
-        duration = logisticsPlan.estimatedMinutes;
+      duration = logisticsPlan.estimatedMinutes;
     }
     const requestedTime = options.dispatchTime || (ticket ? ticket.scheduledTime : null) || new Date();
 
     const rules = {
-        requiredLeaders: 1,
-        requiredHelpers: Math.max(0, neededCapacity - 1),
-        requiredDrivers: 0,
-        pickupLocation
+      requiredLeaders: 1,
+      requiredHelpers: Math.max(0, neededCapacity - 1),
+      requiredDrivers: 0,
+      pickupLocation
     };
 
     const suggested = await this.suggestResources(requestedTime, duration, rules);

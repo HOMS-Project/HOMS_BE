@@ -63,8 +63,12 @@ class RequestTicketService {
       customerId,
       moveType: data.moveType,
       rentalDetails: data.rentalDetails || undefined,
+      // If frontend supplied a pricing snapshot (from customer's confirmed estimate), persist it
+      // so customer order page can show totalPrice immediately instead of "Đang cập nhật..."
+      pricing: data.pricing || undefined,
       pickup: data.pickup,
       delivery: data.delivery,
+      distanceKm: data.distanceKm || 0,
       scheduledTime: data.scheduledTime || null,
       status: 'CREATED',
       notes: data.notes || ''
