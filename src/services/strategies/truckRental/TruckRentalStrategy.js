@@ -25,9 +25,9 @@ class TruckRentalStrategy extends BaseStrategy {
   getAllowedTransitions(currentStatus) {
     // TRUCK_RENTAL skips survey — goes to district dispatcher review after HD approval
     const transitions = {
-      CREATED:           ['WAITING_REVIEW', 'CANCELLED'],
+      CREATED:           ['WAITING_REVIEW', 'QUOTED', 'CANCELLED'],
       WAITING_REVIEW:    ['QUOTED', 'CANCELLED'],
-      ASSIGNMENT_FAILED: ['WAITING_REVIEW', 'CANCELLED'], // Head dispatcher reassigns manually
+      ASSIGNMENT_FAILED: ['WAITING_REVIEW', 'QUOTED', 'CANCELLED'], // Head dispatcher reassigns manually
       QUOTED:            ['ACCEPTED', 'CANCELLED'],
       ACCEPTED:          ['CONVERTED', 'CANCELLED'],
       CONVERTED:         [],
@@ -74,15 +74,16 @@ class TruckRentalStrategy extends BaseStrategy {
             carryMeter: 0,
             floors: 0,
             hasElevator: false,
-            needsAssembling: false,
-            needsPacking: false,
+            needsAssembling: data.rentalDetails?.needsAssembling || false,
+            needsPacking: data.rentalDetails?.needsPacking || false,
             insuranceRequired: false,
             declaredValue: 0,
             items: data.items,
             // the rental hours usually required in TRUCK_RENTAL
             estimatedHours: data.rentalDetails?.rentalDurationHours || estimate.estimatedHours || 0,
             rentalDurationHours: data.rentalDetails?.rentalDurationHours || 1,
-            withDriver: data.rentalDetails?.withDriver || false
+            withDriver: true,
+            extraStaffCount: data.rentalDetails?.extraStaffCount || 0
           };
 
           // Override fallback staff for truck rental?
@@ -117,50 +118,16 @@ class TruckRentalStrategy extends BaseStrategy {
 
   async handleApproval(ticket, approverId, additionalData, io) {
     await TicketStateMachine.transition(ticket, 'WAITING_REVIEW');
-
-    const assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
-
-    if (assignedDispatcherId) {
-      // Auto-assignment successful — district dispatcher will review AI data and quote
-      ticket.dispatcherId = assignedDispatcherId;
-      await ticket.save();
-
-      await NotificationService.createNotification(
-        {
-          userId: ticket.customerId,
-          title: 'Đơn hàng đã được tiếp nhận',
-          message: 'Yêu cầu của bạn đã được xác nhận và đang được xử lý bởi nhân viên điều phối.',
-          type: 'System',
-          ticketId: ticket._id
-        },
-        io
-      );
-    } else {
-      // Auto-assignment failed — escalate to Head Dispatcher
-      await TicketStateMachine.transition(ticket, 'ASSIGNMENT_FAILED', {
-        comment: 'Auto assignment failed for requested driver/porters.'
-      });
-
-      // Notify Head Dispatcher (admins / isGeneral dispatchers)
-      const headDispatchers = await User.find({
-        role: 'dispatcher',
-        'dispatcherProfile.isGeneral': true
-      }).select('_id');
-
-      for (const hd of headDispatchers) {
-        await NotificationService.createNotification(
-          {
-            userId: hd._id,
-            title: `Phân công tự động thất bại — Đơn #${ticket.code}`,
-            message: 'Tất cả nhân viên điều phối đang quá tải. Vui lòng phân công thủ công.',
-            type: 'System',
-            ticketId: ticket._id
-          },
-          io
-        );
-      }
-    }
-
+    await NotificationService.createNotification(
+      {
+        userId: ticket.customerId,
+        title: 'Đơn hàng đã được tiếp nhận',
+        message: 'Yêu cầu của bạn đã được xác nhận. Chúng tôi sẽ sớm gửi báo giá chi tiết.',
+        type: 'System',
+        ticketId: ticket._id
+      },
+      io
+    );
     return ticket;
   }
 }

@@ -48,13 +48,18 @@ class PricingCalculationService {
       suggestedVehicle,
       rentalDurationHours,
       estimatedHours,
-      withDriver,
+      withDriver = true,
       suggestedStaffCount = 1,
-      distanceKm = 0
+      extraStaffCount = 0,
+      distanceKm = 0,
+      needsAssembling = false,
+      needsPacking = false
     } = surveyData;
 
     const duration = rentalDurationHours || estimatedHours || 1;
-    const driverIncluded = withDriver !== null ? withDriver : suggestedStaffCount > 1;
+    // For TRUCK_RENTAL, suggestedStaffCount includes the driver.
+    // We only charge for helpers (extra staff).
+    const totalStaff = Math.max(0, (Number(suggestedStaffCount) || 1) - 1);
 
     const vehicleConfig = priceList.vehiclePricing?.find(
       (v) => v.vehicleType === suggestedVehicle
@@ -66,21 +71,20 @@ class PricingCalculationService {
     const truckRentalFee = (vehicleConfig.pricePerHour || 0) * duration;
 
     let driverFee = 0;
-    if (driverIncluded) {
-      const laborConfig = priceList.laborCost || {};
-      driverFee =
-        (laborConfig.pricePerHourPerPerson || 0) * duration +
-        (laborConfig.basePricePerPerson || 0);
-    }
+    const laborConfig = priceList.laborCost || {};
+    driverFee =
+      ((laborConfig.pricePerHourPerPerson || 0) * duration +
+      (laborConfig.basePricePerPerson || 0)) * totalStaff;
 
-    let kmFee = 0;
-    if (distanceKm > 0 && vehicleConfig.limitKm) {
-      kmFee =
-        (vehicleConfig.basePriceForFirstXKm || 0) +
-        Math.max(0, distanceKm - vehicleConfig.limitKm) * (vehicleConfig.pricePerNextKm || 0);
-    }
+    // For TRUCK_RENTAL, we only charge for duration and extra labor, ignore distance fee.
+    const kmFee = 0;
 
-    const subtotal = truckRentalFee + driverFee + kmFee;
+    // New: Additional services for Truck Rental
+    const addServices = priceList.additionalServices || {};
+    const assemblingFee = needsAssembling ? addServices.assemblingFee || 0 : 0;
+    const packingFee = needsPacking ? addServices.packingFee || 0 : 0;
+
+    const subtotal = truckRentalFee + driverFee + kmFee + assemblingFee + packingFee;
     const breakdown = {
       baseTransportFee: 0,
       vehicleFee: truckRentalFee + kmFee,
@@ -89,11 +93,13 @@ class PricingCalculationService {
       carryFee: 0,
       floorFee: 0,
       distanceFee: 0,
-      assemblingFee: 0,
-      packingFee: 0,
+      assemblingFee: assemblingFee,
+      packingFee: packingFee,
       insuranceFee: 0,
       managementFee: 0,
-      estimatedHours: duration
+      estimatedHours: duration,
+      suggestedVehicle: suggestedVehicle,
+      suggestedStaffCount: Number(suggestedStaffCount) || 1
     };
 
     const taxRate = priceList.taxRate !== undefined ? priceList.taxRate : 0.1;

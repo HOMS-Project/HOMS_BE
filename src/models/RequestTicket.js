@@ -23,6 +23,9 @@ const requestTicketSchema = new mongoose.Schema({
   rentalDetails: {
     truckType: String,
     rentalDurationHours: Number,
+    extraStaffCount: { type: Number, default: 0 },
+    needsPacking: { type: Boolean, default: false },
+    needsAssembling: { type: Boolean, default: false },
     withDriver: { type: Boolean, default: false },
     withHelper: { type: Boolean, default: false }
   },
