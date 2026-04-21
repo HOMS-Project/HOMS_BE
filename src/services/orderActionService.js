@@ -14,6 +14,8 @@ const PricingData = require('../models/PricingData');
 const Promotion = require('../models/Promotion');
 const RequestTicket = require('../models/RequestTicket');
 const ContractService = require('../services/admin/contractService'); 
+const RecommendationService = require('./recommendationService');
+const PricingAdjustmentService = require('./pricingAdjustmentService');
 const GOONG_API_KEY = process.env.GOONG_API_KEY;
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const MAX_AI_DISCOUNT_PERCENT = 15; 
@@ -95,20 +97,27 @@ function computeEstimatedHours({ distanceKm = 0, floors = 0, suggestedStaffCount
 }
 
 /** Chọn loại xe và số nhân viên phù hợp dựa trên khối lượng/thể tích */
-function suggestVehicleAndStaff(vol, wgt,moveType) {
-   let staffCount = 2; 
+
+function suggestVehicleAndStaff(vol, wgt, moveType, floors = 0, hasElevator = false) {
+  // 1. Tính loại xe
+  let vehicleType = '500KG';
+  if (wgt > 1000 || vol > 5) vehicleType = '1.5TON';
+  else if (wgt > 500 || vol > 2.5) vehicleType = '1TON';
+  if (wgt > 1500 || vol > 8) vehicleType = '2TON';
+
+  // 2. Tính số nhân viên
+  let staffCount = 2; 
   if (moveType === 'TRUCK_RENTAL') {
     staffCount = 1; // Chỉ có 1 tài xế, không bốc xếp
-  }  else if (moveType === 'SPECIFIC_ITEMS') {
+  } else if (moveType === 'SPECIFIC_ITEMS') {
     staffCount = 2; // Tài xế + 1 phụ khiêng đồ nặng
   } else {
-    if (vol > 10 || wgt > 1500) staffCount = 3;
-    else if (vol > 6  || wgt > 1000) staffCount = 2;
+    if (vol > 5 || wgt > 500) staffCount += 1;
+    if (floors > 2 && !hasElevator) staffCount += 1; 
+    if (staffCount > 5) staffCount = 5; 
   }
-  if (vol > 10 || wgt > 1500) return { vehicleType: '2TON',   staffCount: 3 };
-  if (vol > 6  || wgt > 1000) return { vehicleType: '1.5TON', staffCount: 2 };
-  if (vol > 3  || wgt > 500)  return { vehicleType: '1TON',   staffCount: 2 };
-  return { vehicleType: '500KG', staffCount: 2 };
+  
+  return { vehicleType, staffCount };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -155,11 +164,10 @@ async function handleCalculatePrice(aiAction, session) {
   }
 
   // 4. Xe & nhân viên
-  const vol = session.visionVolume || 1;
+   const vol = session.visionVolume || 1;
   const wgt = session.visionWeight || 100;
-  const { vehicleType: tempVehicleType, staffCount: tempStaffCount } = suggestVehicleAndStaff(vol, wgt,moveType);
-  const floors         = Number(data.floors) || 0;
-  const estimatedHours = computeEstimatedHours({ distanceKm, floors, suggestedStaffCount: tempStaffCount,moveType });
+  const floors = Number(data.floors) || 0;
+  const { vehicleType: tempVehicleType, staffCount: tempStaffCount } = suggestVehicleAndStaff(vol, wgt, moveType, floors, data.hasElevator);
 
   // 5. Validate lộ trình
   const routeValidation = await RouteValidationService.validateRoute(null, {
@@ -190,7 +198,6 @@ async function handleCalculatePrice(aiAction, session) {
     scheduledTime:    pickupTime,
     suggestedVehicle: tempVehicleType,
     suggestedStaffCount: tempStaffCount,
-    estimatedHours,
     totalActualWeight: wgt,
     totalActualVolume: vol,
     insuranceRequired: false,
@@ -201,11 +208,22 @@ async function handleCalculatePrice(aiAction, session) {
   session.surveyDataCache = surveyData;
 
   // 7. Tính giá
-  let finalPrice = 0;
+   let finalPrice = 0;
   try {
-    const priceList   = await PricingCalculationService.getActivePriceList();
-    const priceResult = await PricingCalculationService.calculatePricing(surveyData, priceList, moveType);
-    finalPrice                   = priceResult.totalPrice;
+    const priceList = await PricingCalculationService.getActivePriceList();
+    const basePricing = await PricingCalculationService.calculatePricing(surveyData, priceList, moveType);  
+    let recommendation = null;
+    try {
+      const location = data.from || 'Đà Nẵng';
+      recommendation = await RecommendationService.getRecommendations(pickupTime, location, distanceKm);
+    } catch (recError) {
+      console.error('Recommendation Error:', recError.message);
+    }
+    const priceResult = recommendation 
+      ? await PricingAdjustmentService.applyAdjustments(basePricing, recommendation)
+      : basePricing;
+
+    finalPrice                    = priceResult.totalPrice;
     session.calculatedPriceResult = priceResult;
     session.calculatedBreakdown   = priceResult.breakdown;
   } catch (pricingErr) {
@@ -386,7 +404,7 @@ async function handleCreateOrder(aiAction, session, facebookId) {
     await newSurvey.save({ session: dbSession });
 
     // 4. Tạo PricingData
-    const newPricing = new PricingData({
+     const newPricing = new PricingData({
       _id: pricingDataObjectId,
       requestTicketId: newTicket._id,
       surveyDataId: newSurvey._id,
@@ -394,7 +412,8 @@ async function handleCreateOrder(aiAction, session, facebookId) {
       totalPrice: finalTotalPrice,
       subtotal: finalSubtotal,
       tax: finalTax,
-      breakdown: finalBreakdown
+      breakdown: finalBreakdown,
+      dynamicAdjustment: priceCache?.dynamicAdjustment || null
     });
     await newPricing.save({ session: dbSession });
 

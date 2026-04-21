@@ -14,9 +14,11 @@ const FRONTEND_URL = process.env.FRONTEND_URL;
 // ==============================================================
 function buildDynamicSystemPrompt(session) {
     const currentMoveType = session.surveyDataCache?.movingType || 'Chưa chọn (BẮT BUỘC HỎI KHÁCH)';
+    const today = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
   // Lấy dữ liệu đã thu thập bơm vào Prompt để dù có cắt history AI cũng không quên
   const collectedData = `
     [TRẠNG THÁI HIỆN TẠI CỦA KHÁCH HÀNG - BẮT BUỘC GHI NHỚ]:
+      [THÔNG TIN HỆ THỐNG]: Hôm nay là ${today}.
     - Lựa chọn dịch vụ hiện tại: ${currentMoveType}
     - Đồ đạc đã quét/nhận diện: ${session.visionItems?.length ? JSON.stringify(session.visionItems) : 'Chưa có'}
     - Đã báo giá chưa: ${session.calculatedPriceResult ? 'Đã báo giá' : 'Chưa báo giá'}
@@ -73,6 +75,10 @@ function buildDynamicSystemPrompt(session) {
     BƯỚC 3: Lấy địa chỉ ĐI và ĐẾN cụ thể tại Đà Nẵng.
     BƯỚC 4: Hỏi địa hình (Lầu/Trệt, hẻm, thang máy). Nếu 
     BƯỚC 5: Lấy thời gian chuyển. Gom tóm tắt xác nhận.
+    TRƯỚC KHI GỌI ACTION TÍNH GIÁ, BẠN BẮT BUỘC PHẢI HỎI KHÁCH:
+1. Xe tải có vào tận nơi được không? (Khoảng cách đi bộ từ xe vào nhà bao nhiêu mét?)
+2. Có cần tháo lắp giường tủ hay đóng gói đồ đạc không?
+Nếu thiếu 1 trong các thông tin trên, tuyệt đối KHÔNG trả về JSON CALCULATE_PRICE, hãy đặt câu hỏi cho khách.
     BƯỚC 6: Tính giá. Trả về đúng JSON dưới đây:
     \`\`\`json
     {
