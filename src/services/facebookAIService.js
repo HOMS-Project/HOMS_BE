@@ -14,7 +14,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL;
 // ==============================================================
 function buildDynamicSystemPrompt(session) {
     const currentMoveType = session.surveyDataCache?.movingType || 'Chưa chọn (BẮT BUỘC HỎI KHÁCH)';
-    const today = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const today = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'full', timeStyle: 'long' }) + ' (GMT+7)';
   // Lấy dữ liệu đã thu thập bơm vào Prompt để dù có cắt history AI cũng không quên
   const collectedData = `
     [TRẠNG THÁI HIỆN TẠI CỦA KHÁCH HÀNG - BẮT BUỘC GHI NHỚ]:
@@ -87,7 +87,8 @@ Nếu thiếu 1 trong các thông tin trên, tuyệt đối KHÔNG trả về JS
       "data": { 
         "from": "Địa chỉ đi", "to": "Địa chỉ đến", "floors": 0, 
         "hasElevator": false, "carryMeter": 0, "needsPacking": false, 
-        "needsAssembling": false, "movingTime": "2024-12-01T08:00:00",
+        "needsAssembling": false, 
+        "movingTime": "2024-12-01T08:00:00+07:00",
         "items": [{ "name": "Tủ lạnh", "quantity": 1 }]
       }
     }
