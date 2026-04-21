@@ -91,7 +91,7 @@ exports.completeSurvey = async (req, res, next) => {
     }
 
     // ✅ Validate bắt buộc (an toàn undefined)
-    if (!surveyData?.suggestedVehicle) {
+    if (!surveyData?.suggestedVehicle && (!surveyData?.suggestedVehicles || surveyData.suggestedVehicles.length === 0)) {
       throw new AppError('Thiếu loại xe đề xuất', 400);
     }
 
