@@ -20,4 +20,7 @@ router.post('/from-ticket/:requestTicketId', authenticate, invoiceController.cre
 
 router.put('/:invoiceId/cancel', authenticate, invoiceController.cancelInvoice);
 
+// Scenario B: Customer confirms or rejects a dispatcher-proposed dispatch reschedule
+router.patch('/:invoiceId/confirm-reschedule', authenticate, authorize('customer'), invoiceController.confirmReschedule);
+
 module.exports = router;
