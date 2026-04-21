@@ -77,11 +77,13 @@ exports.calculatePricing = async (req, res, next) => {
     const rental = body.rentalDetails || {};
     const surveyData = {
       suggestedVehicle: rental.truckType || body.suggestedVehicle || null,
-      rentalDurationHours: rental.rentalDurationHours || body.rentalDurationHours || null,
-      withDriver: rental.withDriver !== undefined ? rental.withDriver : body.withDriver,
-      suggestedStaffCount: body.suggestedStaffCount || 1,
-      distanceKm: body.distanceKm || 0,
-      estimatedHours: body.estimatedHours || null,
+      rentalDurationHours: Number(rental.rentalDurationHours) || Number(body.rentalDurationHours) || 2,
+      withDriver: rental.withDriver !== undefined ? rental.withDriver : true,
+      // BE expects suggestedStaffCount to include the driver (extra + 1)
+      suggestedStaffCount: (Number(rental.extraStaffCount) || 0) + 1,
+      needsPacking: rental.needsPacking || false,
+      needsAssembling: rental.needsAssembling || false,
+      distanceKm: Number(body.distanceKm) || 0,
       scheduledTime: body.movingDate || body.scheduledTime || null
     };
 
