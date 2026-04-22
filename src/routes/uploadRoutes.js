@@ -30,4 +30,11 @@ router.post(
   uploadController.uploadSurveyMedia
 );
 
+router.post(
+  '/chat-media',
+  authenticate,
+  upload.any(),
+  uploadController.uploadChatMedia
+);
+
 module.exports = router;

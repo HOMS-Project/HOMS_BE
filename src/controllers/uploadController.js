@@ -52,8 +52,25 @@ const uploadSurveyMedia = async (req, res) => {
   }
 };
 
+const uploadChatMedia = async (req, res) => {
+  try {
+    const files = req.files || [];
+    if (!files.length) {
+      return res.status(400).json({ success: false, message: 'No files provided for upload.' });
+    }
+
+    const uploadedObjects = await cloudinaryService.uploadMultipleFiles(files, 'chat-media');
+
+    return res.status(200).json({ success: true, data: uploadedObjects });
+  } catch (err) {
+    console.error('uploadChatMedia error', err);
+    return res.status(500).json({ success: false, message: err.message || 'Failed to upload media to Cloudinary.' });
+  }
+};
+
 module.exports = {
   getPresignUrl,
   processToHLS,
-  uploadSurveyMedia
+  uploadSurveyMedia,
+  uploadChatMedia
 };
