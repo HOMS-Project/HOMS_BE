@@ -4,8 +4,6 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 
 const User = require('../models/User');
-const ContractTemplate = require('../models/ContractTemplate');
-const InvoiceService = require('./invoiceService');
 const GeocodeService = require('./geocodeService');
 const PricingCalculationService = require('./pricingCalculationService');
 const RouteValidationService = require('./routeValidationService');
@@ -13,12 +11,9 @@ const SurveyData = require('../models/SurveyData');
 const PricingData = require('../models/PricingData');
 const Promotion = require('../models/Promotion');
 const RequestTicket = require('../models/RequestTicket');
-const ContractService = require('../services/admin/contractService'); 
-const RecommendationService = require('./recommendationService');
-const PricingAdjustmentService = require('./pricingAdjustmentService');
+const AutoAssignmentService = require('./AutoAssignmentService')
+const SurveyService = require('./surveyService');
 const GOONG_API_KEY = process.env.GOONG_API_KEY;
-const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
-const MAX_AI_DISCOUNT_PERCENT = 15; 
 // ─────────────────────────────────────────────────────────────
 // GOONG / OSRM HELPERS
 // ─────────────────────────────────────────────────────────────
@@ -79,46 +74,10 @@ async function getRouteDistance(originCoords, destCoords) {
 }
 
 
-function computeEstimatedHours({ distanceKm = 0, floors = 0, suggestedStaffCount = 2, moveType }) {
-  let hours = 2;
-  
-  if (moveType === 'TRUCK_RENTAL' || moveType === 'SPECIFIC_ITEMS') {
-    hours = 1; 
-  }
 
-  hours += distanceKm * 0.1;
 
-  if (moveType === 'FULL_HOUSE') {
-    hours += floors * 0.5;
-    if (suggestedStaffCount <= 2) hours += 1;
-  }
-  
-  return Math.ceil(hours);
-}
 
-/** Chọn loại xe và số nhân viên phù hợp dựa trên khối lượng/thể tích */
 
-function suggestVehicleAndStaff(vol, wgt, moveType, floors = 0, hasElevator = false) {
-  // 1. Tính loại xe
-  let vehicleType = '500KG';
-  if (wgt > 1000 || vol > 5) vehicleType = '1.5TON';
-  else if (wgt > 500 || vol > 2.5) vehicleType = '1TON';
-  if (wgt > 1500 || vol > 8) vehicleType = '2TON';
-
-  // 2. Tính số nhân viên
-  let staffCount = 2; 
-  if (moveType === 'TRUCK_RENTAL') {
-    staffCount = 1; // Chỉ có 1 tài xế, không bốc xếp
-  } else if (moveType === 'SPECIFIC_ITEMS') {
-    staffCount = 2; // Tài xế + 1 phụ khiêng đồ nặng
-  } else {
-    if (vol > 5 || wgt > 500) staffCount += 1;
-    if (floors > 2 && !hasElevator) staffCount += 1; 
-    if (staffCount > 5) staffCount = 5; 
-  }
-  
-  return { vehicleType, staffCount };
-}
 
 // ─────────────────────────────────────────────────────────────
 // ACTION: TÍNH GIÁ
@@ -133,16 +92,19 @@ function suggestVehicleAndStaff(vol, wgt, moveType, floors = 0, hasElevator = fa
 async function handleCalculatePrice(aiAction, session) {
   const data = aiAction.data;
   const moveType = aiAction.movingType || 'FULL_HOUSE'; 
+
   if (!data.from || !data.to || data.from === 'địa chỉ đi') {
     return '[HỆ_THỐNG_BÁO_LỖI]: Bạn chưa lấy đủ địa chỉ ĐI và ĐẾN chi tiết. Hãy khéo léo xin lỗi và hỏi lại khách hàng ngay lập tức!';
   }
- if (!data.movingTime) {
+  if (!data.movingTime) {
     return '[HỆ_THỐNG_BÁO_LỖI]: Thiếu thông tin thời gian chuyển. Hãy hỏi khách hàng muốn chuyển vào ngày giờ nào để kiểm tra kẹt xe/cấm tải.';
   }
-    let pickupTime = new Date(data.movingTime);
+  
+  let pickupTime = new Date(data.movingTime);
   if (isNaN(pickupTime.getTime()) || pickupTime < new Date(Date.now() - 3600000)) {
     return '[HỆ_THỐNG_BÁO_LỖI]: Thời gian chuyển không hợp lệ hoặc nằm trong quá khứ. Xin hãy xác nhận lại thời gian chính xác với khách.';
   }
+
   console.log('🔄 Đang tính giá bằng API thật...', data);
 
   // 1. Lấy tọa độ
@@ -157,93 +119,147 @@ async function handleCalculatePrice(aiAction, session) {
   const pickupDistrict   = await GeocodeService.reverseGeocode(fromCoords.lat, fromCoords.lng);
   const deliveryDistrict = await GeocodeService.reverseGeocode(toCoords.lat, toCoords.lng);
 
-  // 3. Thời gian chuyển
-  if (data.movingTime) {
-    const parsed = new Date(data.movingTime);
-    if (!isNaN(parsed.getTime())) pickupTime = parsed;
+
+  let suggestedVehicle = '1TON'; 
+  let suggestedStaffCount = 1;
+  let finalActualWeight = 0;
+  let finalActualVolume = 0;
+  let routeWarnings = [];
+const ITEM_DICTIONARY = {
+  "tủ lạnh": { weight: 60, volume: 0.8 },
+  "tủ lạnh 4 cánh": { weight: 120, volume: 1.5 },
+  "máy giặt": { weight: 40, volume: 0.4 },
+  "giường": { weight: 50, volume: 1.0 },
+  "nệm": { weight: 20, volume: 1.2 },
+  "tủ quần áo": { weight: 80, volume: 2.0 },
+  "sofa": { weight: 60, volume: 1.5 },
+  "thùng carton": { weight: 15, volume: 0.1 },
+  "xe máy": { weight: 100, volume: 1.0 }
+};
+
+  let rawItems = [...(session.visionItems || []), ...(data.items || [])];
+let finalItems = rawItems.map(item => {
+  let itemName = (item.name || '').toLowerCase();
+  
+  let matchedRule = Object.keys(ITEM_DICTIONARY).find(key => itemName.includes(key));
+  let defaultWeight = matchedRule ? ITEM_DICTIONARY[matchedRule].weight : 20;
+  let defaultVolume = matchedRule ? ITEM_DICTIONARY[matchedRule].volume : 0.2;
+
+  const weight = Number(item.actualWeight) > 0 ? Number(item.actualWeight) : defaultWeight; 
+  const volume = Number(item.actualVolume) > 0 ? Number(item.actualVolume) : defaultVolume;
+  
+  return {
+    name: item.name || 'Đồ đạc',
+    quantity: Number(item.quantity) || 1,
+    actualWeight: weight * (Number(item.quantity) || 1), 
+    actualVolume: volume * (Number(item.quantity) || 1)
+  };
+});
+   let totalCalculatedWeight = finalItems.reduce((sum, item) => sum + item.actualWeight, 0);
+  let totalCalculatedVolume = finalItems.reduce((sum, item) => sum + item.actualVolume, 0);
+   if (moveType === 'FULL_HOUSE') {
+    if (totalCalculatedWeight < 300) totalCalculatedWeight = 300;
+    if (totalCalculatedVolume < 3) totalCalculatedVolume = 3;
+  }
+  const floors = Number(data.floors) || 0;
+
+  if (moveType === 'TRUCK_RENTAL') {
+  
+    suggestedVehicle = data.suggestedVehicle || '1TON';
+    suggestedStaffCount = Number(data.suggestedStaffCount) || 1; 
+  } else {
+  
+    const estimation = await SurveyService.estimateResources(
+      finalItems, distanceKm, floors, data.hasElevator
+    );
+    suggestedVehicle = estimation.suggestedVehicle;
+    suggestedStaffCount = estimation.suggestedStaffCount;
+    finalActualWeight = Number(data.totalWeight) > 0 ? Number(data.totalWeight) : estimation.totalWeight;
+    finalActualVolume = estimation.totalVolume;
+    routeWarnings = estimation.routeWarnings || [];
   }
 
-  // 4. Xe & nhân viên
-   const vol = session.visionVolume || 1;
-  const wgt = session.visionWeight || 100;
-  const floors = Number(data.floors) || 0;
-  const { vehicleType: tempVehicleType, staffCount: tempStaffCount } = suggestVehicleAndStaff(vol, wgt, moveType, floors, data.hasElevator);
-
-  // 5. Validate lộ trình
+  // 4. Validate lộ trình (Cấm tải, khung giờ)
   const routeValidation = await RouteValidationService.validateRoute(null, {
-    vehicleType:    tempVehicleType,
-    totalWeight:    wgt,
-    totalVolume:    vol,
+    vehicleType: suggestedVehicle,
+    totalWeight: finalActualWeight,
+    totalVolume: finalActualVolume,
     pickupTime,
     pickupAddress:  data.from,
     deliveryAddress: data.to
   });
 
-  // 6. Build surveyData
-  const finalItems = (session.visionItems && session.visionItems.length > 0)
-    ? session.visionItems
-    : (data.items || []);
 
   const surveyData = {
-     movingType: moveType,
-    pickup:           { address: data.from,  coordinates: fromCoords,  district: pickupDistrict },
-    delivery:         { address: data.to,    coordinates: toCoords,    district: deliveryDistrict },
+    movingType: moveType,
+    pickup: { address: data.from, coordinates: fromCoords, district: pickupDistrict },
+    delivery: { address: data.to, coordinates: toCoords, district: deliveryDistrict },
     distanceKm,
-    carryMeter:       Number(data.carryMeter) || 0,
+    carryMeter: Number(data.carryMeter) || 0,
     floors,
-    hasElevator:      data.hasElevator      || false,
-    needsAssembling:  data.needsAssembling  || false,
-    needsPacking:     data.needsPacking     || false,
-    items:            finalItems,
-    scheduledTime:    pickupTime,
-    suggestedVehicle: tempVehicleType,
-    suggestedStaffCount: tempStaffCount,
-    totalActualWeight: wgt,
-    totalActualVolume: vol,
+    hasElevator: data.hasElevator || false,
+    needsAssembling: data.needsAssembling || false,
+    needsPacking: data.needsPacking || false,
+    items: finalItems,
+    scheduledTime: pickupTime,
+    
+
+    suggestedVehicle,
+    suggestedStaffCount,
+    rentalDurationHours: Number(data.rentalDurationHours) || 1, 
+    estimatedHours: Number(data.rentalDurationHours) || undefined,
+    
+    totalActualWeight: finalActualWeight,
+    totalActualVolume: finalActualVolume,
     insuranceRequired: false,
-    declaredValue:     0
+    declaredValue: 0
   };
 
-  // Lưu cache để tạo đơn sau
+  
   session.surveyDataCache = surveyData;
 
-  // 7. Tính giá
-   let finalPrice = 0;
+  let finalPrice = 0;
   try {
-    const priceList = await PricingCalculationService.getActivePriceList();
-    const basePricing = await PricingCalculationService.calculatePricing(surveyData, priceList, moveType);  
-    let recommendation = null;
-    try {
-      const location = data.from || 'Đà Nẵng';
-      recommendation = await RecommendationService.getRecommendations(pickupTime, location, distanceKm);
-    } catch (recError) {
-      console.error('Recommendation Error:', recError.message);
-    }
-    const priceResult = recommendation 
-      ? await PricingAdjustmentService.applyAdjustments(basePricing, recommendation)
-      : basePricing;
 
-    finalPrice                    = priceResult.totalPrice;
+    const priceList = await PricingCalculationService.getActivePriceList();
+    if (!priceList) throw new Error('Không có bảng giá active');
+
+
+    const priceResult = await PricingCalculationService.calculatePricing(
+      surveyData,
+      priceList,
+      moveType
+    );
+
+    finalPrice = priceResult.totalPrice;
     session.calculatedPriceResult = priceResult;
     session.calculatedBreakdown   = priceResult.breakdown;
   } catch (pricingErr) {
     console.error('[Pricing Error]', pricingErr.message);
     session.calculatedBreakdown = null;
+    return `[HỆ_THỐNG_BÁO_LỖI]: Lỗi hệ thống tính giá (${pricingErr.message}). Xin lỗi khách và báo kỹ thuật.`;
   }
 
-  // 8. Cảnh báo lộ trình
+  // 7. Cảnh báo lộ trình
   let routeAlertMsg = '';
-  if (routeValidation.warnings?.length > 0) {
-    routeAlertMsg += `\n[CẢNH BÁO LỘ TRÌNH]: ${routeValidation.warnings.join(' | ')}. Khéo léo nhắc nhở khách hàng về khả năng chậm trễ.`;
+  if (routeWarnings && routeWarnings.length > 0) {
+    routeAlertMsg += `\n[LƯU Ý XE]: ${routeWarnings.join(' ')}`;
   }
-  if (routeValidation.violations?.length > 0) {
-    routeAlertMsg += `\n[VI PHẠM QUY ĐỊNH]: ${routeValidation.violations.join(' | ')}. Hãy báo khách hàng rằng khung giờ này bị cấm tải hoặc xe không vào được, đề nghị đổi giờ.`;
+  if (routeValidation && routeValidation.violations?.length > 0) {
+    routeAlertMsg += `\n[VI PHẠM QUY ĐỊNH]: ${routeValidation.violations.join(' | ')}. Báo khách hàng khung giờ này cấm tải hoặc xe không vào được, đề nghị đổi giờ.`;
   }
 
-  return (
-    `[GIÁ_THỰC_TẾ_TỪ_HỆ_THỐNG]: Tổng chi phí là ${finalPrice.toLocaleString('vi-VN')} VNĐ ` +
-    `(Khoảng cách: ${distanceKm}km).${routeAlertMsg} Hãy báo giá này cho khách!`
-  );
+ if (moveType === 'TRUCK_RENTAL') {
+    return (
+      `[GIÁ_THỰC_TẾ_TỪ_HỆ_THỐNG]: Mức giá TẠM TÍNH cho dịch vụ Thuê xe tải là ${finalPrice.toLocaleString('vi-VN')} VNĐ (Khoảng cách: ${distanceKm}km).${routeAlertMsg}\n\n` +
+      `Hãy báo giá này cho khách một cách tự nhiên. Dặn khách đây là giá thuê xe tạm tính, khi chốt đơn bộ phận điều phối sẽ gọi lại để chốt chính xác thời gian và xác nhận loại xe phù hợp ạ.`
+    );
+  } else {
+    return (
+      `[GIÁ_THỰC_TẾ_TỪ_HỆ_THỐNG]: Dựa trên hình ảnh và mô tả, mức giá TẠM TÍNH là ${finalPrice.toLocaleString('vi-VN')} VNĐ (Khoảng cách: ${distanceKm}km).${routeAlertMsg}\n\n` +
+      `Hãy báo giá này cho khách và nói rõ: "Dạ đây là chi phí tạm tính dựa trên đồ đạc anh/chị cung cấp. Khi anh/chị chốt đơn, điều phối viên bên em sẽ gọi lại chốt danh sách đồ chính xác 1 lần nữa để đảm bảo không phát sinh phí cho mình ạ!".`
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -290,16 +306,16 @@ async function handleRequestDiscount(aiAction) {
  * @returns {string} - Tin nhắn cuối gửi cho khách (không qua AI nữa)
  */
 async function handleCreateOrder(aiAction, session, facebookId) {
-  const rawEmailText = aiAction.email?.toLowerCase() || '';
+ const extractedEmail = aiAction.email || (aiAction.data && aiAction.data.email) || '';  
+const rawEmailText = extractedEmail.toLowerCase(); 
 
- 
-  const emailMatch = rawEmailText.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/);
-  
-  const email = emailMatch ? emailMatch[0] : null;
-
-
+const emailMatch = rawEmailText.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/);
+const email = emailMatch ? emailMatch[0] : null;
+ console.log('Email nhận được từ AI:', extractedEmail, '-> Email sau khi RegEx:', email);
+console.log(email);
   if (!email) {
     return '[HỆ_THỐNG_BÁO_LỖI]: Email không hợp lệ hoặc chưa được cung cấp. Hãy xin lại email chính xác từ khách hàng!';
+    
   }
 
    if (!session.surveyDataCache) {
@@ -352,12 +368,41 @@ async function handleCreateOrder(aiAction, session, facebookId) {
   // BƯỚC 2: CHUẨN BỊ DỮ LIỆU ĐỌC 
   // ─────────────────────────────────────────────────────────────
   const priceCache = session.calculatedPriceResult;
-  const finalSubtotal = priceCache?.subtotal || 1500000;
-  const finalTax = priceCache?.tax || 0;
-  const finalTotalPrice = priceCache?.totalPrice || 1500000;
-  const finalBreakdown = priceCache?.breakdown || session.calculatedBreakdown || {
-    baseTransportFee: finalTotalPrice, vehicleFee: 0, laborFee: 0, stairsFee: 0, packingFee: 0, assemblingFee: 0
-  };
+ let finalSubtotal   = priceCache?.subtotal    || 1500000;
+let finalTax        = priceCache?.tax         || 0;
+let finalTotalPrice = priceCache?.totalPrice  || 1500000;
+let finalBreakdown  = priceCache?.breakdown   || session.calculatedBreakdown || {
+  baseTransportFee: finalTotalPrice, vehicleFee: 0, laborFee: 0,
+  stairsFee: 0, packingFee: 0, assemblingFee: 0
+};
+  let appliedPromo = null;
+  let discountAmount = 0;
+  if (aiAction.discount_code && aiAction.discount_code !== 'NONE') {
+    appliedPromo = await Promotion.findOne({
+      code: aiAction.discount_code,
+      status: 'Active',
+      $expr: { $lt: ["$usageCount", "$usageLimit"] }
+    });
+
+    if (appliedPromo) {
+      if (appliedPromo.discountType === 'Percentage') {
+        discountAmount = (finalSubtotal * appliedPromo.discountValue) / 100;
+      } else {
+        discountAmount = appliedPromo.discountValue;
+      }
+      if (appliedPromo.maxDiscount && discountAmount > appliedPromo.maxDiscount) {
+        discountAmount = appliedPromo.maxDiscount;
+      }
+
+      finalTotalPrice = finalTotalPrice - discountAmount;
+      if (finalTotalPrice < 0) finalTotalPrice = 0; 
+
+      finalBreakdown.discountAmount = discountAmount;
+      finalBreakdown.promotionCode = aiAction.discount_code;
+    } else {
+      return `[HỆ_THỐNG_BÁO]: Mã khuyến mãi "${aiAction.discount_code}" không tồn tại hoặc đã hết lượt. Anh/chị vui lòng kiểm tra lại.`;
+    }
+  }
 
   const actualMoveType = session.surveyDataCache.movingType;
   const pricingDataObjectId = new mongoose.Types.ObjectId();
@@ -365,7 +410,7 @@ async function handleCreateOrder(aiAction, session, facebookId) {
   const code = `REQ-${new Date().getFullYear()}-${randomString}`;
 
   const ticketStatus = 'WAITING_REVIEW'; 
-  const ticketNotes = `[TẠO TỪ AI BOT - CẦN DISPATCHER KIỂM TRA LẠI DỮ LIỆU] ${aiAction.notes || ''}`;
+  const ticketNotes = `[TẠO TỪ AI BOT - GỬI QUOTED CHO KHÁCH] ${aiAction.notes || ''}`;
 
   let activePriceList = await PricingCalculationService.getActivePriceList().catch(() => null);
 
@@ -393,8 +438,15 @@ async function handleCreateOrder(aiAction, session, facebookId) {
       scheduledTime: session.surveyDataCache.scheduledTime,
       status: ticketStatus, 
       notes: ticketNotes,
-      pricing: { subtotal: finalSubtotal, totalPrice: finalTotalPrice, tax: finalTax, pricingDataId: pricingDataObjectId }
+      pricing: { subtotal: finalSubtotal, totalPrice: finalTotalPrice, tax: finalTax, discountAmount: discountAmount,promotionCode: aiAction.discount_code || null, pricingDataId: pricingDataObjectId }
     });
+    const assignedDispatcherId = await AutoAssignmentService.assignDispatcher(newTicket);
+    if (assignedDispatcherId) {
+    newTicket.dispatcherId = assignedDispatcherId;
+    newTicket.status = 'WAITING_REVIEW';
+} else {
+    newTicket.status = 'PENDING_ASSIGNMENT';
+}
     await newTicket.save({ session: dbSession });
 
     // 3. Tạo SurveyData
@@ -421,19 +473,12 @@ async function handleCreateOrder(aiAction, session, facebookId) {
     await newPricing.save({ session: dbSession });
 
     // 6. Cập nhật Mã khuyến mãi (Bảo mật Race Condition bằng $inc và $expr)
-    if (aiAction.discount_code && aiAction.discount_code !== 'NONE') {
+if (appliedPromo) {
       const updatedPromo = await Promotion.findOneAndUpdate(
-        { 
-          code: aiAction.discount_code, 
-          status: 'Active',
-          $expr: { $lt: ["$usageCount", "$usageLimit"] } // Đảm bảo chưa vượt limit
-        },
+        { _id: appliedPromo._id },
         { $inc: { usageCount: 1 } }, 
         { new: true, session: dbSession }
       );
- if (!updatedPromo) {
-        throw new Error(`[HỆ_THỐNG_BÁO]: Mã khuyến mãi "${aiAction.discount_code}" không hợp lệ hoặc đã hết lượt sử dụng. Mong khách hàng thông cảm!`);
-      }
 
       if (updatedPromo && updatedPromo.usageCount >= updatedPromo.usageLimit) {
         updatedPromo.status = 'Expired';
@@ -452,12 +497,6 @@ async function handleCreateOrder(aiAction, session, facebookId) {
   } finally {
     dbSession.endSession();
   }
-
-  try {
-    await InvoiceService.createInvoiceFromTicket(newTicket._id);
-  } catch (invErr) {
-    console.error('[CreateOrder] Lỗi tạo Invoice:', invErr.message);
-  }
   delete session.surveyDataCache;
   delete session.calculatedPriceResult;
   // ─────────────────────────────────────────────────────────────
@@ -466,14 +505,14 @@ async function handleCreateOrder(aiAction, session, facebookId) {
   const FE_URL = process.env.FRONTEND_URL ;
  const targetPath = `/customer/order`; 
 if (isReturningCustomer) {
-    let redirectPath = targetPath;
+    let redirectPath = targetPath + `/${newTicket._id}`;
     if (isUnverifiedClaim) {
       redirectPath += `?link_fb=${facebookId}`; 
     }
     const directLink = `${FE_URL}/login?redirect=${encodeURIComponent(redirectPath)}`;
-        let msg = `Dạ em thấy email ${email} đã có tài khoản trên hệ thống HOMS!\n\n`;
-    msg += `Hồ sơ yêu cầu của anh/chị đã được AI tạo xong. Tuy nhiên để đảm bảo tính chính xác 100%, **Trưởng bộ phận điều phối (Dispatcher) bên em sẽ kiểm tra lại khối lượng đồ đạc một chút và chốt lại đơn chính thức cho mình trong vài phút tới nhé!**\n\n`;
-    msg += `Anh/chị vui lòng truy cập link dưới đây để đăng nhập và theo dõi tiến độ đơn hàng ạ:\n👉 ${directLink}`;
+    let msg = `Dạ hệ thống đã ghi nhận đơn hàng của anh/chị với mức giá TẠM TÍNH là ${finalTotalPrice.toLocaleString()}đ ✅\n\n`;
+msg += `Để đảm bảo không phát sinh bất kỳ chi phí nào, nhân viên điều phối của HOMS sẽ liên hệ với anh/chị trên trang web để chốt chính xác danh sách đồ.\n`;
+msg += `Anh/chị có thể xem trước chi tiết lộ trình tại đây: 👉 ${directLink}`;
     return msg;
 
   } else {
@@ -483,11 +522,11 @@ if (isReturningCustomer) {
       process.env.JWT_SECRET || 'SECRET',
       { expiresIn: '1d' }
     );
-    const magicLink = `${FE_URL}/magic?token=${setupToken}&redirect=${encodeURIComponent(targetPath)}`;
+    const magicLink = `${FE_URL}/magic?token=${setupToken}&redirect=${encodeURIComponent(targetPath + `/${newTicket._id}`)}`;
     return (
-      `Dạ em đã lên hồ sơ hệ thống xong rồi ạ! 🎉\n\n` +
-      `Vì AI ước lượng đồ đôi khi có sai số, **Đội ngũ điều phối viên bên em sẽ double-check lại lộ trình và chốt đơn chính thức cho mình ngay lập tức ạ.**\n\n` +
-      `Đây là lần đầu anh/chị dùng HOMS, hãy click vào link dưới đây để thiết lập mật khẩu bảo mật và theo dõi tiến độ duyệt đơn nhé:\n👉 ${magicLink}`
+      `Dạ em đã tạo báo giá tạm tính cho anh/chị xong rồi ạ! 🎉\n\n` +
+      `Hãy click vào link dưới đây để thiết lập mật khẩu và xem chi tiết đơn hàng nhé:\n👉 ${magicLink}\n\n` +
+      `Anh/chị vui lòng chờ nhân viên bên tụi em xác nhận lại đồ đạc vì AI đôi khi sai sót không đảm bảo 100%, nên giá cả có thể sẽ thay đổi, xin anh/chị thông cảm !`
     );
   }
 }
