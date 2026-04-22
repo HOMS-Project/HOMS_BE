@@ -74,7 +74,12 @@ class DispatchService {
           if (taskStart < targetEnd && taskEnd > targetStart) {
             status = 'UNAVAILABLE';
             conflictDetails = { type: 'OVERLAP', taskStart, taskEnd };
-            break; // Severe overlap, stop checking
+            
+            // Nếu là người, đính kèm thông tin xe đang đi để hiển thị map
+            if (!isVehicle && task.vehicleId) {
+               item.assignedVehicle = vehiclesList.find(v => v._id.toString() === task.vehicleId.toString());
+            }
+            break; 
           }
           if (taskStart < targetEnd + TWO_HOURS_MS && taskEnd + TWO_HOURS_MS > targetStart) {
             status = 'TIGHT'; // Might be tight, but keep checking in case another task makes it UNAVAILABLE
@@ -826,42 +831,108 @@ class DispatchService {
   }
 
   /**
+   * Helper: Get number of orders assigned to a user today
+   */
+  async getDailyOrderCount(userId) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const count = await DispatchAssignment.countDocuments({
+      'assignments': {
+        $elemMatch: {
+          $or: [
+            { driverIds: userId },
+            { staffIds: userId }
+          ],
+          pickupTime: { $gte: today, $lt: tomorrow }
+        }
+      }
+    });
+    return count;
+  }
+
+  /**
    * Gợi ý Smart Squad (Xe + Leader + Driver + Helper)
+   * Thuật toán: Smart Dispatch Score = 50% Khoảng cách + 50% Tải công việc trong ngày
    */
   async getOptimalSquad(totalWeight, totalVolume, pickupLocation, requiredSkills = []) {
     // 1. Tính toán xe cần thiết
     const vehicleNeeds = await this.calculateVehicleNeeds(totalWeight, totalVolume);
     const primaryNeed = vehicleNeeds[0];
 
-    // 2. Tìm xe phù hợp
-    const vehicles = await this.findAvailableVehicles(primaryNeed.vehicleType, 1);
-    const vehicle = vehicles[0];
-    
-    let vehicleDistance = null;
-    if (pickupLocation && pickupLocation.coordinates && vehicle.currentLocation?.coordinates) {
+    // 2. Tìm xe phù hợp (Ưu tiên xe gần nhất)
+    const availableVehicles = await Vehicle.find({
+      vehicleType: primaryNeed.vehicleType,
+      status: 'Available',
+      isActive: true
+    }).lean();
+
+    if (availableVehicles.length === 0) {
+      throw new AppError(`Không có xe ${primaryNeed.vehicleType} khả dụng`, 400);
+    }
+
+    let sortedVehicles = availableVehicles;
+    if (pickupLocation && pickupLocation.coordinates) {
       const p1 = turf.point(pickupLocation.coordinates);
-      const p2 = turf.point(vehicle.currentLocation.coordinates);
-      vehicleDistance = turf.distance(p1, p2, { units: 'kilometers' });
+      sortedVehicles = availableVehicles.map(v => {
+        const coords = v.currentLocation?.coordinates || [108.2022, 16.0544];
+        const p2 = turf.point(coords);
+        const distance = turf.distance(p1, p2, { units: 'kilometers' });
+        return { ...v, distance };
+      }).sort((a, b) => a.distance - b.distance);
     }
+    const vehicle = sortedVehicles[0];
 
-    // 3. Tìm nhân sự
+    // 3. Tìm nhân sự với Smart Scoring
+    // Lấy danh sách ứng viên (Drivers & Staff)
+    const potentialDrivers = await User.find({ role: 'driver', status: 'Active' }).lean();
+    const potentialStaff = await User.find({ role: 'staff', status: 'Active' }).lean();
+
+    const scoreResources = async (list) => {
+      if (!pickupLocation || !pickupLocation.coordinates) return list.map(r => ({ ...r, score: 0 }));
+      
+      const p1 = turf.point(pickupLocation.coordinates);
+      const scoredList = await Promise.all(list.map(async (res) => {
+        // A. Tính khoảng cách (Distance)
+        const coords = res.currentLocation?.coordinates || [108.2022, 16.0544];
+        const p2 = turf.point(coords);
+        const distance = turf.distance(p1, p2, { units: 'kilometers' });
+
+        // B. Tính tải công việc (Workload)
+        const dailyOrders = await this.getDailyOrderCount(res._id);
+
+        // C. Tính Smart Score (Càng thấp càng tốt - ưu tiên gần và ít đơn)
+        // Normalize: Khoảng cách (max 50km) + Số đơn (max 10 đơn)
+        const distanceScore = Math.min(distance / 50, 1) * 100;
+        const workloadScore = Math.min(dailyOrders / 10, 1) * 100;
+        const totalScore = (distanceScore * 0.5) + (workloadScore * 0.5);
+
+        return { ...res, distance, dailyOrders, score: totalScore };
+      }));
+
+      return scoredList.sort((a, b) => a.score - b.score);
+    };
+
+    const scoredDrivers = await scoreResources(potentialDrivers);
+    const scoredStaff = await scoreResources(potentialStaff);
+
     const neededCapacity = vehicle.maxStaff || 2;
-    const drivers = await this.findNearestAvailableStaff(pickupLocation, 'driver', 1, requiredSkills);
+    const bestDriver = scoredDrivers[0];
     
-    let leader = null;
-    const staffs = await this.findNearestAvailableStaff(pickupLocation, 'staff', neededCapacity - 1);
-    
-    if (staffs.length > 0) {
-      leader = staffs[0];
-    }
-
-    const helpers = staffs.slice(1, neededCapacity - 1);
+    // Phân công Leader và Helpers từ Staff list
+    let leader = scoredStaff[0];
+    let helpers = scoredStaff.slice(1, neededCapacity - 1);
 
     return {
-      vehicle: { ...vehicle.toObject(), distance: vehicleDistance },
-      driver: drivers[0] || null,
+      vehicle: { ...vehicle, distance: vehicle.distance || 0 },
+      driver: bestDriver || null,
       leader: leader || null,
       helpers: helpers || [],
+      debugInfo: {
+        scoringCriteria: '50% Distance + 50% Workload'
+      }
     };
   }
 }

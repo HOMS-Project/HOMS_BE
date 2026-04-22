@@ -103,12 +103,20 @@ class ItemMovingStrategy extends BaseStrategy {
   async handleApproval(ticket, approverId, additionalData, io) {
     await TicketStateMachine.transition(ticket, 'WAITING_REVIEW');
 
-    const assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
+    let assignedDispatcherId = additionalData?.surveyorId;
+    let assignmentMethod = 'MANUAL';
+
+    if (!assignedDispatcherId) {
+      assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
+      assignmentMethod = 'AUTO';
+    }
 
     if (assignedDispatcherId) {
       // Auto-assignment successful — district dispatcher will review AI data and quote
       ticket.dispatcherId = assignedDispatcherId;
       await ticket.save();
+
+      console.log(`[ItemMovingStrategy] Assigned dispatcher ${assignedDispatcherId} via ${assignmentMethod}`);
 
       await NotificationService.createNotification(
         {

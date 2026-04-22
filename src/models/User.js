@@ -74,6 +74,6 @@ const userSchema = new mongoose.Schema({
   refreshTokens: [refreshTokenSchema]
 }, { timestamps: true });
 
-
+userSchema.index({ currentLocation: '2dsphere' });
 
 module.exports = mongoose.model('User', userSchema);

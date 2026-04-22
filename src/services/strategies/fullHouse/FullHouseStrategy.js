@@ -41,12 +41,20 @@ class FullHouseStrategy extends BaseStrategy {
   }
 
   async handleApproval(ticket, approverId, additionalData, io) {
-    const assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
+    let assignedDispatcherId = additionalData?.surveyorId;
+    let assignmentMethod = 'MANUAL';
+
+    if (!assignedDispatcherId) {
+      assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
+      assignmentMethod = 'AUTO';
+    }
 
     if (assignedDispatcherId) {
       await TicketStateMachine.transition(ticket, 'WAITING_SURVEY', {
         payload: { dispatcherId: assignedDispatcherId }
       });
+
+      console.log(`[FullHouseStrategy] Assigned dispatcher ${assignedDispatcherId} via ${assignmentMethod}`);
 
       await NotificationService.createNotification(
         {
