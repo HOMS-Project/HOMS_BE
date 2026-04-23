@@ -2,7 +2,7 @@ const axios = require('axios');
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
 const cloudinary = require("cloudinary").v2;
 const streamifier = require("streamifier");
-const { processIncomingImage } = require('./visionService');
+const { processIncomingImages } = require('./visionService');
 const { handleCalculatePrice, handleRequestDiscount, handleCreateOrder } = require('./orderActionService');
 
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
@@ -22,8 +22,12 @@ const uploadToCloudinary = (buffer) => {
             
             (error, result) => {
                 if (error) return reject(error);
-                resolve(result.secure_url);
-            }
+                resolve({
+                    url: result.secure_url,
+                    publicId: result.public_id,
+                    resourceType: result.resource_type || 'image'
+                });
+              }
         );
         streamifier.createReadStream(buffer).pipe(uploadStream);
     });
@@ -138,9 +142,11 @@ movingTime BẮT BUỘC có đuôi +07:00.
 
 BƯỚC 4: Báo giá cho khách một cách NGẮN GỌN nhất. Nếu khách chê đắt, dùng action REQUEST_DISCOUNT.
 QUY TẮC BÁO GIÁ:
-- TUYỆT ĐỐI KHÔNG tự bịa ra con số nếu chưa có "GIÁ_THỰC_TẾ_TỪ_HỆ_THỐNG".
+- TUYỆT ĐỐI KHÔNG báo con số chính xác đơn lẻ.
 - Nếu chưa có dữ liệu từ hệ thống, chỉ được nói "Em đang tính toán, đợi em chút nhé".
-- Khi hệ thống trả về JSON hoặc kết quả báo giá, BẮT BUỘC dùng đúng con số đó. Không làm tròn hay thay đổi.
+- Khi hệ thống trả về JSON hoặc kết quả báo giá(VÍ DỤ X), BẠN PHẢI BÁO CHO KHÁCH MỘT KHOẢNG GIÁ: "từ (X - 500.000) đến (X + 500.000) VNĐ".
+- Ví dụ: Hệ thống báo 2.000.000, hãy nói: "Mức giá dự kiến cho mình rơi vào khoảng từ 1.500.000 đến 2.500.000 VNĐ ạ".
+- Phải nhấn mạnh đây là giá tạm tính để khách không bắt bẻ con số cụ thể.
 - Khi hệ thống đã trả về con số và bạn đã gửi cho khách, BẠN KHÔNG ĐƯỢC PHÉP nhắc lại con số đó ở các tin nhắn tiếp theo trừ khi khách hỏi lại. Nếu khách chưa hỏi lại giá, chỉ tập trung hỏi khách "Anh/chị có muốn chốt đơn không?".
 BƯỚC 5: Khách chốt đơn -> BẮT BUỘC xin Email -> Gọi action CREATE_ORDER (chỉ xuất JSON chứa email, kèm câu báo khách đợi hệ thống xử lý, KHÔNG bảo khách check mail).
 </STEPS>
@@ -342,7 +348,7 @@ async function processNextMessage(facebookId) {
   
   let combinedText = "";
   let lastText = "";
-  let combinedImageUrl = null;
+  let combinedImageUrls = [];
 
   // Gộp các tin nhắn lại
   for (const msg of batchMessages) {
@@ -354,17 +360,16 @@ async function processNextMessage(facebookId) {
           lastText = currentText;
       }
       
-      // Nếu có ảnh, lấy ảnh (Có thể lấy ảnh cuối cùng nếu khách gửi nhiều ảnh)
-      if (msg.imageUrl) {
-          combinedImageUrl = msg.imageUrl; 
-      }
+     if (msg.imageUrls && msg.imageUrls.length > 0) {
+        combinedImageUrls.push(...msg.imageUrls); 
+    }
   }
 
   try {
     // 3. Chỉ gọi AI nếu có text hoặc có ảnh sau khi đã lọc
-    if (combinedText || combinedImageUrl) {
-        await _processSingleUserMessage(facebookId, combinedText, combinedImageUrl);
-    }
+   if (combinedText || combinedImageUrls.length > 0) {
+    await _processSingleUserMessage(facebookId, combinedText, combinedImageUrls);
+}
   } catch (err) {
     console.error(`[LỖI HÀNG ĐỢI] User ${facebookId}:`, err);
   } finally {
@@ -381,7 +386,7 @@ async function processNextMessage(facebookId) {
 // ==============================================================
 // 3. MAIN MESSAGE HANDLER (Giải quyết History & Message Limit)
 // ==============================================================
-async function _processSingleUserMessage(facebookId, messageText, imageUrl) {
+async function _processSingleUserMessage(facebookId, messageText, imageUrls) {
   console.log(`[DEBUG] 👉 Bắt đầu xử lý cho user: ${facebookId}`);
 
   try {
@@ -428,20 +433,26 @@ async function _processSingleUserMessage(facebookId, messageText, imageUrl) {
     const chat = model.startChat({ history: session.history || [] });
 
     // Quét ảnh (nếu có)
-    let finalMessage = messageText || '';
-    if (imageUrl) {
-      console.log(`[DEBUG] 4.1. Đang quét ảnh...`);
-      await sendMessageBackToUser(facebookId, 'Dạ em đang quét ảnh, anh/chị đợi xíu nhé! ⏳');
-       const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-    const cloudinaryUrl = await uploadToCloudinary(Buffer.from(response.data));
-    session.surveyDataCache.images = session.surveyDataCache.images || [];
-    session.surveyDataCache.images.push(cloudinaryUrl);
-      const visionResult = await processIncomingImage(imageUrl);
-      if (visionResult) {
-        session.visionItems = [...(session.visionItems || []), ...visionResult.items];
-        session.visionWeight = (session.visionWeight || 0) + (visionResult.totalWeight || 0);
-        finalMessage += `\n[HỆ THỐNG]: Đã quét ảnh, danh sách đồ: ${visionResult.systemMessage}`;
-      }
+   let finalMessage = messageText || '';
+    if (imageUrls.length > 0) {
+        console.log(`[DEBUG] 4.1. Đang quét ${imageUrls.length} ảnh...`);
+        await sendMessageBackToUser(facebookId, 'Dạ em đang quét ảnh, anh/chị đợi xíu nhé! ⏳');
+  let newUploadedUrls = [];
+      session.surveyDataCache.images = session.surveyDataCache.images || [];
+          for (const imageUrl of imageUrls) {
+            const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+           const cloudinaryObj = await uploadToCloudinary(Buffer.from(response.data));
+             session.surveyDataCache.images.push(cloudinaryObj);
+             newUploadedUrls.push(cloudinaryObj.url); 
+        }
+
+          if (newUploadedUrls.length > 0) {
+            console.log(`[DEBUG] Tiến hành AI Vision cho ${newUploadedUrls.length} ảnh...`);
+            const visionResult = await processIncomingImages(newUploadedUrls);
+            session.visionItems = [...(session.visionItems || []), ...visionResult.items];
+            session.visionWeight = (session.visionWeight || 0) + (visionResult.totalWeight || 0);
+            finalMessage += `\n[HỆ THỐNG]: Đã quét ảnh mới, danh sách đồ: ${visionResult.systemMessage}`;
+        }
     }
 
     // BƯỚC 5: Gửi tin nhắn cho AI
@@ -510,19 +521,19 @@ async function _processSingleUserMessage(facebookId, messageText, imageUrl) {
 }
 
 const facebookService = {
-   processUserMessage: async (facebookId, messageText, imageUrl = null) => {
+  processUserMessage: async (facebookId, messageText, imageUrls = []) => {
     if (!userMessageQueues.has(facebookId)) {
         userMessageQueues.set(facebookId, { messages: [], isProcessing: false, timer: null });
     }
    
     const queue = userMessageQueues.get(facebookId);
-    queue.messages.push({ messageText, imageUrl });
+    queue.messages.push({ messageText, imageUrls }); 
     if (queue.timer) {
         clearTimeout(queue.timer);
     }
     queue.timer = setTimeout(() => {
         processNextMessage(facebookId);
-    }, 2500); 
+    }, 3000); 
   },
   clearMemory: async (facebookId) => { await ChatSession.deleteOne({ facebookId }); }
 };
