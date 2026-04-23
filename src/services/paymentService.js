@@ -11,11 +11,11 @@ exports.createPayosPayment = async ({ orderCode, amount, ticket, paymentType }) 
     description = `Dat coc don ${ticket.code}`;
   }
   if (paymentType === "MOVING_REMAINING") {
-  description = `Thanh toan don ${ticket.code}`;
-}
+    description = `Thanh toan don ${ticket.code}`;
+  }
   const body = {
     orderCode,
-    amount: 2000, //Number(amount) 
+    amount: 2000,
     description: description.substring(0, 25),
     returnUrl: `${FE}/payment/success?ticketId=${ticket._id}&type=${paymentType}`,
     cancelUrl: `${FE}/payment/cancel?ticketId=${ticket._id}&type=${paymentType}`
