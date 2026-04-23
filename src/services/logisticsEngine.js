@@ -10,7 +10,7 @@
  */
 
 const TRUCK_USABLE_CAPACITY_RATIO = 0.85;
-const WORKLOAD_TO_MINUTES = 12;
+const WORKLOAD_TO_MINUTES = 8;
 const MAX_TOTAL_MULTIPLIER = 3.0;
 
 // Basic vehicle limits based on standard market types in VN
@@ -23,27 +23,27 @@ const VEHICLE_TYPES = [
 ];
 
 class LogisticsEngine {
-    
+
     /**
      * 1. MAIN PIPELINE
      * generateDispatchPlan
      */
     generateDispatchPlan(jobData) {
         const { items, surveyData, constraints } = jobData;
-        
+
         // 1. Equipment Plan
         const equipmentPlan = this.planEquipment(items, surveyData);
-        
+
         // 2. Staff & Workload
         const { staffTotal, estimatedMinutes, workloadBreakdown } = this.calculateStaffing(items, surveyData);
-        
+
         // 3. Vehicle Cargo
         const vehicles = this.calculateVehicles(items, equipmentPlan, constraints);
-        
+
         // 4. Drivers
         const driversRequired = vehicles.reduce((sum, v) => sum + v.trips, 0); // Assuming 1 driver per vehicle per trip roughly, or just number of vehicles if concurrently operating. Let's assume 1 per vehicle.
-        const activeVehiclesCount = vehicles.length; 
-        
+        const activeVehiclesCount = vehicles.length;
+
         // 5. Staff Transport
         const transportPlan = this.planTransport(staffTotal, vehicles);
 
@@ -67,7 +67,7 @@ class LogisticsEngine {
      */
     calculateStaffing(items, surveyData) {
         const normalizedItems = this.normalizeItems(items);
-        
+
         let baseWorkload = 0;
         let totalWeight = 0;
         let maxItemWeight = 0;
@@ -87,7 +87,7 @@ class LogisticsEngine {
         if (surveyData?.floors > 0 && !surveyData?.hasElevator) {
             floorMultiplier = 1 + (surveyData.floors * 0.2); // +20% per floor
         }
-        
+
         let distanceMultiplier = 1.0;
         if (surveyData?.carryDistance > 20) {
             distanceMultiplier = 1 + ((surveyData.carryDistance - 20) / 100 * 0.1); // +10% per 10m over 20m
@@ -106,9 +106,11 @@ class LogisticsEngine {
         let estimatedMinutes = Math.round(adjustedWorkload * WORKLOAD_TO_MINUTES);
         if (estimatedMinutes < 60) estimatedMinutes = 60; // Min job duration
 
+        const durationExceeded = estimatedMinutes > 720; // 12 hours
+
         // Staff count
         let staffTotal = Math.ceil(adjustedWorkload / 50); // Threshold heuristic
-        
+
         // Clamping constraints
         if (staffTotal < 2) staffTotal = 2; // Min staff
         if (maxItemWeight > 200 && staffTotal < 3) staffTotal = 3; // Heavy item
@@ -140,7 +142,7 @@ class LogisticsEngine {
     calculateVehicles(items, equipmentPlan, constraints) {
         const totalItemVolume = items.reduce((sum, item) => sum + (item.volume || 0), 0);
         const totalItemWeight = items.reduce((sum, item) => sum + (item.weight || 0), 0);
-        
+
         // Equipment volume included
         const totalVolume = totalItemVolume + equipmentPlan.totalVolume;
         const totalWeight = totalItemWeight + equipmentPlan.totalWeight;
@@ -206,7 +208,7 @@ class LogisticsEngine {
         }, 0);
 
         let missingSeats = staffTotal - totalTruckSeatsForStaff;
-        
+
         let extraTransport = {
             motorbikes: 0,
             taxis: 0,
@@ -230,7 +232,7 @@ class LogisticsEngine {
      */
     planEquipment(items, surveyData) {
         let plan = {
-            onTruck: ['blankets', 'straps', 'basic_tools', 'hand_truck'],
+            onTruck: ['Khăn trải', 'Dây cột', 'Công cụ cơ bản', 'Xe đẩy'],
             viaStaff: [],
             preDelivered: false,
             totalVolume: 0.5, // 0.5 CBM base for essential
@@ -249,7 +251,7 @@ class LogisticsEngine {
 
         return plan;
     }
-    
+
     calculateConfidence(jobData) {
         let score = 100;
         // Penalities for missing fields

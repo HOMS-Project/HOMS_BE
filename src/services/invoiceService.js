@@ -474,6 +474,55 @@ class InvoiceService {
       .populate('requestTicketId', 'pickup delivery')
       .select('status updatedAt customerId requestTicketId');
   }
+  /**
+   * Khách hàng xác nhận hoặc từ chối vận chuyển thiếu nhân sự
+   */
+  async confirmUnderstaffed(invoiceId, action, customerId) {
+    const invoice = await Invoice.findById(invoiceId);
+    if (!invoice) throw new AppError('Invoice không tồn tại', 404);
+
+    if (invoice.customerId?.toString() !== customerId) {
+      throw new AppError('Bạn không có quyền thực hiện hành động này', 403);
+    }
+
+    invoice.understaffedApproval = action;
+    invoice.timeline.push({
+      status: invoice.status,
+      updatedBy: customerId,
+      updatedAt: new Date(),
+      notes: `Khách hàng đã ${action === 'ACCEPT' ? 'chấp nhận' : 'từ chối'} vận chuyển thiếu nhân sự.`
+    });
+
+    if (action === 'REJECT') {
+      // Revert invoice back to CONFIRMED so dispatcher can re-dispatch
+      invoice.status = 'CONFIRMED';
+      
+      // Notify dispatcher
+      if (invoice.requestTicketId?.dispatcherId) {
+         try {
+           const NotificationService = require('./notificationService');
+           const T = require('../utils/notificationTemplates');
+           await NotificationService.createNotification({
+             userId: invoice.requestTicketId.dispatcherId,
+             ...T.DISPATCH_RESCHEDULE_REJECTED({ ticketCode: invoice.code || 'đơn hàng' }),
+             ticketId: invoice.requestTicketId._id
+           });
+         } catch (err) {
+           console.error('[BE] Failed to notify dispatcher of rejection', err);
+         }
+      }
+
+      // We should also ideally cancel/delete the DispatchAssignment
+      if (invoice.dispatchAssignmentId) {
+        const DispatchAssignment = require('../models/DispatchAssignment');
+        await DispatchAssignment.findByIdAndDelete(invoice.dispatchAssignmentId);
+        invoice.dispatchAssignmentId = null;
+      }
+    }
+
+    await invoice.save();
+    return invoice;
+  }
 }
 
 module.exports = new InvoiceService();

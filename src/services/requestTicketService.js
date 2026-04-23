@@ -308,9 +308,10 @@ class RequestTicketService {
       .populate('dispatcherId', 'fullName email phone')
       .populate({
         path: "invoice",
-        populate: {
-          path: "incident"
-        }
+        populate: [
+          { path: "incident" },
+          { path: "dispatchAssignmentId" }
+        ]
       });
     if (!ticket) {
       throw new AppError('Request ticket không tồn tại', 404);
@@ -401,9 +402,10 @@ if (relevantIds.length === 0) {
       .populate('dispatcherId', 'fullName email phone')
       .populate({
         path: "invoice",
-        populate: {
-          path: "incident"
-        }
+        populate: [
+          { path: "incident" },
+          { path: "dispatchAssignmentId" }
+        ]
       })
       .sort({ createdAt: -1 })
       .limit(filters.limit || 20)
