@@ -101,10 +101,17 @@ const registerVideoSocketEvents = (io, socket) => {
     socket.to(data.roomId).emit('call_ended');
   });
 
+  socket.on('disconnecting', () => {
+    // Notify only the rooms this socket is currently in
+    socket.rooms.forEach(room => {
+      if (room !== socket.id) {
+        socket.to(room).emit('user_disconnected', { userId: socket.id });
+      }
+    });
+  });
+
   socket.on('disconnect', () => {
     console.log(`[VideoChat] User disconnected: ${socket.id}`);
-    // Optional: emit user disconnected to room, but socket.io doesn't easily tell which room they were in perfectly here.
-    socket.broadcast.emit('user_disconnected', { userId: socket.id });
   });
 };
 
