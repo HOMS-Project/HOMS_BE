@@ -116,7 +116,8 @@ exports.dispatchVehicles = async (req, res, next) => {
       forceProceed
     });
 
-    // Cập nhật invoice status
+    // Move to ASSIGNED status immediately to lock resources
+    // The "understaffedApproval" field will handle the gating for starting the work
     await Invoice.findByIdAndUpdate(invoiceId, {
       status: 'ASSIGNED'
     });

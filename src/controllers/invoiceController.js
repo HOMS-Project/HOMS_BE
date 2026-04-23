@@ -534,3 +534,27 @@ exports.confirmReschedule = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * PATCH /api/invoices/:id/confirm-understaffed
+ */
+exports.confirmUnderstaffed = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { action } = req.body;
+    const customerId = req.user?.userId || req.user?._id || req.user?.id;
+
+    const invoice = await InvoiceService.confirmUnderstaffed(id, action, customerId);
+
+    // If rejected, we might want to revert status or notify dispatcher
+    // For now, just recording the action is enough as the dispatcher will see it in the dashboard
+    
+    res.json({
+      success: true,
+      message: 'Action recorded successfully',
+      data: invoice
+    });
+  } catch (error) {
+    next(error);
+  }
+};
