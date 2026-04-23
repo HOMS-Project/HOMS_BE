@@ -31,6 +31,7 @@ class FullHouseStrategy extends BaseStrategy {
     const transitions = {
       CREATED: ['WAITING_SURVEY', 'CANCELLED'],
       WAITING_SURVEY: ['SURVEYED', 'QUOTED', 'CANCELLED'],
+        WAITING_REVIEW: ['QUOTED', 'CANCELLED'],
       SURVEYED: ['QUOTED', 'CANCELLED'],
       QUOTED: ['ACCEPTED', 'CANCELLED'],
       ACCEPTED: ['CONVERTED', 'CANCELLED'],
