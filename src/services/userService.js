@@ -57,7 +57,7 @@ exports.updateUserInfo = async (userId, updateData) => {
 
   // Whitelist updatable fields
   // include address so profile updates can persist user's address
-  const allowed = ["fullName", "phone", "address"];
+  const allowed = ["fullName", "phone", "address", "avatar"];
   let changed = false;
   for (const key of allowed) {
     if (Object.prototype.hasOwnProperty.call(updateData, key)) {
