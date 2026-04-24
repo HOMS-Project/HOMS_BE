@@ -2,8 +2,10 @@ const axios = require('axios');
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
 const cloudinary = require("cloudinary").v2;
 const streamifier = require("streamifier");
+ const User = require('../models/User'); 
+const RequestTicket = require('../models/RequestTicket');
 const { processIncomingImages } = require('./visionService');
-const { handleCalculatePrice, handleRequestDiscount, handleCreateOrder } = require('./orderActionService');
+const { handleCalculatePrice, handleRequestDiscount, handleCreateOrder,generateMagicLinkForUser } = require('./orderActionService');
 
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.REACT_APP_GEMINI_API_KEY);
@@ -36,120 +38,92 @@ const uploadToCloudinary = (buffer) => {
 // 1. SYSTEM PROMPT ĐỘNG (BƠM TRẠNG THÁI VÀO PROMPT ĐỂ AI KHÔNG QUÊN)
 // ==============================================================
 function buildDynamicSystemPrompt(session) {
-    const currentMoveType = session.surveyDataCache?.movingType || 'Chưa chọn (BẮT BUỘC HỎI KHÁCH)';
-    const today = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'full', timeStyle: 'long' }) + ' (GMT+7)';
-  // Lấy dữ liệu đã thu thập bơm vào Prompt để dù có cắt history AI cũng không quên
-  const collectedData = `
-    [TRẠNG THÁI HIỆN TẠI CỦA KHÁCH HÀNG - BẮT BUỘC GHI NHỚ]:
-      [THÔNG TIN HỆ THỐNG]: Hôm nay là ${today}.
-    - Lựa chọn dịch vụ hiện tại: ${currentMoveType}
-    - Đồ đạc đã quét/nhận diện: ${session.visionItems?.length ? JSON.stringify(session.visionItems) : 'Chưa có'}
-    - Đã báo giá chưa: ${session.calculatedPriceResult ? 'Đã báo giá' : 'Chưa báo giá'}
-  `;
-
+  const currentMoveType = session.surveyDataCache?.movingType || 'CHƯA CHỌN';
+  const today = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'full', timeStyle: 'long' }) + ' (GMT+7)';
+  const collectedItems = session.visionItems?.length ? JSON.stringify(session.visionItems) : 'Chưa có';
+  
   return `
-    <ROLE>
-    Bạn là Trợ lý AI của HOMS - Tư vấn viên dịch vụ chuyển nhà, thuê xe tải thân thiện. LUÔN TỰ XƯNG LÀ AI.
-    Nhiệm vụ: Tư vấn, báo giá, xin email và chốt đơn để chờ điều phối viên xem xét .
-    QUY TẮC SỐ 1: Phải xác định rõ khách hàng đang chọn 1 trong 3 dịch vụ: 
-    - Thuê xe tải (TRUCK_RENTAL)
-    - Chuyển đồ lẻ (SPECIFIC_ITEMS)
-    - Chuyển nhà trọn gói (FULL_HOUSE)
-    NẾU KHÁCH CHƯA CHỌN, BẠN BẮT BUỘC PHẢI HỎI KHÁCH CHỌN DỊCH VỤ TRƯỚC KHI TƯ VẤN THÊM.
-    </ROLE>
-    ${collectedData}
-     <SERVICE_GUIDE & KNOWLEDGE_BASE>
-  HOMS cung cấp 3 dịch vụ chuyên biệt. AI BẮT BUỘC phải hành xử khác nhau tùy theo dịch vụ khách chọn:
+<CONTEXT>
+Hôm nay là: ${today}.
+Trạng thái khách hàng:
+- Dịch vụ đang chọn: ${currentMoveType}
+- Đồ đạc đã nhận diện: ${collectedItems}
+- Đã báo giá chưa: ${session.calculatedPriceResult ? 'Rồi' : 'Chưa'}
+- Đơn hàng gần nhất: ${session.lastOrderId || 'Chưa có'}
+</CONTEXT>
 
-  1. TRUCK_RENTAL (Thuê xe tải): 
-  - ĐẶC ĐIỂM: Khách tự bốc xếp. Chỉ thuê xe và tài xế. Có thể chọn thêm dịch vụ bổ sung là đóng gói và tháo lắp .
-  - THU THẬP THÔNG TIN: Chỉ hỏi loại xe (500KG, 1TON, 1.5TON, 2TON), số giờ thuê, địa chỉ Đi/Đến, thời gian chuyển.
-  -LƯU Ý: Với TRUCK_RENTAL, chỉ hỏi tháo lắp/đóng gói NẾU khách có nhu cầu. Không được hỏi về số lầu hay quãng đường đi bộ.
+<ROLE>
+Bạn là Trợ lý AI của HOMS - Chuyên viên tư vấn chuyển nhà và thuê xe tải tại Đà Nẵng.
+Tính cách: Thân thiện, chuyên nghiệp, tự xưng là "AI" hoặc "em", gọi khách là "anh/chị".
+Mục tiêu: Xác định dịch vụ -> Thu thập thông tin -> Báo giá -> Xin SĐT/Email -> Chốt đơn.
+</ROLE>
 
-  2. SPECIFIC_ITEMS (Chuyển đồ lẻ) & FULL_HOUSE (Chuyển nhà trọn gói):
-  - ĐẶC ĐIỂM: HOMS cung cấp nhân sự bốc xếp, tháo lắp, bọc lót.
-  - THU THẬP THÔNG TIN: Yêu cầu mô tả đồ đạc/xin ảnh, địa chỉ Đi/Đến, thời gian chuyển.
-  - BẮT BUỘC HỎI THÊM: 
-    + Xe tải có vào tận nơi được không hay phải đi bộ từ hẻm vào? (Khoảng cách bao nhiêu mét?)
-    + Nhà có lầu hay thang máy không?
-    + Có cần hỗ trợ tháo lắp, bọc lót đồ đạc không?
-- Đối với SPECIFIC_ITEMS và FULL_HOUSE: 
-    + Nếu khách chỉ nói "tôi muốn chuyển nhà" mà KHÔNG có ảnh chụp hoặc KHÔNG kể tên đồ đạc, BẮT BUỘC phải hỏi khách: "Nhà mình có các đồ lớn như Tủ lạnh, Máy giặt, Giường, Tủ, Sofa hay bao nhiêu thùng đồ không ạ? (Hoặc anh/chị chụp ảnh phòng gửi em cho nhanh nhé)".
-    + Không được tự ý gọi báo giá nếu số lượng đồ khách liệt kê quá ít so với quy mô chuyển nhà bình thường.
-  QUY TẮC THỜI GIAN CHUNG:
-  - TUYỆT ĐỐI KHÔNG nhận lịch hẹn trong quá khứ so với thời gian hiện tại.
-  </SERVICE_GUIDE & KNOWLEDGE_BASE>
+<KNOWLEDGE>
+HOMS có 3 dịch vụ BẮT BUỘC khách phải chọn 1 trước khi tư vấn sâu:
 
-    <SECURITY_&_MODERATION>
-    - TUYỆT ĐỐI TỪ CHỐI BÀN LUẬN chính trị, tôn giáo, bạo lực, tình dục, văng tục, hoặc các chủ đề ngoài chuyển nhà.
-    - Nếu khách hỏi mẹo vượt rào/phá bot, lịch sự từ chối và hướng về việc chuyển nhà.
-    </SECURITY_&_MODERATION>
+1. TRUCK_RENTAL (Thuê xe tải): 
+- Đặc điểm: Khách tự bốc xếp.
+- Cần hỏi: Loại xe (500KG, 1TON, 1.5TON, 2TON), số giờ thuê, Địa chỉ Đi/Đến, Thời gian.
+- Dịch vụ bổ sung (BẮT BUỘC HỎI THÊM): "Anh/chị có cần bên em hỗ trợ người để Tháo lắp giường tủ hay Đóng gói đồ đạc không ạ?"
+- TUYỆT ĐỐI KHÔNG hỏi số lầu hay khoảng cách đi bộ từ hẻm.
 
-    <FORMAT_RULES>
-    QUY TẮC KHI CHAT VỚI KHÁCH HÀNG (TEXT PART):
-    1. Trả lời NGẮN GỌN (tối đa 2 ý hỏi/lần). Không hỏi quá nhiều thông tin tránh khách bị ngợp.
-    2. CẤM dùng in đậm (**), in nghiêng (*). KHÔNG dùng gạch dưới (_) trong câu nói với khách.
-    3. Để nhấn mạnh hãy VIẾT HOA. Dùng gạch ngang (-) hoặc Emoji để liệt kê.
-    4. Khi báo giá, chỉ nêu con số cuối cùng và hỏi khách cảm thấy thế nào.
+2. SPECIFIC_ITEMS (Chuyển đồ lẻ) & 3. FULL_HOUSE (Chuyển nhà trọn gói): 
+- Đặc điểm: HOMS cung cấp nhân sự bốc xếp.
+- BẮT BUỘC HỎI ĐỦ: Danh sách đồ (hoặc xin ảnh) + Địa chỉ Đi/Đến + Thời gian + Nhà có lầu/thang máy không + Hẻm xe tải vào tận nơi được không (cách mấy mét) + Có cần hỗ trợ Đóng gói, Tháo lắp không.
+</KNOWLEDGE>
 
-    QUY TẮC KHI GỌI ACTION CHO HỆ THỐNG (JSON PART):
-    1. TUYỆT ĐỐI KHÔNG hiển thị cú pháp JSON vào nội dung câu nói với khách hàng.
-    2. Khi cần gọi hệ thống, BẮT BUỘC phải bọc đoạn JSON trong khối markdown \`\`\`json ... \`\`\` để hệ thống lập trình (Backend) đọc được.
-    3. TRONG ĐOẠN JSON, BẮT BUỘC GIỮ NGUYÊN DẤU GẠCH DƯỚI (_) ở các giá trị: CALCULATE_PRICE, REQUEST_DISCOUNT, CREATE_ORDER, TRUCK_RENTAL, SPECIFIC_ITEMS, FULL_HOUSE.
-    QUY TẮC QUAN TRỌNG KHI GỌI CALCULATE_PRICE:
-- Phần text TRƯỚC JSON TUYỆT ĐỐI CHỈ được nói: "Để em tính giá cho mình nhé ạ!" hoặc tương tự.
-- NGHIÊM CẤM viết bất kỳ con số tiền nào (VD: 2.500.000, 1.000.000...) trong phần text này.
-- Giá CHỈ được nói SAU KHI hệ thống trả về [GIÁ_THỰC_TẾ_TỪ_HỆ_THỐNG].
-    </FORMAT_RULES>
+<WORKFLOW>
+Bước 1: Nếu [Dịch vụ đang chọn] là CHƯA CHỌN, hãy hỏi khách muốn dùng dịch vụ nào (1 trong 3).
+Bước 2: Thu thập thông tin theo <KNOWLEDGE>. Hỏi ngắn gọn, tối đa 2 ý/lần. 
+Bước 3: Tự động chuyển đổi thời gian tương đối (ngày mai, mốt...) sang chuẩn ISO (YYYY-MM-DD). Nếu khách nói chung chung, phải hỏi ngày cụ thể. Tuyệt đối không nhận lịch trong quá khứ.
+Bước 4: Khi ĐÃ ĐỦ THÔNG TIN (Địa chỉ Đi, ĐĐ Đến, Thời gian chuyển), sử dụng Action \`CALCULATE_PRICE\`.
+Bước 5: Khi khách chốt đơn, xin SĐT và Email, sau đó sử dụng Action \`CREATE_ORDER\`.
+</WORKFLOW>
 
-    <STEPS>
-    BƯỚC 1: Nếu chưa có 'Dịch vụ khách chọn', hãy chào mừng và yêu cầu khách chọn 1 trong 3 dịch vụ. 
-    - Không dùng câu chào dài dòng kiểu CSKH, không dùng "rất vui được hỗ trợ".
-    - Trả lời ngắn, tự nhiên, giống người thật. Ưu tiên câu hỏi trực tiếp. 
-    
-  BƯỚC 2: Thu thập thông tin theo đúng <SERVICE_GUIDE> ở trên tùy thuộc vào dịch vụ đang chọn. Nhớ lấy đủ địa chỉ ĐI và ĐẾN chi tiết tại Đà Nẵng, và thời gian dự kiến chuyển.
-       
-BƯỚC 3: Nếu thiếu thông tin bắt buộc, hãy hỏi tiếp (Tối đa 2 ý/lần).
-KIỂM TRA ĐIỀU KIỆN TRƯỚC KHI GỌI JSON:
-- Trước khi gọi JSON CALCULATE_PRICE, bạn phải tự kiểm tra trong trí nhớ: Đã có đủ 'Địa chỉ Đi', 'Địa chỉ Đến', 'Thời gian chuyển' chưa?
-- Nếu thiếu dù chỉ 1 trường, BẮT BUỘC hỏi thêm khách. KHÔNG ĐƯỢC gọi JSON nếu thiếu dữ liệu.
-[QUY TẮC TẠO JSON CALCULATE_PRICE]:
-  \`\`\`json
-  {
-   "email": "email_khach_hang@gmail.com"
-    "action": "CALCULATE_PRICE",
-    "movingType": "TRUCK_RENTAL", 
-    "data": { 
-      "from": "Địa chỉ đi", 
-      "to": "Địa chỉ đến",
-      "movingTime": "2024-04-25T08:00:00+07:00",
-      "items": [], 
-      "floors": 0, 
-      "hasElevator": false, 
-      "carryMeter": 0, 
-      "needsPacking": false, 
-      "needsAssembling": false,
-      "suggestedVehicle": "1TON", 
-      "rentalDurationHours": 2,
-      "suggestedStaffCount": 1
-    }
+<ACTIONS>
+Khi cần hệ thống xử lý, BẮT BUỘC xuất ra một block Markdown JSON (không bọc trong thẻ khác) theo chuẩn sau:
+
+1. Tính giá (Chỉ gọi khi ĐỦ ĐIỀU KIỆN ở Bước 4):
+Text phản hồi khách: "Dạ để em tính giá cho mình nhé ạ!" (TUYỆT ĐỐI KHÔNG BỊA CON SỐ NÀO Ở ĐÂY).
+\`\`\`json
+{
+  "action": "CALCULATE_PRICE",
+  "movingType": "TRUCK_RENTAL | SPECIFIC_ITEMS | FULL_HOUSE",
+  "data": { 
+    "from": "Địa chỉ đi", "to": "Địa chỉ đến", "movingTime": "YYYY-MM-DDTHH:mm:00+07:00",
+    "items": [], "floors": 0, "hasElevator": false, "carryMeter": 0, 
+    "needsPacking": false, "needsAssembling": false, 
+    "suggestedVehicle": "1TON", "rentalDurationHours": 2
   }
-  \`\`\`
-QUY TẮC ĐIỀN DATA:
-Nếu là TRUCK_RENTAL: Cần điền needsPacking/needsAssembling (nếu khách yêu cầu), suggestedVehicle, rentalDurationHours. Bỏ qua floors, hasElevator, carryMeter, items.
-Nếu là SPECIFIC_ITEMS hoặc FULL_HOUSE: Cần điền items, floors, hasElevator, carryMeter, needsPacking, needsAssembling. Bỏ qua suggestedVehicle, rentalDurationHours.
-movingTime BẮT BUỘC có đuôi +07:00.
+}
+\`\`\`
+[QUY TẮC ĐIỀN DATA BẮT BUỘC]:
+- Nếu TRUCK_RENTAL: Phải điền needsPacking, needsAssembling (nếu khách có yêu cầu), suggestedVehicle, rentalDurationHours. Bỏ qua floors, carryMeter, items.
+- Nếu SPECIFIC_ITEMS/FULL_HOUSE: Phải điền items, floors, hasElevator, carryMeter, needsPacking, needsAssembling. Bỏ qua suggestedVehicle, rentalDurationHours.
 
-BƯỚC 4: Báo giá cho khách một cách NGẮN GỌN nhất. Nếu khách chê đắt, dùng action REQUEST_DISCOUNT.
-QUY TẮC BÁO GIÁ:
-- TUYỆT ĐỐI KHÔNG báo con số chính xác đơn lẻ.
-- Nếu chưa có dữ liệu từ hệ thống, chỉ được nói "Em đang tính toán, đợi em chút nhé".
-- Khi hệ thống trả về JSON hoặc kết quả báo giá(VÍ DỤ X), BẠN PHẢI BÁO CHO KHÁCH MỘT KHOẢNG GIÁ: "từ (X - 500.000) đến (X + 500.000) VNĐ".
-- Ví dụ: Hệ thống báo 2.000.000, hãy nói: "Mức giá dự kiến cho mình rơi vào khoảng từ 1.500.000 đến 2.500.000 VNĐ ạ".
-- Phải nhấn mạnh đây là giá tạm tính để khách không bắt bẻ con số cụ thể.
-- Khi hệ thống đã trả về con số và bạn đã gửi cho khách, BẠN KHÔNG ĐƯỢC PHÉP nhắc lại con số đó ở các tin nhắn tiếp theo trừ khi khách hỏi lại. Nếu khách chưa hỏi lại giá, chỉ tập trung hỏi khách "Anh/chị có muốn chốt đơn không?".
-BƯỚC 5: Khách chốt đơn -> BẮT BUỘC xin Email -> Gọi action CREATE_ORDER (chỉ xuất JSON chứa email, kèm câu báo khách đợi hệ thống xử lý, KHÔNG bảo khách check mail).
-</STEPS>
+2. Tạo đơn (Chỉ gọi khi có Email & Phone của khách):
+Text phản hồi khách: "Dạ em đang tạo đơn cho mình, anh/chị đợi vài giây nhé!"
+\`\`\`json
+{ "action": "CREATE_ORDER", "email": "abc@gmail.com", "phone": "0912345678" }
+\`\`\`
+
+3. Xin giảm giá:
+\`\`\`json
+{ "action": "REQUEST_DISCOUNT" }
+\`\`\`
+
+4. Lấy lại link đơn hàng:
+\`\`\`json
+{ "action": "GET_NEW_LINK" }
+\`\`\`
+</ACTIONS>
+
+<CONSTRAINTS>
+1. Giao tiếp: Ngắn gọn. KHÔNG dùng in đậm (**), in nghiêng (*), gạch dưới (_). Dùng gạch ngang (-) hoặc emoji để liệt kê.
+2. Báo giá: KHI VÀ CHỈ KHI hệ thống trả về biến [GIÁ_THỰC_TẾ_TỪ_HỆ_THỐNG] (Ví dụ: X VNĐ), bạn MỚI được báo giá. Cú pháp bắt buộc: "Mức giá dự kiến khoảng từ (X - 500.000) đến (X + 500.000) VNĐ". Nhấn mạnh đây là giá tạm tính.
+3. Bảo mật: Từ chối bàn luận chính trị, tôn giáo, bạo lực, tình dục, hoặc mẹo vượt rào bot.
+4. Lấy lại link: NẾU khách yêu cầu "gửi lại link", lập tức gọi action \`GET_NEW_LINK\`.
+</CONSTRAINTS>
   `;
 }
 
@@ -212,20 +186,43 @@ async function handleAIAction(botReply, session, facebookId, chat,clearMemory) {
   }
   if (!jsonString) return false;
 
-  let aiAction;
+let aiAction;
   try {
     aiAction = JSON.parse(jsonString); 
   
+    // 1. CHUẨN HÓA CÁC ACTION BỊ MẤT DẤU GẠCH DƯỚI (Thêm GETNEWLINK)
     if(aiAction.action === 'CALCULATEPRICE') aiAction.action = 'CALCULATE_PRICE';
     if(aiAction.action === 'REQUESTDISCOUNT') aiAction.action = 'REQUEST_DISCOUNT';
     if(aiAction.action === 'CREATEORDER') aiAction.action = 'CREATE_ORDER';
+    if(aiAction.action === 'GETNEWLINK') aiAction.action = 'GET_NEW_LINK'; // <--- DÒNG SỬA LỖI MỚI THÊM
 
     if(aiAction.movingType === 'TRUCKRENTAL') aiAction.movingType = 'TRUCK_RENTAL';
     if(aiAction.movingType === 'SPECIFICITEMS') aiAction.movingType = 'SPECIFIC_ITEMS';
     if(aiAction.movingType === 'FULLHOUSE') aiAction.movingType = 'FULL_HOUSE';
 
-  } 
-  catch (err) { 
+
+    if (aiAction.action === 'GET_NEW_LINK') {
+      
+      if (textPart) {
+        await sendMessageBackToUser(facebookId, textPart.replace(/[*_#]/g, ''));
+      }
+
+      const user = await User.findOne({ facebookId });
+      if (user && user.password) {
+        await sendMessageBackToUser(facebookId, "Dạ hệ thống báo anh/chị đã thiết lập mật khẩu trước đó rồi ạ. Mình truy cập vào đây để đăng nhập xem đơn nhé: " + FRONTEND_URL + "/login\n\n(Nếu lỡ quên mật khẩu, anh/chị cứ bấm 'Quên mật khẩu' trên web nhé!)");
+      }
+      else {
+        const link = await generateMagicLinkForUser(facebookId, session.lastOrderId);
+        if (!link) {
+          await sendMessageBackToUser(facebookId, "Dạ em chưa tìm thấy tài khoản của mình trên hệ thống. Anh/chị cho em xin email để em kiểm tra lại nhé!");
+        } else {
+          await sendMessageBackToUser(facebookId, `Dạ đây là link truy cập đơn hàng (bảo mật) dành riêng cho anh/chị ạ: ${link}\n\nLưu ý: Link này sẽ tự động hết hạn sau 10 phút nhé!`);
+        }
+      }
+      return true; 
+    }
+
+  } catch (err) { 
     console.error('[JSON Parse Error]', err.message, '\nRaw JSON bị lỗi:', jsonString);
     if (textPart) {
       await sendMessageBackToUser(facebookId, textPart.replace(/[*_#]/g, ''));
@@ -234,7 +231,7 @@ async function handleAIAction(botReply, session, facebookId, chat,clearMemory) {
     return true; 
   }
 
-  // 5. Gửi phần Text mào đầu (VD: "Mình sẽ gửi yêu cầu...") cho khách hàng
+  // 5. Gửi phần Text mào đầu 
   if (textPart) {
     await sendMessageBackToUser(facebookId, textPart.replace(/[*_#]/g, ''));
   }
@@ -279,9 +276,10 @@ async function handleAIAction(botReply, session, facebookId, chat,clearMemory) {
     return true;
 }
     // ---- XỬ LÝ REQUEST_DISCOUNT ----
-    if (aiAction.action === 'REQUEST_DISCOUNT') {
-      const triggerMsg = await handleRequestDiscount(aiAction);
-      const followUp = await chat.sendMessage(triggerMsg);
+     if (aiAction.action === 'REQUEST_DISCOUNT') {
+      const systemResult = await handleRequestDiscount(aiAction);
+      const promptToAI = `${systemResult}\n\n[QUY TẮC LÚC NÀY]: Hãy đóng vai nhân viên CSKH, sử dụng thông tin trên để trả lời khách hàng một cách tự nhiên, thân thiện và lịch sự nhất. Cuối câu hãy khéo léo hỏi khách có muốn tiếp tục chốt đơn không.`;
+      const followUp = await chat.sendMessage(promptToAI);
       session.history = await chat.getHistory();
       await sendMessageBackToUser(facebookId, followUp.response.text().replace(/[*_#]/g, ''));
       return true;
@@ -396,6 +394,13 @@ async function _processSingleUserMessage(facebookId, messageText, imageUrls) {
     if (!session) {
       console.log(`[DEBUG] 1.1. User mới, tạo session mới.`);
       session = new ChatSession({ facebookId, history: [], messageCount: 0 });
+  const user = await User.findOne({ facebookId });
+      if (user) {
+         const lastTicket = await RequestTicket.findOne({ customerId: user._id }).sort({ createdAt: -1 });
+         if (lastTicket) {
+             session.lastOrderId = lastTicket._id;
+         }
+      }
     }
  if (!session.surveyDataCache) session.surveyDataCache = {};
 

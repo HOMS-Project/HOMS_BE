@@ -344,49 +344,62 @@ exports.logoutUser = async (refreshToken) => {
 
   return true;
 };
-exports.setupMagicAccount = async ({ token, phone, password, email }) => {
+exports.setupMagicAccount = async ({ token, password, confirmPassword, phone }) => {
   try {
-    if (!token || !password){
-     throw new Error('Vui lòng nhập mật khẩu mới.');
-    }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'SECRET');
-    if (decoded.type !== 'setup_account') {
-      throw new Error('Token không hợp lệ.');
-    }
+    if (!token || !password) throw new Error('Vui lòng nhập mật khẩu mới.');
+    if (password !== confirmPassword) throw new Error('Mật khẩu xác nhận không khớp.');
+    
+      let decoded;
+  try {
+    decoded = jwt.verify(token, process.env.JWT_SECRET || 'SECRET');
+  } catch (err) {
+    throw new Error('Link đã hết hạn hoặc không hợp lệ.');
+  }
+    if (decoded.type !== 'setup_account') throw new Error('Token không đúng mục đích.');
+
 
     const tempUser = await User.findById(decoded.id);
-    if (!tempUser) throw new Error('Không tìm thấy phiên làm việc hoặc phiên đã hết hạn.');
+    if (!tempUser) throw new Error('Không tìm thấy tài khoản.');
 
-    // Mã hóa mật khẩu trước
+    if (!tempUser.securityToken || decoded.st !== tempUser.securityToken) {
+    throw new Error('LINK_USED');
+  }
+
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-   tempUser.password = hashedPassword;
+    tempUser.password = await bcrypt.hash(password, salt);
+    tempUser.phone = phone || tempUser.phone;
     tempUser.provider = 'local_and_facebook';
     tempUser.status = 'Active';
-await tempUser.save();
-   const accessToken = generateToken(tempUser);
+
+    tempUser.securityToken = crypto.randomBytes(16).toString('hex');
+    
+    await tempUser.save();
+
+
+    const accessToken = generateToken(tempUser);
     const refreshToken = generateRefreshToken(tempUser);
+    await storeRefreshToken(tempUser, refreshToken);
+
     const decodedToken = jwt.decode(accessToken);
     const expiresInMs = (decodedToken.exp - decodedToken.iat) * 1000;
- 
- await storeRefreshToken(tempUser, refreshToken);
- return {
-accessToken,
- refreshToken,
-expiresInMs,
-user: {
-            id: tempUser._id,
-            fullName: tempUser.fullName,
-            email: tempUser.email,
-            role: tempUser.role,
-            avatar: tempUser.avatar,
-        }
- };
- } catch (error) {
+
+    return {
+      accessToken,
+      refreshToken,
+      expiresInMs,
+      user: {
+        id: tempUser._id,
+        fullName: tempUser.fullName,
+        email: tempUser.email,
+        phone: tempUser.phone,
+        role: tempUser.role,
+        avatar: tempUser.avatar,
+      }
+    };
+  } catch (error) {
     console.error("LỖI SETUP MAGIC:", error);
-    
+    if (error.name === 'TokenExpiredError') throw new Error('Link đã hết hạn.');
     throw new Error(error.message || 'Lỗi xử lý server');
   }
 };

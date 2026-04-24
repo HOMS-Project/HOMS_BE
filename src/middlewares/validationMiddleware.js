@@ -1,5 +1,37 @@
 const Joi = require('joi');
 
+// Regex mật khẩu
+const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+
+const passwordSchema = Joi.string()
+  .pattern(passwordRegex)
+  .max(50)
+  .required()
+  .messages({
+    'string.empty': 'Mật khẩu không được để trống',
+    'string.pattern.base':
+      'Mật khẩu phải có ít nhất 8 ký tự, gồm chữ hoa, thường, số và ký tự đặc biệt',
+    'any.required': 'Mật khẩu là bắt buộc'
+  });
+
+const confirmPasswordSchema = Joi.string()
+  .valid(Joi.ref('password'))
+  .required()
+  .messages({
+    'any.only': 'Mật khẩu xác nhận không khớp',
+    'any.required': 'Vui lòng xác nhận mật khẩu'
+  });
+
+const phoneSchema = Joi.string()
+  .pattern(/^[0-9]{10}$/)
+  .required()
+  .messages({
+    'string.empty': 'Số điện thoại không được để trống',
+    'string.pattern.base': 'Số điện thoại phải bao gồm đúng 10 chữ số',
+    'any.required': 'Số điện thoại là bắt buộc'
+  });
+
+
 // Middleware validate
 const validate = (schema) => {
   return (req, res, next) => {
@@ -17,9 +49,6 @@ const validate = (schema) => {
     next();
   };
 };
-
-// Regex mật khẩu
-const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
 
 const schemas = {
   register: Joi.object({
@@ -44,31 +73,9 @@ const schemas = {
         'any.required': 'Email là bắt buộc'
       }),
 
-    password: Joi.string()
-      .pattern(passwordRegex)
-      .max(50)
-      .required()
-      .messages({
-        'string.empty': 'Mật khẩu không được để trống',
-        'string.pattern.base':
-          'Mật khẩu phải có ít nhất 8 ký tự, gồm chữ hoa, thường, số và ký tự đặc biệt',
-        'any.required': 'Mật khẩu là bắt buộc'
-      }),
-  confirmPassword: Joi.string()
-    .valid(Joi.ref('password'))
-    .required()
-    .messages({
-      'any.only': 'Mật khẩu xác nhận không khớp',
-      'any.required': 'Vui lòng xác nhận mật khẩu'
-    }),
-    phone: Joi.string()
-      .pattern(/^[0-9]{10}$/)
-      .required()
-      .messages({
-        'string.empty': 'Số điện thoại không được để trống',
-        'string.pattern.base': 'Số điện thoại phải bao gồm đúng 10 chữ số',
-        'any.required': 'Số điện thoại là bắt buộc'
-      }),
+    password: passwordSchema,
+    confirmPassword: confirmPasswordSchema,
+    phone: phoneSchema,
   }),
 
   login: Joi.object({
@@ -89,6 +96,12 @@ const schemas = {
       })
   }),
 
+  magicSetup: Joi.object({
+    token: Joi.string().required(),
+    password: passwordSchema,
+    confirmPassword: confirmPasswordSchema,
+    phone: phoneSchema
+  }),
 };
 
 module.exports = { validate, schemas };

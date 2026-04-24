@@ -71,7 +71,9 @@ const userSchema = new mongoose.Schema({
   otpResetPassword: String,
   otpResetExpires: Date,
   otpVerified: Boolean,
-  refreshTokens: [refreshTokenSchema]
+  
+  refreshTokens: [refreshTokenSchema],
+  securityToken: { type: String, default: () => crypto.randomBytes(16).toString('hex') }
 }, { timestamps: true });
 
 userSchema.index({ currentLocation: '2dsphere' });
