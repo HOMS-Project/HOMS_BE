@@ -235,12 +235,14 @@ exports.logout = async (req, res, next) => {
 };
 exports.setupMagicAccount = async (req, res,next) => {
   try {
-   const { token, password } = req.body;
+   const { token, password,confirmPassword,phone } = req.body;
 
     const { user, accessToken, refreshToken, expiresInMs } = 
       await authService.setupMagicAccount({
         token,      
         password,
+        confirmPassword, 
+        phone
       });
 
     
@@ -259,6 +261,12 @@ exports.setupMagicAccount = async (req, res,next) => {
     });
 
   } catch (error) {
+     if (error.message === 'LINK_USED') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Link này đã được sử dụng trước đó. Vui lòng đăng nhập hoặc yêu cầu gửi lại link mới.' 
+      });
+    }
    next(error);
   }
 };
