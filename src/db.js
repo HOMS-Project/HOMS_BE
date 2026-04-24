@@ -13,7 +13,7 @@ require('dotenv').config();
 
 // Import all models
 const User = require('./models/User');
-const Order = require('./models/Order');
+
 const Invoice = require('./models/Invoice');
 const RequestTicket = require('./models/RequestTicket');
 const PriceList = require('./models/PriceList');
@@ -36,7 +36,7 @@ async function clearDatabase() {
     console.log('🧹 Clearing database...');
     
     await User.deleteMany({});
-    await Order.deleteMany({});
+
     await Invoice.deleteMany({});
     await RequestTicket.deleteMany({});
     await PriceList.deleteMany({});

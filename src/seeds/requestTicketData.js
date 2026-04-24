@@ -5,7 +5,6 @@
 
 const mongoose = require('mongoose');
 
-// Mock ObjectId cho demo
 const mockUserId = new mongoose.Types.ObjectId();
 const mockDispatcherId = new mongoose.Types.ObjectId();
 
@@ -14,144 +13,74 @@ const requestTicketData = [
   {
     code: 'TICKET_2026_001',
     customerId: mockUserId,
+    dispatcherId: mockDispatcherId,
+    moveType: 'FULL_HOUSE',
+    status: 'QUOTED',
+    distanceKm: 5,
 
-    type: 'FULL_HOUSE',
-    surveyType: 'OFFLINE',
-
-    pickupAddress: {
+    pickup: {
       address: '123 Nguyễn Huệ, Q1, TP.HCM',
+      district: 'HAI_CHAU',
       coordinates: { lat: 10.7725, lng: 106.6992 }
     },
 
-    deliveryAddress: {
+    delivery: {
       address: '456 Tân Định, Q3, TP.HCM',
+      district: 'THANH_KHE',
       coordinates: { lat: 10.7869, lng: 106.6780 }
     },
 
-    roomInfo: {
-      width: 5, // 5m
-      length: 6, // 6m
-      height: 3, // 3m
-      totalSquareMeters: 30
+    scheduledTime: new Date('2026-01-06T10:00:00'),
+
+    pricing: {
+      subtotal: 3500000,
+      tax: 350000,
+      totalPrice: 3850000,
+      quotedAt: new Date('2026-01-06T12:00:00')
     },
-
-    items: [], // Không có items chi tiết vì là FULL_HOUSE
-
-    overallPhotos: [
-      'https://example.com/room1_before.jpg',
-      'https://example.com/room2_before.jpg'
-    ],
-
-    survey: {
-      dispatcherId: mockDispatcherId,
-      surveyDate: new Date('2026-01-06T10:00:00'),
-      notes: 'Nhà 2 phòng, nội thất cũ, cần tháo lắp tủ quần áo',
-      estimatedPrice: 3500000,
-      estimatedWeight: 800,
-      estimatedVolume: 8,
-      recommendedVehicles: ['2T'],
-      staffCount: 3
-    },
-
-    status: 'PRICE_QUOTED',
-
-    contract: null,
-
-    timeline: {
-      createdAt: new Date('2026-01-05T14:00:00'),
-      surveyStartedAt: new Date('2026-01-06T10:00:00'),
-      surveyCompletedAt: new Date('2026-01-06T11:30:00'),
-      priceQuotedAt: new Date('2026-01-06T12:00:00'),
-      customerAcceptedAt: null,
-      invoiceCreatedAt: null
-    }
+    
+    notes: 'Nhà 2 phòng, nội thất cũ, cần tháo lắp tủ quần áo'
   },
 
   // TH2: Chuyển items cụ thể - Khảo sát online
   {
     code: 'TICKET_2026_002',
     customerId: new mongoose.Types.ObjectId(),
+    dispatcherId: new mongoose.Types.ObjectId(),
+    moveType: 'SPECIFIC_ITEMS',
+    status: 'ACCEPTED',
+    distanceKm: 12,
 
-    type: 'SPECIFIC_ITEMS',
-    surveyType: 'ONLINE',
-
-    pickupAddress: {
+    pickup: {
       address: '789 Võ Văn Ngân, Thủ Đức, TP.HCM',
+      district: 'SON_TRA',
       coordinates: { lat: 10.8013, lng: 106.7629 }
     },
 
-    deliveryAddress: {
+    delivery: {
       address: '321 Lê Lợi, Q1, TP.HCM',
+      district: 'HAI_CHAU',
       coordinates: { lat: 10.7725, lng: 106.6992 }
     },
 
-    roomInfo: {
-      width: 4,
-      length: 5,
-      height: 3,
-      totalSquareMeters: 20
+    scheduledTime: new Date('2026-01-05T16:00:00'),
+
+    pricing: {
+      subtotal: 1200000,
+      tax: 120000,
+      totalPrice: 1320000,
+      quotedAt: new Date('2026-01-05T17:00:00'),
+      acceptedAt: new Date('2026-01-05T20:00:00')
     },
 
-    items: [
-      {
-        name: 'Sofa 3 chỗ',
-        quantity: 1,
-        dimensions: { length: 200, width: 90, height: 80 },
-        weight: 80,
-        material: 'Vải',
-        images: ['https://example.com/sofa_item.jpg'],
-        note: 'Màu xám, hơi cũ'
-      },
-      {
-        name: 'Tủ lạnh 2 cánh',
-        quantity: 1,
-        dimensions: { length: 70, width: 65, height: 170 },
-        weight: 100,
-        material: 'Kim loại',
-        images: ['https://example.com/fridge_item.jpg'],
-        note: 'Hàng LG, còn mới'
-      },
-      {
-        name: 'Bàn ăn gỗ',
-        quantity: 1,
-        dimensions: { length: 150, width: 80, height: 75 },
-        weight: 60,
-        material: 'Gỗ',
-        images: ['https://example.com/dining_table_item.jpg'],
-        note: 'Có 4 ghế'
-      }
-    ],
-
-    overallPhotos: [
-      'https://example.com/livingroom_overview.jpg'
-    ],
-
-    survey: {
-      dispatcherId: new mongoose.Types.ObjectId(),
-      surveyDate: new Date('2026-01-05T16:00:00'), // Video call
-      notes: 'Khách call video để thảo luận, items không quá nặng',
-      estimatedPrice: 1200000,
-      estimatedWeight: 240,
-      estimatedVolume: 3,
-      recommendedVehicles: ['500kg', '1T'],
-      staffCount: 2
+    isHighValue: true,
+    highValueDetails: {
+      declaredValue: 50000000,
+      description: 'Đồ điện tử',
+      category: 'ELECTRONICS'
     },
 
-    status: 'CUSTOMER_ACCEPTED',
-
-    contract: {
-      invoiceId: null, // Sẽ được tạo khi tạo Invoice
-      createdAt: null
-    },
-
-    timeline: {
-      createdAt: new Date('2026-01-04T10:00:00'),
-      surveyStartedAt: new Date('2026-01-05T16:00:00'),
-      surveyCompletedAt: new Date('2026-01-05T16:30:00'),
-      priceQuotedAt: new Date('2026-01-05T17:00:00'),
-      customerAcceptedAt: new Date('2026-01-05T20:00:00'),
-      invoiceCreatedAt: null
-    }
+    notes: 'Khách call video để thảo luận, items không quá nặng'
   }
 ];
 

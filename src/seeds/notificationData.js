@@ -14,14 +14,14 @@ const notificationData = [
     userId: mockUserId1,
     title: 'Đơn hàng được xác nhận',
     message: 'Đơn hàng INV_2026_001 đã được xác nhận và sắp được vận chuyển',
-    type: 'Order',
+    type: 'Invoice',
     isRead: true
   },
   {
     userId: mockUserId1,
     title: 'Xe sắp đến',
     message: 'Xe vận chuyển sẽ đến trong 30 phút. Vui lòng chuẩn bị sẵn sàng',
-    type: 'Order',
+    type: 'Invoice',
     isRead: true
   },
   {
@@ -42,14 +42,14 @@ const notificationData = [
     userId: mockUserId3,
     title: 'Chuyến hàng hoàn thành',
     message: 'Chuyến hàng INV_2026_002 đã được giao thành công',
-    type: 'Order',
+    type: 'Invoice',
     isRead: true
   },
   {
     userId: mockUserId1,
     title: 'Đánh giá chuyến hàng',
     message: 'Vui lòng đánh giá chuyến hàng vừa rồi để giúp chúng tôi cải thiện dịch vụ',
-    type: 'Order',
+    type: 'Invoice',
     isRead: false
   }
 ];
