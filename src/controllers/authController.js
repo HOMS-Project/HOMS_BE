@@ -188,9 +188,16 @@ exports.resetPassword = async (req, res, next) => {
 };
 exports.refreshToken = async (req, res, next) => {
   try {
-    const oldRefreshToken = req.cookies.refreshToken;
+    const isMobileDriver = (req.get("x-client") || "").toLowerCase() === "mobile-driver";
+    
+    // Support both cookie-based (web) and body-based (mobile) refresh tokens
+    const oldRefreshToken = isMobileDriver 
+      ? (req.body?.refreshToken || req.cookies.refreshToken) 
+      : req.cookies.refreshToken;
+
     const { accessToken, refreshToken, expiresInMs } =
       await authService.refreshAccessToken(oldRefreshToken);
+    
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       sameSite: "none",
@@ -201,6 +208,7 @@ exports.refreshToken = async (req, res, next) => {
     res.json({
       success: true,
       accessToken,
+      ...(isMobileDriver ? { refreshToken } : {}),
       expiresInMs,
     });
   } catch (err) {
