@@ -2,8 +2,7 @@ const adminUserService = require('../../services/admin/userService');
 
 exports.getAllUsers = async (req, res, next) => {
     try {
-        // admin audit log
-        console.info('[ADMIN] getAllUsers called by', req.user?._id || 'anonymous');
+    
         const result = await adminUserService.getAllUsers(req.query);
         res.status(200).json({ success: true, data: result });
     } catch (error) {
