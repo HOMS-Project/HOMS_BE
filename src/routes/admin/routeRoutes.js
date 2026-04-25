@@ -12,6 +12,9 @@ router.route('/')
     .get(adminRouteController.getAllRoutes)
     .post(authorize('admin', 'staff'), adminRouteController.createRoute); // Chỉ admin/staff dc tạo
 
+// Summary stats for dashboard/cards
+router.get('/stats', adminRouteController.getRouteStats);
+
 // Route: /api/admin/routes/:id
 router.route('/:id')
     .get(adminRouteController.getRouteById)

@@ -9,6 +9,16 @@ exports.getAllRoutes = async (req, res, next) => {
     }
 };
 
+exports.getRouteStats = async (req, res, next) => {
+    try {
+        console.log('[admin] GET /api/admin/routes/stats');
+        const stats = await adminRouteService.getRouteStats();
+        res.status(200).json({ success: true, data: stats });
+    } catch (error) {
+        next(error);
+    }
+};
+
 exports.getRouteById = async (req, res, next) => {
     try {
         const route = await adminRouteService.getRouteById(req.params.id);

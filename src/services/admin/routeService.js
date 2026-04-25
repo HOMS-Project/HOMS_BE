@@ -140,3 +140,14 @@ exports.deleteRoute = async (id) => {
     if (!route) throw new Error('Route not found');
     return route;
 };
+
+/**
+ * Thống kê tóm tắt cho trang quản trị Route Management
+ */
+exports.getRouteStats = async () => {
+    const total = await Route.countDocuments();
+    const active = await Route.countDocuments({ isActive: true });
+    const inactive = total - active;
+    const withRules = await Route.countDocuments({ 'trafficRules.0': { $exists: true } });
+    return { total, active, inactive, withRules };
+};
