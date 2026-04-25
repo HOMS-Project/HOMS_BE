@@ -1,0 +1,43 @@
+[
+  {
+    "_id": "69ecc21799984dbe42913643",
+    "contractNumber": "VNĐ-20260101-001",
+    "templateId": "69ecc21799984dbe42913641",
+    "requestTicketId": "69ecc21799984dbe42913639",
+    "customerId": "69ecc21799984dbe42913606",
+    "content": "\n      <h2>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</h2>\n      <h3>Độc lập - Tự do - Hạnh phúc</h3>\n      <br />\n      <h2>HỢP ĐỒNG VẬN CHUYỂN HÀNG HÓA</h2>\n      <p>Số: ${contractNumber}</p>\n      \n      <p>Hôm nay, ngày ${currentDate}, chúng tôi gồm có:</p>\n      \n      <h4>Bên A (Bên thuê vận chuyển):</h4>\n      <p>Ông/Bà: ${customerName}</p>\n      <p>Số điện thoại: ${customerPhone}</p>\n      <p>Email: ${customerEmail}</p>\n\n      <h4>Bên B (Bên vận chuyển): HOMS Logistics</h4>\n      <p>Đại diện: Quản trị viên</p>\n      <p>Địa chỉ: Đà Nẵng, Việt Nam</p>\n\n      <h4>ĐIỀU 1: NỘI DUNG VẬN CHUYỂN</h4>\n      <p>Bên B nhận vận chuyển hàng hóa cho Bên A từ địa chỉ nhận hàng đến địa chỉ giao hàng theo thông tin vé ${ticketCode}.</p>\n      \n      <h4>ĐIỀU 2: PHÍ VẬN CHUYỂN VÀ THANH TOÁN</h4>\n      <p>Tổng chi phí vận chuyển là: <strong>${totalPrice} VNĐ</strong>.</p>\n      \n      <h4>ĐIỀU 3: TRÁCH NHIỆM CÁC BÊN</h4>\n      <p>Bên B chịu trách nhiệm bồi thường nếu xảy ra hư hỏng, mất mát tài sản trong quá trình vận chuyển.</p>\n      \n      <p>Hợp đồng này được lập thành 02 bản, mỗi bên giữ 01 bản có giá trị pháp lý như nhau.</p>\n    ",
+    "status": "SIGNED",
+    "customerSignature": {
+      "signatureImage": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+      "signedAt": "2026-04-25T13:31:03.451Z"
+    },
+    "adminSignature": {
+      "signedAt": "2026-04-25T13:31:03.451Z",
+      "signedBy": "69ecc21799984dbe42913604",
+      "signedByName": "Quản trị viên Hệ thống"
+    },
+    "depositDeadline": "2026-01-09T17:00:00.000Z",
+    "depositDeadlineHours": 48,
+    "validFrom": "2025-12-31T17:00:00.000Z",
+    "validUntil": "2026-12-30T17:00:00.000Z",
+    "createdAt": "2026-04-25T13:31:03.452Z",
+    "updatedAt": "2026-04-25T13:31:03.452Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913644",
+    "contractNumber": "VNĐ-20260102-001",
+    "templateId": "69ecc21799984dbe42913641",
+    "requestTicketId": "69ecc21799984dbe4291363a",
+    "customerId": "69ecc21799984dbe42913608",
+    "content": "\n      <h2>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</h2>\n      <h3>Độc lập - Tự do - Hạnh phúc</h3>\n      <br />\n      <h2>HỢP ĐỒNG VẬN CHUYỂN HÀNG HÓA</h2>\n      <p>Số: ${contractNumber}</p>\n      \n      <p>Hôm nay, ngày ${currentDate}, chúng tôi gồm có:</p>\n      \n      <h4>Bên A (Bên thuê vận chuyển):</h4>\n      <p>Ông/Bà: ${customerName}</p>\n      <p>Số điện thoại: ${customerPhone}</p>\n      <p>Email: ${customerEmail}</p>\n\n      <h4>Bên B (Bên vận chuyển): HOMS Logistics</h4>\n      <p>Đại diện: Quản trị viên</p>\n      <p>Địa chỉ: Đà Nẵng, Việt Nam</p>\n\n      <h4>ĐIỀU 1: NỘI DUNG VẬN CHUYỂN</h4>\n      <p>Bên B nhận vận chuyển hàng hóa cho Bên A từ địa chỉ nhận hàng đến địa chỉ giao hàng theo thông tin vé ${ticketCode}.</p>\n      \n      <h4>ĐIỀU 2: PHÍ VẬN CHUYỂN VÀ THANH TOÁN</h4>\n      <p>Tổng chi phí vận chuyển là: <strong>${totalPrice} VNĐ</strong>.</p>\n      \n      <h4>ĐIỀU 3: TRÁCH NHIỆM CÁC BÊN</h4>\n      <p>Bên B chịu trách nhiệm bồi thường nếu xảy ra hư hỏng, mất mát tài sản trong quá trình vận chuyển.</p>\n      \n      <p>Hợp đồng này được lập thành 02 bản, mỗi bên giữ 01 bản có giá trị pháp lý như nhau.</p>\n    ",
+    "status": "DRAFT",
+    "depositDeadline": "2026-01-09T17:00:00.000Z",
+    "depositDeadlineHours": 48,
+    "validFrom": "2025-12-31T17:00:00.000Z",
+    "validUntil": "2026-12-30T17:00:00.000Z",
+    "createdAt": "2026-04-25T13:31:03.452Z",
+    "updatedAt": "2026-04-25T13:31:03.452Z",
+    "__v": 0
+  }
+]

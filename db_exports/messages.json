@@ -1,0 +1,48 @@
+[
+  {
+    "_id": "69ecc21799984dbe4291366c",
+    "senderId": "69ecc21799984dbe42913606",
+    "recipientId": "69ecc21799984dbe4291360c",
+    "context": {
+      "type": "Invoice",
+      "refId": "69ecc21799984dbe4291364c"
+    },
+    "content": "Xin chào, tôi muốn đặt lịch chuyển nhà vào ngày 8/1",
+    "type": "Text",
+    "readBy": [
+      {
+        "userId": "69ecc21799984dbe4291360c",
+        "readAt": "2026-04-25T13:31:03.487Z",
+        "_id": "69ecc21799984dbe4291366d"
+      }
+    ],
+    "isDeleted": false,
+    "attachments": [],
+    "createdAt": "2026-04-25T13:31:03.488Z",
+    "updatedAt": "2026-04-25T13:31:03.488Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe4291366e",
+    "senderId": "69ecc21799984dbe4291360c",
+    "recipientId": "69ecc21799984dbe42913606",
+    "context": {
+      "type": "Invoice",
+      "refId": "69ecc21799984dbe4291364c"
+    },
+    "content": "Cảm ơn bạn, chúng tôi sẽ liên hệ với bạn trong vòng 1 giờ để xác nhận",
+    "type": "Text",
+    "readBy": [
+      {
+        "userId": "69ecc21799984dbe42913606",
+        "readAt": "2026-04-25T13:31:03.487Z",
+        "_id": "69ecc21799984dbe4291366f"
+      }
+    ],
+    "isDeleted": false,
+    "attachments": [],
+    "createdAt": "2026-04-25T13:31:03.488Z",
+    "updatedAt": "2026-04-25T13:31:03.488Z",
+    "__v": 0
+  }
+]

@@ -1,0 +1,314 @@
+[
+  {
+    "_id": "69ecc013d783d474ae9079df",
+    "requestTicketId": "69ecc013d783d474ae9079d6",
+    "surveyDataId": "69ecc013d783d474ae9079db",
+    "priceListId": "69ecc013d783d474ae9079b3",
+    "version": 1,
+    "breakdown": {
+      "baseTransportFee": 0,
+      "vehicleFee": 0,
+      "laborFee": 0,
+      "distanceFee": 0,
+      "floorFee": 0,
+      "carryFee": 0,
+      "assemblingFee": 0,
+      "packingFee": 0,
+      "insuranceFee": 0,
+      "managementFee": 0,
+      "itemServiceFee": 0,
+      "estimatedHours": 0
+    },
+    "subtotal": 2010000,
+    "tax": 201000,
+    "totalPrice": 2211000,
+    "minimumChargeApplied": false,
+    "discountAmount": 0,
+    "isApproved": false,
+    "dynamicAdjustment": {
+      "recommendationSnapshot": {
+        "alternatives": [],
+        "timestamp": "2026-04-25T13:22:27.944Z"
+      },
+      "isBlocked": false,
+      "suggestAlternatives": false,
+      "experimentGroup": "CONTROL"
+    },
+    "createdAt": "2026-04-25T13:22:27.945Z",
+    "updatedAt": "2026-04-25T13:22:27.945Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc013d783d474ae9079de",
+    "requestTicketId": "69ecc013d783d474ae9079d5",
+    "surveyDataId": "69ecc013d783d474ae9079da",
+    "priceListId": "69ecc013d783d474ae9079b3",
+    "version": 1,
+    "breakdown": {
+      "baseTransportFee": 0,
+      "vehicleFee": 0,
+      "laborFee": 0,
+      "distanceFee": 0,
+      "floorFee": 0,
+      "carryFee": 0,
+      "assemblingFee": 0,
+      "packingFee": 0,
+      "insuranceFee": 0,
+      "managementFee": 0,
+      "itemServiceFee": 0,
+      "estimatedHours": 0
+    },
+    "subtotal": 3850000,
+    "tax": 385000,
+    "totalPrice": 4235000,
+    "minimumChargeApplied": false,
+    "discountAmount": 0,
+    "isApproved": false,
+    "dynamicAdjustment": {
+      "recommendationSnapshot": {
+        "alternatives": [],
+        "timestamp": "2026-04-25T13:22:27.943Z"
+      },
+      "isBlocked": false,
+      "suggestAlternatives": false,
+      "experimentGroup": "CONTROL"
+    },
+    "createdAt": "2026-04-25T13:22:27.944Z",
+    "updatedAt": "2026-04-25T13:22:27.944Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc1829ef0e79765ae6811",
+    "requestTicketId": "69ecc1829ef0e79765ae6803",
+    "surveyDataId": "69ecc1829ef0e79765ae6807",
+    "priceListId": "69ecc1829ef0e79765ae67e3",
+    "version": 1,
+    "breakdown": {
+      "baseTransportFee": 0,
+      "vehicleFee": 0,
+      "laborFee": 0,
+      "distanceFee": 0,
+      "floorFee": 0,
+      "carryFee": 0,
+      "assemblingFee": 0,
+      "packingFee": 0,
+      "insuranceFee": 0,
+      "managementFee": 0,
+      "itemServiceFee": 0,
+      "estimatedHours": 0
+    },
+    "subtotal": 3850000,
+    "tax": 385000,
+    "totalPrice": 4235000,
+    "minimumChargeApplied": false,
+    "discountAmount": 0,
+    "isApproved": false,
+    "dynamicAdjustment": {
+      "recommendationSnapshot": {
+        "alternatives": [],
+        "timestamp": "2026-04-25T13:28:34.664Z"
+      },
+      "isBlocked": false,
+      "suggestAlternatives": false,
+      "experimentGroup": "CONTROL"
+    },
+    "createdAt": "2026-04-25T13:28:34.665Z",
+    "updatedAt": "2026-04-25T13:28:34.665Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc1829ef0e79765ae6812",
+    "requestTicketId": "69ecc1829ef0e79765ae6804",
+    "surveyDataId": "69ecc1829ef0e79765ae6808",
+    "priceListId": "69ecc1829ef0e79765ae67e3",
+    "version": 1,
+    "breakdown": {
+      "baseTransportFee": 0,
+      "vehicleFee": 0,
+      "laborFee": 0,
+      "distanceFee": 0,
+      "floorFee": 0,
+      "carryFee": 0,
+      "assemblingFee": 0,
+      "packingFee": 0,
+      "insuranceFee": 0,
+      "managementFee": 0,
+      "itemServiceFee": 0,
+      "estimatedHours": 0
+    },
+    "subtotal": 2010000,
+    "tax": 201000,
+    "totalPrice": 2211000,
+    "minimumChargeApplied": false,
+    "discountAmount": 0,
+    "isApproved": false,
+    "dynamicAdjustment": {
+      "recommendationSnapshot": {
+        "alternatives": [],
+        "timestamp": "2026-04-25T13:28:34.665Z"
+      },
+      "isBlocked": false,
+      "suggestAlternatives": false,
+      "experimentGroup": "CONTROL"
+    },
+    "createdAt": "2026-04-25T13:28:34.665Z",
+    "updatedAt": "2026-04-25T13:28:34.665Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc19f13926d61e5d8cd1d",
+    "requestTicketId": "69ecc19f13926d61e5d8cd0f",
+    "surveyDataId": "69ecc19f13926d61e5d8cd13",
+    "priceListId": "69ecc19f13926d61e5d8ccef",
+    "version": 1,
+    "breakdown": {
+      "baseTransportFee": 0,
+      "vehicleFee": 0,
+      "laborFee": 0,
+      "distanceFee": 0,
+      "floorFee": 0,
+      "carryFee": 0,
+      "assemblingFee": 0,
+      "packingFee": 0,
+      "insuranceFee": 0,
+      "managementFee": 0,
+      "itemServiceFee": 0,
+      "estimatedHours": 0
+    },
+    "subtotal": 3850000,
+    "tax": 385000,
+    "totalPrice": 4235000,
+    "minimumChargeApplied": false,
+    "discountAmount": 0,
+    "isApproved": false,
+    "dynamicAdjustment": {
+      "recommendationSnapshot": {
+        "alternatives": [],
+        "timestamp": "2026-04-25T13:29:03.471Z"
+      },
+      "isBlocked": false,
+      "suggestAlternatives": false,
+      "experimentGroup": "CONTROL"
+    },
+    "createdAt": "2026-04-25T13:29:03.472Z",
+    "updatedAt": "2026-04-25T13:29:03.472Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc19f13926d61e5d8cd1e",
+    "requestTicketId": "69ecc19f13926d61e5d8cd10",
+    "surveyDataId": "69ecc19f13926d61e5d8cd14",
+    "priceListId": "69ecc19f13926d61e5d8ccef",
+    "version": 1,
+    "breakdown": {
+      "baseTransportFee": 0,
+      "vehicleFee": 0,
+      "laborFee": 0,
+      "distanceFee": 0,
+      "floorFee": 0,
+      "carryFee": 0,
+      "assemblingFee": 0,
+      "packingFee": 0,
+      "insuranceFee": 0,
+      "managementFee": 0,
+      "itemServiceFee": 0,
+      "estimatedHours": 0
+    },
+    "subtotal": 2010000,
+    "tax": 201000,
+    "totalPrice": 2211000,
+    "minimumChargeApplied": false,
+    "discountAmount": 0,
+    "isApproved": false,
+    "dynamicAdjustment": {
+      "recommendationSnapshot": {
+        "alternatives": [],
+        "timestamp": "2026-04-25T13:29:03.472Z"
+      },
+      "isBlocked": false,
+      "suggestAlternatives": false,
+      "experimentGroup": "CONTROL"
+    },
+    "createdAt": "2026-04-25T13:29:03.472Z",
+    "updatedAt": "2026-04-25T13:29:03.472Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913647",
+    "requestTicketId": "69ecc21799984dbe42913639",
+    "surveyDataId": "69ecc21799984dbe4291363d",
+    "priceListId": "69ecc21799984dbe42913619",
+    "version": 1,
+    "breakdown": {
+      "baseTransportFee": 0,
+      "vehicleFee": 0,
+      "laborFee": 0,
+      "distanceFee": 0,
+      "floorFee": 0,
+      "carryFee": 0,
+      "assemblingFee": 0,
+      "packingFee": 0,
+      "insuranceFee": 0,
+      "managementFee": 0,
+      "itemServiceFee": 0,
+      "estimatedHours": 0
+    },
+    "subtotal": 3850000,
+    "tax": 385000,
+    "totalPrice": 4235000,
+    "minimumChargeApplied": false,
+    "discountAmount": 0,
+    "isApproved": false,
+    "dynamicAdjustment": {
+      "recommendationSnapshot": {
+        "alternatives": [],
+        "timestamp": "2026-04-25T13:31:03.458Z"
+      },
+      "isBlocked": false,
+      "suggestAlternatives": false,
+      "experimentGroup": "CONTROL"
+    },
+    "createdAt": "2026-04-25T13:31:03.458Z",
+    "updatedAt": "2026-04-25T13:31:03.458Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913648",
+    "requestTicketId": "69ecc21799984dbe4291363a",
+    "surveyDataId": "69ecc21799984dbe4291363e",
+    "priceListId": "69ecc21799984dbe42913619",
+    "version": 1,
+    "breakdown": {
+      "baseTransportFee": 0,
+      "vehicleFee": 0,
+      "laborFee": 0,
+      "distanceFee": 0,
+      "floorFee": 0,
+      "carryFee": 0,
+      "assemblingFee": 0,
+      "packingFee": 0,
+      "insuranceFee": 0,
+      "managementFee": 0,
+      "itemServiceFee": 0,
+      "estimatedHours": 0
+    },
+    "subtotal": 2010000,
+    "tax": 201000,
+    "totalPrice": 2211000,
+    "minimumChargeApplied": false,
+    "discountAmount": 0,
+    "isApproved": false,
+    "dynamicAdjustment": {
+      "recommendationSnapshot": {
+        "alternatives": [],
+        "timestamp": "2026-04-25T13:31:03.458Z"
+      },
+      "isBlocked": false,
+      "suggestAlternatives": false,
+      "experimentGroup": "CONTROL"
+    },
+    "createdAt": "2026-04-25T13:31:03.458Z",
+    "updatedAt": "2026-04-25T13:31:03.458Z",
+    "__v": 0
+  }
+]

@@ -1,0 +1,64 @@
+[
+  {
+    "_id": "69ecc21799984dbe4291364c",
+    "code": "INV_2026_001",
+    "requestTicketId": "69ecc21799984dbe42913639",
+    "customerId": "69ecc21799984dbe42913606",
+    "pricingDataId": "69ecc21799984dbe42913647",
+    "surveyDataId": "69ecc21799984dbe4291363d",
+    "routeId": "69ecc21799984dbe4291361f",
+    "priceSnapshot": {
+      "subtotal": 3850000,
+      "tax": 385000,
+      "totalPrice": 4235000,
+      "totalAfterPromotion": 4235000
+    },
+    "paymentStatus": "UNPAID",
+    "status": "CONFIRMED",
+    "timeline": [],
+    "notes": "Chuyển nhà trọn gói tại Q1",
+    "scheduledTime": "2026-01-08T01:00:00.000Z",
+    "paidAmount": 0,
+    "remainingAmount": 4235000,
+    "isRated": false,
+    "completionEvidence": {
+      "beforeImages": [],
+      "afterImages": []
+    },
+    "createdAt": "2026-04-25T13:31:03.463Z",
+    "updatedAt": "2026-04-25T13:31:03.475Z",
+    "__v": 0,
+    "dispatchAssignmentId": "69ecc21799984dbe42913654"
+  },
+  {
+    "_id": "69ecc21799984dbe4291364d",
+    "code": "INV_2026_002",
+    "requestTicketId": "69ecc21799984dbe4291363a",
+    "customerId": "69ecc21799984dbe42913608",
+    "pricingDataId": "69ecc21799984dbe42913648",
+    "surveyDataId": "69ecc21799984dbe4291363e",
+    "routeId": "69ecc21799984dbe42913622",
+    "priceSnapshot": {
+      "subtotal": 2010000,
+      "tax": 201000,
+      "totalPrice": 2211000,
+      "totalAfterPromotion": 1911000
+    },
+    "paymentStatus": "PAID",
+    "status": "COMPLETED",
+    "timeline": [],
+    "notes": "Chuyển nhà items cụ thể Q7→Q1, có khuyến mãi",
+    "scheduledTime": "2026-01-09T00:00:00.000Z",
+    "paidAmount": 1911000,
+    "remainingAmount": 0,
+    "isRated": false,
+    "completionEvidence": {
+      "beforeImages": [],
+      "afterImages": []
+    },
+    "createdAt": "2026-04-25T13:31:03.463Z",
+    "updatedAt": "2026-04-25T13:31:03.477Z",
+    "__v": 0,
+    "dispatchAssignmentId": "69ecc21799984dbe42913656"
+  }
+]

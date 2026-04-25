@@ -1,0 +1,74 @@
+[
+  {
+    "_id": "69ecc21799984dbe42913673",
+    "userId": "69ecc21799984dbe42913606",
+    "ticketId": "69ecc21799984dbe42913639",
+    "title": "Xe sắp đến",
+    "message": "Xe vận chuyển sẽ đến trong 30 phút. Vui lòng chuẩn bị sẵn sàng",
+    "type": "System",
+    "isRead": true,
+    "createdAt": "2026-04-25T13:31:03.492Z",
+    "updatedAt": "2026-04-25T13:31:03.492Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913672",
+    "userId": "69ecc21799984dbe42913606",
+    "ticketId": "69ecc21799984dbe42913639",
+    "title": "Đơn hàng được xác nhận",
+    "message": "Đơn hàng INV_2026_001 đã được xác nhận và sắp được vận chuyển",
+    "type": "System",
+    "isRead": true,
+    "createdAt": "2026-04-25T13:31:03.492Z",
+    "updatedAt": "2026-04-25T13:31:03.492Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913674",
+    "userId": "69ecc21799984dbe42913606",
+    "ticketId": "69ecc21799984dbe42913639",
+    "title": "Khuyến mãi mới",
+    "message": "Khuyến mãi giảm giá 20% cho khách hàng mới. Sử dụng code NEWYEAR20",
+    "type": "System",
+    "isRead": false,
+    "createdAt": "2026-04-25T13:31:03.492Z",
+    "updatedAt": "2026-04-25T13:31:03.492Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913675",
+    "userId": "69ecc21799984dbe42913606",
+    "ticketId": "69ecc21799984dbe42913639",
+    "title": "Cập nhật hệ thống",
+    "message": "Hệ thống sẽ bảo trì từ 2:00 AM - 4:00 AM ngày mai",
+    "type": "System",
+    "isRead": false,
+    "createdAt": "2026-04-25T13:31:03.492Z",
+    "updatedAt": "2026-04-25T13:31:03.492Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913676",
+    "userId": "69ecc21799984dbe42913606",
+    "ticketId": "69ecc21799984dbe42913639",
+    "title": "Chuyến hàng hoàn thành",
+    "message": "Chuyến hàng INV_2026_002 đã được giao thành công",
+    "type": "System",
+    "isRead": true,
+    "createdAt": "2026-04-25T13:31:03.492Z",
+    "updatedAt": "2026-04-25T13:31:03.492Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913677",
+    "userId": "69ecc21799984dbe42913606",
+    "ticketId": "69ecc21799984dbe42913639",
+    "title": "Đánh giá chuyến hàng",
+    "message": "Vui lòng đánh giá chuyến hàng vừa rồi để giúp chúng tôi cải thiện dịch vụ",
+    "type": "System",
+    "isRead": false,
+    "createdAt": "2026-04-25T13:31:03.492Z",
+    "updatedAt": "2026-04-25T13:31:03.492Z",
+    "__v": 0
+  }
+]

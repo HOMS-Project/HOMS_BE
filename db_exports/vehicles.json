@@ -1,0 +1,42 @@
+[
+  {
+    "_id": "69ecc21799984dbe42913615",
+    "vehicleId": "VHC-001",
+    "plateNumber": "51A-00001",
+    "vehicleType": "2TON",
+    "loadCapacity": 2000,
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        0,
+        0
+      ]
+    },
+    "status": "Available",
+    "isActive": true,
+    "maxStaff": 4,
+    "createdAt": "2026-04-25T13:31:03.421Z",
+    "updatedAt": "2026-04-25T13:31:03.421Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913617",
+    "vehicleId": "VHC-002",
+    "plateNumber": "51A-00002",
+    "vehicleType": "1TON",
+    "loadCapacity": 1000,
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        0,
+        0
+      ]
+    },
+    "status": "Available",
+    "isActive": true,
+    "maxStaff": 3,
+    "createdAt": "2026-04-25T13:31:03.423Z",
+    "updatedAt": "2026-04-25T13:31:03.423Z",
+    "__v": 0
+  }
+]
