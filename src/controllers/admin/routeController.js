@@ -19,6 +19,17 @@ exports.getRouteStats = async (req, res, next) => {
     }
 };
 
+// POST /api/admin/routes/filter - accept JSON body for complex filters (used by UI)
+exports.filterRoutes = async (req, res, next) => {
+    try {
+        const payload = req.body || {};
+        const routes = await adminRouteService.getAllRoutes(payload);
+        res.status(200).json({ success: true, data: routes });
+    } catch (error) {
+        next(error);
+    }
+};
+
 exports.getRouteById = async (req, res, next) => {
     try {
         const route = await adminRouteService.getRouteById(req.params.id);
