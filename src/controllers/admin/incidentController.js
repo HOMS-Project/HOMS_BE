@@ -151,7 +151,8 @@ const exportIncidents = async (req, res) => {
 // GET /admin/incidents/dashboard
 const getDashboard = async (req, res) => {
 	try {
-		const stats = await incidentService.getDashboard();
+		const { search, type, status } = req.query;
+		const stats = await incidentService.getDashboard({ search, type, status });
 		return res.status(200).json({ success: true, data: stats });
 	} catch (err) {
 		return sendError(res, err);

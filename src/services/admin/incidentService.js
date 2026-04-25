@@ -169,24 +169,60 @@ module.exports = {
   getIncidentById,
   resolveIncident,
   // dashboard stats for admin UI
-  async getDashboard() {
-    // total incidents
-    const total = await Incident.countDocuments();
+  async getDashboard({ search, type, status } = {}) {
+    // Build aggregation pipeline similar to listIncidents so dashboard reflects filters
+    const pipeline = [];
 
-    // open incidents (status === 'Open')
-    const open = await Incident.countDocuments({ status: 'Open' });
+    // join invoice
+    pipeline.push({
+      $lookup: { from: 'invoices', localField: 'invoiceId', foreignField: '_id', as: 'invoice' }
+    });
+    pipeline.push({ $unwind: { path: '$invoice', preserveNullAndEmptyArrays: true } });
 
-    // investigating (status === 'Investigating')
-    const investigating = await Incident.countDocuments({ status: 'Investigating' });
+    // join reporter
+    pipeline.push({
+      $lookup: { from: 'users', localField: 'reporterId', foreignField: '_id', as: 'reporter' }
+    });
+    pipeline.push({ $unwind: { path: '$reporter', preserveNullAndEmptyArrays: true } });
 
-    // compensation requests: incidents with a requested compensation amount > 0 or resolution.action === 'Compensation'
-    const compensation = await Incident.countDocuments({
-      $or: [
-        { 'resolution.compensationAmount': { $gt: 0 } },
-        { 'resolution.action': 'Compensation' }
-      ]
+    const match = {};
+    if (type && type !== 'all') match.type = type;
+    if (status && status !== 'all') match.status = status;
+    if (Object.keys(match).length > 0) pipeline.push({ $match: match });
+
+    if (search) {
+      const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      pipeline.push({
+        $match: {
+          $or: [
+            { _id: { $regex: regex } },
+            { 'invoice.code': { $regex: regex } },
+            { 'reporter.fullName': { $regex: regex } }
+          ]
+        }
+      });
+    }
+
+    // Facet to compute totals and specific counts efficiently
+    pipeline.push({
+      $facet: {
+        total: [ { $count: 'count' } ],
+        statusCounts: [ { $group: { _id: '$status', count: { $sum: 1 } } } ],
+        compensation: [ { $match: { $or: [ { 'resolution.compensationAmount': { $gt: 0 } }, { 'resolution.action': 'Compensation' } ] } }, { $count: 'count' } ]
+      }
     });
 
-    return { total, open, investigating, compensation };
+    const agg = await Incident.aggregate(pipeline).allowDiskUse(true);
+    const meta = agg && agg[0] ? agg[0] : { total: [], statusCounts: [], compensation: [] };
+
+    const total = (meta.total && meta.total[0] && meta.total[0].count) || 0;
+    const statusCountsArr = meta.statusCounts || [];
+    const statusMap = {};
+    statusCountsArr.forEach(s => { statusMap[s._id] = s.count; });
+    const open = statusMap['Open'] || 0;
+    const investigating = statusMap['Investigating'] || 0;
+    const compensation = (meta.compensation && meta.compensation[0] && meta.compensation[0].count) || 0;
+
+    return { total, open, investigating, compensation, statusCounts: statusMap };
   }
 };
