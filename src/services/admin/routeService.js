@@ -149,5 +149,6 @@ exports.getRouteStats = async () => {
     const active = await Route.countDocuments({ isActive: true });
     const inactive = total - active;
     const withRules = await Route.countDocuments({ 'trafficRules.0': { $exists: true } });
-    return { total, active, inactive, withRules };
+    const withRestrictions = await Route.countDocuments({ 'roadRestrictions.0': { $exists: true } });
+    return { total, active, inactive, withRules, withRestrictions };
 };
