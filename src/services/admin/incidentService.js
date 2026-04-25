@@ -168,4 +168,25 @@ module.exports = {
   listIncidents,
   getIncidentById,
   resolveIncident,
+  // dashboard stats for admin UI
+  async getDashboard() {
+    // total incidents
+    const total = await Incident.countDocuments();
+
+    // open incidents (status === 'Open')
+    const open = await Incident.countDocuments({ status: 'Open' });
+
+    // investigating (status === 'Investigating')
+    const investigating = await Incident.countDocuments({ status: 'Investigating' });
+
+    // compensation requests: incidents with a requested compensation amount > 0 or resolution.action === 'Compensation'
+    const compensation = await Incident.countDocuments({
+      $or: [
+        { 'resolution.compensationAmount': { $gt: 0 } },
+        { 'resolution.action': 'Compensation' }
+      ]
+    });
+
+    return { total, open, investigating, compensation };
+  }
 };
