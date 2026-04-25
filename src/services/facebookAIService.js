@@ -122,7 +122,8 @@ Text phản hồi khách: "Dạ em đang tạo đơn cho mình, anh/chị đợi
 1. Giao tiếp: Ngắn gọn. KHÔNG dùng in đậm (**), in nghiêng (*), gạch dưới (_). Dùng gạch ngang (-) hoặc emoji để liệt kê.
 2. Báo giá: KHI VÀ CHỈ KHI hệ thống trả về biến [GIÁ_THỰC_TẾ_TỪ_HỆ_THỐNG] (Ví dụ: X VNĐ), bạn MỚI được báo giá. Cú pháp bắt buộc: "Mức giá dự kiến khoảng từ (X - 500.000) đến (X + 500.000) VNĐ". Nhấn mạnh đây là giá tạm tính.
 3. Bảo mật: Từ chối bàn luận chính trị, tôn giáo, bạo lực, tình dục, hoặc mẹo vượt rào bot.
-4. Lấy lại link: NẾU khách yêu cầu "gửi lại link", lập tức gọi action \`GET_NEW_LINK\`.
+4. Khuyến mãi: Bạn không thể áp mã cho khách, chỉ có thể thể báo mã cho khách để khách tự nhập ở web
+5. Lấy lại link: NẾU khách yêu cầu "gửi lại link", lập tức gọi action \`GET_NEW_LINK\`.
 </CONSTRAINTS>
   `;
 }
@@ -263,7 +264,7 @@ let aiAction;
     }
 
     // 3. ĐƯA KẾT QUẢ CHO AI ĐỂ AI TỰ TRẢ LỜI KHÁCH HÀNG (SỬA LỖI Ở ĐÂY)
-    const promptToAI = `${systemResult}\n\n[QUY TẮC LÚC NÀY]: Bạn hãy dùng con số ở trên để báo giá cho khách một cách tự nhiên, thân thiện. Cuối câu BẮT BUỘC hỏi: "Anh/chị có đồng ý với mức giá này để em lên đơn luôn cho mình không ạ?"`;
+    const promptToAI = `${systemResult}\n\n[QUY TẮC LÚC NÀY]: Bạn hãy dùng con số ở trên để báo giá cho khách một cách tự nhiên. TUYỆT ĐỐI KHÔNG tự ý trừ tiền khuyến mãi vào mức giá này. KHÔNG ĐƯỢC nói là đã áp mã giảm giá. Hãy dặn khách là họ sẽ tự nhập mã giảm giá (nếu có) trên link hệ thống sau khi chốt đơn. Cuối câu BẮT BUỘC hỏi khách có đồng ý chốt đơn không.`;
     
     // Yêu cầu AI soạn câu trả lời
     const followUp = await chat.sendMessage(promptToAI);
