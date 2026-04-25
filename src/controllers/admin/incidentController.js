@@ -163,5 +163,6 @@ module.exports = {
 	getIncident,
 	resolveIncident,
 	exportIncidents,
+    getDashboard,
 };
 
