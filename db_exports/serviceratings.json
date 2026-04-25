@@ -1,0 +1,23 @@
+[
+  {
+    "_id": "69ecc21799984dbe42913688",
+    "invoiceId": "69ecc21799984dbe4291364c",
+    "customerId": "69ecc21799984dbe42913606",
+    "driverId": "69ecc21799984dbe4291360a",
+    "vehicleId": "69ecc21799984dbe42913615",
+    "rating": 5,
+    "categories": {
+      "cleanliness": 5,
+      "professionalism": 5,
+      "punctuality": 5
+    },
+    "quickTags": [],
+    "comment": "Dịch vụ xuất sắc, nhân viên rất chuyên nghiệp và thân thiện. Sẽ sử dụng lại!",
+    "images": [
+      "https://example.com/rating1.jpg"
+    ],
+    "createdAt": "2026-04-25T13:31:03.502Z",
+    "updatedAt": "2026-04-25T13:31:03.502Z",
+    "__v": 0
+  }
+]

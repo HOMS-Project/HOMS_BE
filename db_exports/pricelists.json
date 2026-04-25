@@ -1,0 +1,83 @@
+[
+  {
+    "_id": "69ecc21799984dbe42913619",
+    "code": "HOMS-TIME-BASED-2026",
+    "name": "Bảng giá Time-Based 2026",
+    "description": "Tính theo giờ + nhân công + phụ phí đầy đủ",
+    "isActive": true,
+    "taxRate": 0.1,
+    "basePrice": {
+      "minimumCharge": 800000,
+      "fullHouseBase": 500000,
+      "specificItemsBase": 300000
+    },
+    "vehiclePricing": [
+      {
+        "vehicleType": "500KG",
+        "basePriceForFirstXKm": 400000,
+        "limitKm": 5,
+        "pricePerNextKm": 20000,
+        "pricePerHour": 150000,
+        "pricePerDay": 1000000,
+        "_id": "69ecc21799984dbe4291361a"
+      },
+      {
+        "vehicleType": "1TON",
+        "basePriceForFirstXKm": 600000,
+        "limitKm": 5,
+        "pricePerNextKm": 25000,
+        "pricePerHour": 200000,
+        "pricePerDay": 1400000,
+        "_id": "69ecc21799984dbe4291361b"
+      },
+      {
+        "vehicleType": "1.5TON",
+        "basePriceForFirstXKm": 900000,
+        "limitKm": 5,
+        "pricePerNextKm": 30000,
+        "pricePerHour": 300000,
+        "pricePerDay": 2000000,
+        "_id": "69ecc21799984dbe4291361c"
+      },
+      {
+        "vehicleType": "2TON",
+        "basePriceForFirstXKm": 1200000,
+        "limitKm": 5,
+        "pricePerNextKm": 35000,
+        "pricePerHour": 400000,
+        "pricePerDay": 2600000,
+        "_id": "69ecc21799984dbe4291361d"
+      }
+    ],
+    "laborCost": {
+      "basePricePerPerson": 0,
+      "pricePerHourPerPerson": 0
+    },
+    "movingSurcharge": {
+      "freeCarryDistance": 15,
+      "pricePerExtraMeter": 20000,
+      "distanceSurchargePerKm": 30000,
+      "stairSurchargePerFloor": 100000,
+      "elevatorSurcharge": 50000,
+      "peakHourMultiplier": 1.2,
+      "weekendMultiplier": 1.15
+    },
+    "additionalServices": {
+      "packingMaterial": 200000,
+      "packingFee": 300000,
+      "assemblingFee": 500000,
+      "insuranceRate": 0.01,
+      "managementFeeRate": 0.05
+    },
+    "surveyFee": {
+      "offline": 300000,
+      "online": 100000
+    },
+    "effectiveFrom": "2026-01-01T00:00:00.000Z",
+    "effectiveTo": "2026-12-31T00:00:00.000Z",
+    "transportTiers": [],
+    "createdAt": "2026-04-25T13:31:03.428Z",
+    "updatedAt": "2026-04-25T13:31:03.428Z",
+    "__v": 0
+  }
+]

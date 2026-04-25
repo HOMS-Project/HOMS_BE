@@ -21,6 +21,8 @@ const Notification = require('../models/Notification');
 const Promotion = require('../models/Promotion');
 const ServiceRating = require('../models/ServiceRating');
 const Transaction = require('../models/Transaction');
+const ContractTemplate = require('../models/ContractTemplate');
+const Contract = require('../models/Contract');
 
 // Import seed data
 const priceListData = require('./priceListData');
@@ -34,6 +36,7 @@ const notificationData = require('./notificationData');
 const promotionData = require('./promotionData');
 const serviceRatingData = require('./serviceRatingData');
 const transactionData = require('./transactionData');
+const contractTemplateData = require('./contractTemplateData');
 
 async function seedDatabase() {
   try {
@@ -52,6 +55,15 @@ async function seedDatabase() {
     await SurveyData.deleteMany({});
     await Invoice.deleteMany({});
     await Vehicle.deleteMany({});
+    await ContractTemplate.deleteMany({});
+    await Contract.deleteMany({});
+    await Promotion.deleteMany({});
+    await Incident.deleteMany({});
+    await MaintenanceSchedule.deleteMany({});
+    await Message.deleteMany({});
+    await Notification.deleteMany({});
+    await ServiceRating.deleteMany({});
+    await Transaction.deleteMany({});
     console.log('✅ Collections cleared\n');
 
     // 1. Create Users (Customer, Driver, Dispatcher, Admin)
@@ -224,6 +236,42 @@ async function seedDatabase() {
       const createdSurveys = await SurveyData.create(surveyDocs);
       console.log('✅ Created survey data(s)\n');
 
+    // 5.5 Create Contract Templates & Contracts
+    console.log('📜 Creating contract templates and contracts...');
+    const updatedContractTemplateData = contractTemplateData.map(tpl => ({
+      ...tpl,
+      createdBy: adminUser._id
+    }));
+    const contractTemplates = await ContractTemplate.create(updatedContractTemplateData);
+    
+    const contractDocs = tickets.map((t, index) => {
+      const isSigned = index === 0;
+      return {
+        contractNumber: `VNĐ-2026010${index + 1}-001`,
+        templateId: contractTemplates[0]._id,
+        requestTicketId: t._id,
+        customerId: t.customerId,
+        content: contractTemplates[0].content,
+        status: isSigned ? 'SIGNED' : 'DRAFT',
+        depositDeadline: new Date('2026-01-10T00:00:00'),
+        validFrom: new Date('2026-01-01T00:00:00'),
+        validUntil: new Date('2026-12-31T00:00:00'),
+        ...(isSigned ? {
+          customerSignature: {
+            signatureImage: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+            signedAt: new Date()
+          },
+          adminSignature: {
+             signedBy: adminUser._id,
+             signedByName: adminUser.fullName,
+             signedAt: new Date()
+          }
+        } : {})
+      };
+    });
+    const contracts = await Contract.create(contractDocs);
+    console.log(`✅ Created ${contractTemplates.length} template(s) and ${contracts.length} contract(s)\n`);
+
     // 6. Create PricingData & DispatchAssignment & Invoices
     console.log('📄 Creating pricing data, assignments and invoices...');
     
@@ -366,6 +414,7 @@ async function seedDatabase() {
     console.log(`Price Lists:    ${priceLists.length}`);
     console.log(`Routes:         ${routes.length}`);
     console.log(`Tickets:        ${tickets.length}`);
+    console.log(`Contracts:      ${contracts.length}`);
     console.log(`Invoices:       ${invoices.length}`);
     console.log(`Incidents:      ${incidents.length}`);
     console.log(`Maintenance:    ${maintenances.length}`);

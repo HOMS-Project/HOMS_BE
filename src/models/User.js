@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const refreshTokenSchema = new mongoose.Schema(
   {
     token: { type: String, required: true },

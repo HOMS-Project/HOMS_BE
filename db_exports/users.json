@@ -1,0 +1,386 @@
+[
+  {
+    "_id": "69ecc21799984dbe42913604",
+    "fullName": "Quản trị viên Hệ thống",
+    "email": "homsadmin@homs.com",
+    "phone": "0999999999",
+    "password": "$2b$10$3fqaOu900PZqEh6tw0d2duWD48h3jOP0fz3pW86JfYa8UiJsByO0C",
+    "provider": "local",
+    "role": "admin",
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "status": "Active",
+    "driverProfile": {
+      "skills": [],
+      "isAvailable": true
+    },
+    "dispatcherProfile": {
+      "workingAreas": [],
+      "isGeneral": false,
+      "isAvailable": true
+    },
+    "refreshTokens": [],
+    "securityToken": "b7363e61b5488de704161d320154c8a0",
+    "createdAt": "2026-04-25T13:31:03.397Z",
+    "updatedAt": "2026-04-25T13:31:03.397Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913606",
+    "fullName": "Nguyễn Văn A",
+    "email": "customera@example.com",
+    "phone": "0912345678",
+    "password": "$2b$10$iS.T70xViBOK59WpEwh.IeHytz8AKcEV5QIbuJO.m6U.YLdSf.KXe",
+    "provider": "local",
+    "avatar": "https://example.com/avatar_a.jpg",
+    "role": "customer",
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "status": "Active",
+    "driverProfile": {
+      "skills": [],
+      "isAvailable": true
+    },
+    "dispatcherProfile": {
+      "workingAreas": [],
+      "isGeneral": false,
+      "isAvailable": true
+    },
+    "refreshTokens": [],
+    "securityToken": "39e7bc0526b1df1c5c09ef2bab082edc",
+    "createdAt": "2026-04-25T13:31:03.404Z",
+    "updatedAt": "2026-04-25T13:31:03.404Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913608",
+    "fullName": "Trần Thị B",
+    "email": "customerb@example.com",
+    "phone": "0987654321",
+    "password": "$2b$10$iS.T70xViBOK59WpEwh.IeHytz8AKcEV5QIbuJO.m6U.YLdSf.KXe",
+    "provider": "local",
+    "avatar": "https://example.com/avatar_b.jpg",
+    "role": "customer",
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "status": "Active",
+    "driverProfile": {
+      "skills": [],
+      "isAvailable": true
+    },
+    "dispatcherProfile": {
+      "workingAreas": [],
+      "isGeneral": false,
+      "isAvailable": true
+    },
+    "refreshTokens": [],
+    "securityToken": "72cdb4336ef0ebeb2b823a4b75fe2db8",
+    "createdAt": "2026-04-25T13:31:03.406Z",
+    "updatedAt": "2026-04-25T13:31:03.406Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe4291360a",
+    "fullName": "Lê Văn C",
+    "email": "driverc@example.com",
+    "phone": "0909090909",
+    "password": "$2b$10$iS.T70xViBOK59WpEwh.IeHytz8AKcEV5QIbuJO.m6U.YLdSf.KXe",
+    "provider": "local",
+    "role": "driver",
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "status": "Active",
+    "driverProfile": {
+      "licenseNumber": "DL123456",
+      "skills": [
+        "Bốc xếp",
+        "Lái xe tải"
+      ],
+      "isAvailable": true
+    },
+    "dispatcherProfile": {
+      "workingAreas": [],
+      "isGeneral": false,
+      "isAvailable": true
+    },
+    "refreshTokens": [],
+    "securityToken": "d58656207018ffe02d9fb364deba8e26",
+    "createdAt": "2026-04-25T13:31:03.409Z",
+    "updatedAt": "2026-04-25T13:31:03.409Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe4291360c",
+    "fullName": "Điều phối viên Tổng",
+    "email": "head.dispatcher@homs.com",
+    "password": "$2b$10$iS.T70xViBOK59WpEwh.IeHytz8AKcEV5QIbuJO.m6U.YLdSf.KXe",
+    "provider": "local",
+    "role": "dispatcher",
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "status": "Active",
+    "driverProfile": {
+      "skills": [],
+      "isAvailable": true
+    },
+    "dispatcherProfile": {
+      "workingAreas": [],
+      "isGeneral": true,
+      "isAvailable": true
+    },
+    "refreshTokens": [],
+    "securityToken": "eb61a7b0f46fa5591d74093afcd84ce3",
+    "__v": 0,
+    "createdAt": "2026-04-25T13:31:03.415Z",
+    "updatedAt": "2026-04-25T13:31:03.415Z"
+  },
+  {
+    "_id": "69ecc21799984dbe4291360d",
+    "fullName": "Điều phối viên Hải Châu",
+    "email": "haichau.disp@homs.com",
+    "password": "$2b$10$iS.T70xViBOK59WpEwh.IeHytz8AKcEV5QIbuJO.m6U.YLdSf.KXe",
+    "provider": "local",
+    "role": "dispatcher",
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "status": "Active",
+    "driverProfile": {
+      "skills": [],
+      "isAvailable": true
+    },
+    "dispatcherProfile": {
+      "workingAreas": [
+        "Hải Châu"
+      ],
+      "isGeneral": false,
+      "isAvailable": true
+    },
+    "refreshTokens": [],
+    "securityToken": "7620146e4122446ab0050b4a34b966ee",
+    "__v": 0,
+    "createdAt": "2026-04-25T13:31:03.415Z",
+    "updatedAt": "2026-04-25T13:31:03.415Z"
+  },
+  {
+    "_id": "69ecc21799984dbe4291360e",
+    "fullName": "Điều phối viên Thanh Khê",
+    "email": "thanhkhe.disp@homs.com",
+    "password": "$2b$10$iS.T70xViBOK59WpEwh.IeHytz8AKcEV5QIbuJO.m6U.YLdSf.KXe",
+    "provider": "local",
+    "role": "dispatcher",
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "status": "Active",
+    "driverProfile": {
+      "skills": [],
+      "isAvailable": true
+    },
+    "dispatcherProfile": {
+      "workingAreas": [
+        "Thanh Khê"
+      ],
+      "isGeneral": false,
+      "isAvailable": true
+    },
+    "refreshTokens": [],
+    "securityToken": "9b6943bc5663549e3ed383cdd93fdf10",
+    "__v": 0,
+    "createdAt": "2026-04-25T13:31:03.415Z",
+    "updatedAt": "2026-04-25T13:31:03.415Z"
+  },
+  {
+    "_id": "69ecc21799984dbe4291360f",
+    "fullName": "Điều phối viên Sơn Trà",
+    "email": "sontra.disp@homs.com",
+    "password": "$2b$10$iS.T70xViBOK59WpEwh.IeHytz8AKcEV5QIbuJO.m6U.YLdSf.KXe",
+    "provider": "local",
+    "role": "dispatcher",
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "status": "Active",
+    "driverProfile": {
+      "skills": [],
+      "isAvailable": true
+    },
+    "dispatcherProfile": {
+      "workingAreas": [
+        "Sơn Trà"
+      ],
+      "isGeneral": false,
+      "isAvailable": true
+    },
+    "refreshTokens": [],
+    "securityToken": "dbb74e38b886214bd2cefb7184c6d553",
+    "__v": 0,
+    "createdAt": "2026-04-25T13:31:03.415Z",
+    "updatedAt": "2026-04-25T13:31:03.415Z"
+  },
+  {
+    "_id": "69ecc21799984dbe42913610",
+    "fullName": "Điều phối viên Ngũ Hành Sơn",
+    "email": "nguhanhson.disp@homs.com",
+    "password": "$2b$10$iS.T70xViBOK59WpEwh.IeHytz8AKcEV5QIbuJO.m6U.YLdSf.KXe",
+    "provider": "local",
+    "role": "dispatcher",
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "status": "Active",
+    "driverProfile": {
+      "skills": [],
+      "isAvailable": true
+    },
+    "dispatcherProfile": {
+      "workingAreas": [
+        "Ngũ Hành Sơn"
+      ],
+      "isGeneral": false,
+      "isAvailable": true
+    },
+    "refreshTokens": [],
+    "securityToken": "d09ed612289425b8bb7bd37b31585f7b",
+    "__v": 0,
+    "createdAt": "2026-04-25T13:31:03.415Z",
+    "updatedAt": "2026-04-25T13:31:03.415Z"
+  },
+  {
+    "_id": "69ecc21799984dbe42913611",
+    "fullName": "Điều phối viên Liên Chiểu",
+    "email": "lienchieu.disp@homs.com",
+    "password": "$2b$10$iS.T70xViBOK59WpEwh.IeHytz8AKcEV5QIbuJO.m6U.YLdSf.KXe",
+    "provider": "local",
+    "role": "dispatcher",
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "status": "Active",
+    "driverProfile": {
+      "skills": [],
+      "isAvailable": true
+    },
+    "dispatcherProfile": {
+      "workingAreas": [
+        "Liên Chiểu"
+      ],
+      "isGeneral": false,
+      "isAvailable": true
+    },
+    "refreshTokens": [],
+    "securityToken": "7865eea8cb67ebf9dd3bcf79c0656160",
+    "__v": 0,
+    "createdAt": "2026-04-25T13:31:03.415Z",
+    "updatedAt": "2026-04-25T13:31:03.415Z"
+  },
+  {
+    "_id": "69ecc21799984dbe42913612",
+    "fullName": "Điều phối viên Cẩm Lệ",
+    "email": "camle.disp@homs.com",
+    "password": "$2b$10$iS.T70xViBOK59WpEwh.IeHytz8AKcEV5QIbuJO.m6U.YLdSf.KXe",
+    "provider": "local",
+    "role": "dispatcher",
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "status": "Active",
+    "driverProfile": {
+      "skills": [],
+      "isAvailable": true
+    },
+    "dispatcherProfile": {
+      "workingAreas": [
+        "Cẩm Lệ"
+      ],
+      "isGeneral": false,
+      "isAvailable": true
+    },
+    "refreshTokens": [],
+    "securityToken": "13e3ba2de4dcf1d3be123fabae35ce57",
+    "__v": 0,
+    "createdAt": "2026-04-25T13:31:03.415Z",
+    "updatedAt": "2026-04-25T13:31:03.415Z"
+  },
+  {
+    "_id": "69ecc21799984dbe42913613",
+    "fullName": "Điều phối viên Hòa Vang",
+    "email": "hoavang.disp@homs.com",
+    "password": "$2b$10$iS.T70xViBOK59WpEwh.IeHytz8AKcEV5QIbuJO.m6U.YLdSf.KXe",
+    "provider": "local",
+    "role": "dispatcher",
+    "currentLocation": {
+      "type": "Point",
+      "coordinates": [
+        108.2022,
+        16.0544
+      ]
+    },
+    "status": "Active",
+    "driverProfile": {
+      "skills": [],
+      "isAvailable": true
+    },
+    "dispatcherProfile": {
+      "workingAreas": [
+        "Hòa Vang"
+      ],
+      "isGeneral": false,
+      "isAvailable": true
+    },
+    "refreshTokens": [],
+    "securityToken": "b7556fd467913716f6b7b5b32f61a368",
+    "__v": 0,
+    "createdAt": "2026-04-25T13:31:03.415Z",
+    "updatedAt": "2026-04-25T13:31:03.415Z"
+  }
+]

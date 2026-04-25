@@ -1,0 +1,108 @@
+[
+  {
+    "_id": "69ecc21799984dbe42913639",
+    "code": "TICKET_2026_001",
+    "customerId": "69ecc21799984dbe42913606",
+    "dispatcherId": "69ecc21799984dbe429135af",
+    "moveType": "FULL_HOUSE",
+    "rentalDetails": {
+      "extraStaffCount": 0,
+      "needsPacking": false,
+      "needsAssembling": false,
+      "withDriver": false,
+      "withHelper": false
+    },
+    "distanceKm": 5,
+    "pickup": {
+      "address": "123 Nguyễn Huệ, Q1, TP.HCM",
+      "district": "HAI_CHAU",
+      "coordinates": {
+        "lat": 10.7725,
+        "lng": 106.6992
+      }
+    },
+    "delivery": {
+      "address": "456 Tân Định, Q3, TP.HCM",
+      "district": "THANH_KHE",
+      "coordinates": {
+        "lat": 10.7869,
+        "lng": 106.678
+      }
+    },
+    "scheduledTime": "2026-01-06T03:00:00.000Z",
+    "pricing": {
+      "subtotal": 3500000,
+      "tax": 350000,
+      "totalPrice": 3850000,
+      "quotedAt": "2026-01-06T05:00:00.000Z",
+      "isFinalized": false
+    },
+    "status": "QUOTED",
+    "proposedSurveyTimes": [],
+    "isHighValue": false,
+    "insurance": {
+      "isInsured": false,
+      "insuranceProvider": "HOMS_PROTECT"
+    },
+    "notes": "Nhà 2 phòng, nội thất cũ, cần tháo lắp tủ quần áo",
+    "createdAt": "2026-04-25T13:31:03.442Z",
+    "updatedAt": "2026-04-25T13:31:03.442Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe4291363a",
+    "code": "TICKET_2026_002",
+    "customerId": "69ecc21799984dbe42913608",
+    "dispatcherId": "69ecc21799984dbe429135b1",
+    "moveType": "SPECIFIC_ITEMS",
+    "rentalDetails": {
+      "extraStaffCount": 0,
+      "needsPacking": false,
+      "needsAssembling": false,
+      "withDriver": false,
+      "withHelper": false
+    },
+    "distanceKm": 12,
+    "pickup": {
+      "address": "789 Võ Văn Ngân, Thủ Đức, TP.HCM",
+      "district": "SON_TRA",
+      "coordinates": {
+        "lat": 10.8013,
+        "lng": 106.7629
+      }
+    },
+    "delivery": {
+      "address": "321 Lê Lợi, Q1, TP.HCM",
+      "district": "HAI_CHAU",
+      "coordinates": {
+        "lat": 10.7725,
+        "lng": 106.6992
+      }
+    },
+    "scheduledTime": "2026-01-05T09:00:00.000Z",
+    "pricing": {
+      "subtotal": 1200000,
+      "tax": 120000,
+      "totalPrice": 1320000,
+      "quotedAt": "2026-01-05T10:00:00.000Z",
+      "acceptedAt": "2026-01-05T13:00:00.000Z",
+      "isFinalized": false
+    },
+    "status": "ACCEPTED",
+    "proposedSurveyTimes": [],
+    "isHighValue": true,
+    "highValueDetails": {
+      "declaredValue": 50000000,
+      "description": "Đồ điện tử",
+      "category": "ELECTRONICS"
+    },
+    "insurance": {
+      "isInsured": false,
+      "insuranceProvider": "HOMS_PROTECT"
+    },
+    "notes": "Khách call video để thảo luận, items không quá nặng",
+    "createdAt": "2026-04-25T13:31:03.442Z",
+    "updatedAt": "2026-04-25T13:31:03.442Z",
+    "__v": 0
+  }
+]
