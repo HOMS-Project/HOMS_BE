@@ -2,6 +2,8 @@ const vehicleService = require('../../services/admin/vehicleService');
 
 async function listVehicles(req, res, next) {
   try {
+    // admin-only diagnostic log
+    console.info('[ADMIN] listVehicles - query', req.query, 'by', req.user?._id || 'anonymous');
     const { status } = req.query;
     const list = await vehicleService.listVehicles({ status });
     res.json(list);

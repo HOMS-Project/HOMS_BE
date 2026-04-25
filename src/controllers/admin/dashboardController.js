@@ -13,6 +13,8 @@ const adminDashboardService = require('../../services/admin/dashboardService');
  */
 async function getOverview(req, res, next) {
 	try {
+		// lightweight audit log for admin activity
+		console.info('[ADMIN] getOverview requested by', req.user?._id || 'anonymous');
 		const today = moment().startOf('day').toDate();
 
 		// daily orders
@@ -43,6 +45,20 @@ async function getOverview(req, res, next) {
 		};
 
 		return res.status(200).json({ success: true, data });
+	} catch (err) {
+		next(err);
+	}
+}
+
+// Small admin-only meta endpoint to help debug/identify automated commits
+async function getAdminMeta(req, res, next) {
+	try {
+		const meta = {
+			modifiedBy: 'auto-commit-helper',
+			modifiedAt: new Date(),
+			note: 'This endpoint is admin-only and added for lightweight diagnostics.'
+		};
+		return res.status(200).json({ success: true, data: meta });
 	} catch (err) {
 		next(err);
 	}
