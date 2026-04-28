@@ -33,7 +33,7 @@ const userSchema = new mongoose.Schema({
 
   provider: {
     type: String,
-    enum: ['local', 'google','facebook','local_and_facebook'],
+    enum: ['local', 'google','facebook','local_and_facebook','pending'],
     default: 'local'
   },
  facebookId: { type: String, unique: true, sparse: true },

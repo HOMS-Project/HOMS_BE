@@ -290,7 +290,7 @@ exports.facebookLogin = async (req, res, next) => {
       message: "Đăng nhập Facebook thành công",
       data: {
         user: {
-          _id: user._id,
+         _id: user._id || user.id,
           fullName: user.fullName,
           role: user.role, 
           email: user.email,
