@@ -360,62 +360,63 @@ console.log(email);
     throw new Error('Không có dữ liệu tính giá — Vui lòng báo khách hàng tính giá trước khi chốt đơn.');
   }
   
-  let isReturningCustomer = false;
+ const psid = facebookId;
+
+  const userByFb = await User.findOne({  messengerId: psid });
+  const userByEmail = await User.findOne({ email });
+ let isReturningCustomer = false;
   let fullName = 'Khách hàng Facebook';
   let user = null;
   let isUnverifiedClaim = false; 
   let needToUpdateUser = false; 
-
-  const userByFb = await User.findOne({ facebookId });
-  const userByEmail = await User.findOne({ email });
-
-  if (userByFb && userByEmail) {
+   if (userByFb && userByEmail) {
     if (userByFb._id.toString() !== userByEmail._id.toString()) {
       // Trường hợp: FB này đang thuộc User A, nhưng email lại thuộc User B
-      // Đây là lỗi xung đột dữ liệu. Nên ưu tiên User theo Facebook (người đang chat)
-      // hoặc thông báo khách là email này đã được sử dụng bởi người khác.
-      return `[HỆ_THỐNG_BÁO]: Email ${email} đã được đăng ký bởi một tài khoản khác. Vui lòng liên hệ hỗ trợ hoặc sử dụng email khác.`;
+      return `[HỆ_THỐNG_BÁO]: Email ${email} đã được đăng ký bởi một tài khoản khác. Anh/chị vui lòng kiểm tra lại hoặc sử dụng email khác.`;
     }
-    user = userByFb; // Cả 2 là 1
+    // FB và Email đều cùng của 1 User
+    user = userByFb;
+    // Bổ sung: Nếu user cũ chưa có số điện thoại, tiến hành cập nhật luôn
+    if (!user.phone && phone) {
+      user.phone = phone;
+      needToUpdateUser = true;
+    }
+    
   } else if (userByFb) {
-    // FB đã tồn tại, cập nhật email mới cho nó
+    // Trường hợp: Đã có FB, nhưng email này là mới (chưa ai dùng)
     user = userByFb;
-    user.email = email;
-    needToUpdateUser = true;
-  } else if (userByEmail) {
-    // FB mới tinh, nhưng email đã tồn tại -> Đây là khách cũ dùng email cũ
-    user = userByEmail;
-    // Vì FB này chưa gắn vào user này, ta đánh dấu là Unverified
-    isUnverifiedClaim = true; 
-  }
-    else if (userByFb) {
-    // FB đã từng chat, nhưng chưa có email (hoặc email khác) -> Cập nhật email cho họ
-    user = userByFb;
-    user.email = email;
-    // Nếu tài khoản này chưa từng có phone, thì tiện thể set luôn phone mới lấy được
-    if (!user.phone) {
+    user.email = email; // Cập nhật email mới
+    
+    // Cập nhật sđt nếu trước đó chưa có
+    if (!user.phone && phone) {
       user.phone = phone;
     }
     needToUpdateUser = true;
-  } 
-   else {
-    // Khách mới hoàn toàn
+
+  } else if (userByEmail) {
+    // Trường hợp: Email đã có trong hệ thống, nhưng nick FB này là nick lạ
+    user = userByEmail;
+    isUnverifiedClaim = true; 
+   // KHÔNG gán messengerId ở đây. Chờ frontend khách đăng nhập web xong mới link.
+
+  } else {
+    
     user = new User({ 
-      facebookId, 
+       messengerId: psid,
       email, 
       phone,
-      provider: 'facebook', 
-      fullName: 'Khách hàng', // Lấy từ FB Graph sau
+      provider: 'local',  
+      fullName: 'Khách hàng', 
       role: 'customer', 
-       securityToken: crypto.randomBytes(16).toString('hex'),
-      
+      securityToken: crypto.randomBytes(16).toString('hex'),
       status: 'Pending_Password'
     });
     needToUpdateUser = true;
   }
 
+  // Xác định xem có phải khách cũ đã có password chưa
   isReturningCustomer = (user.status === 'Active' || !!user.password);
-  fullName = user.fullName;
+  fullName = user.fullName || 'Khách hàng';
 
   // ─────────────────────────────────────────────────────────────
   // BƯỚC 2: CHUẨN BỊ DỮ LIỆU ĐỌC 
@@ -506,7 +507,7 @@ let finalBreakdown  = priceCache?.breakdown   || session.calculatedBreakdown || 
     // ROLLBACK
     await dbSession.abortTransaction();
     console.error('[CreateOrder] Transaction Error:', error);
-     throw new Error(error.message || 'Lỗi hệ thống khi tạo đơn hàng, đã hủy thay đổi.');
+     return `[HỆ_THỐNG_BÁO_LỖI]: Đã xảy ra lỗi khi tạo đơn hàng (${error.message}). Bạn hãy xin lỗi khách hàng và báo họ thử lại sau ít phút.`;
   } finally {
     dbSession.endSession();
   }
@@ -521,8 +522,13 @@ let finalBreakdown  = priceCache?.breakdown   || session.calculatedBreakdown || 
  const targetPath = `/customer/order`; 
 if (isReturningCustomer) {
     let redirectPath = targetPath;
-    if (isUnverifiedClaim) {
-      redirectPath += `?link_fb=${facebookId}`; 
+     if (isUnverifiedClaim) {
+      const linkToken = jwt.sign(
+        { email: user.email, linkMessengerId: psid, intent: 'link_messenger' },
+        process.env.JWT_SECRET || 'SECRET',
+        { expiresIn: '15m' }
+      );
+      redirectPath += `?link_token=${linkToken}`; 
     }
     const directLink = `${FE_URL}/login?redirect=${encodeURIComponent(targetPath)}`;
     let msg = `Dạ hệ thống ghi nhận email đã tồn tại trên hệ thống,anh chị vui lòng đăng nhập vào trang web ✅\n\n`;
