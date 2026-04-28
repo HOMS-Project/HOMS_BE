@@ -359,7 +359,7 @@ exports.setupMagicAccount = async ({ token, password, phone }) => {
       throw new Error('Link này đã được sử dụng hoặc không hợp lệ. Vui lòng đăng nhập.');
     }
      if (phone && phone !== tempUser.phone) {
-      const existingPhone = await User.findOne({ phone });
+      const existingPhone = await User.exists({ phone });
       if (existingPhone) {
         throw new Error('Số điện thoại này đã được gắn với một tài khoản khác. Vui lòng dùng số khác.');
       }
@@ -367,7 +367,6 @@ exports.setupMagicAccount = async ({ token, password, phone }) => {
     }
     const salt = await bcrypt.genSalt(10);
     tempUser.password = await bcrypt.hash(password, salt);
-    tempUser.phone = phone; 
     tempUser.provider = 'local';
     tempUser.status = 'Active';
 
