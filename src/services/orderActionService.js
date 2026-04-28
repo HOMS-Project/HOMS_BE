@@ -405,7 +405,7 @@ console.log(email);
        messengerId: psid,
       email, 
       phone,
-      provider: 'local',  
+      provider: 'pending',  
       fullName: 'Khách hàng', 
       role: 'customer', 
       securityToken: crypto.randomBytes(16).toString('hex'),
@@ -521,16 +521,17 @@ let finalBreakdown  = priceCache?.breakdown   || session.calculatedBreakdown || 
   const FE_URL = process.env.FRONTEND_URL ;
  const targetPath = `/customer/order`; 
 if (isReturningCustomer) {
-    let redirectPath = targetPath;
+   let finalRedirectUrl = targetPath;
      if (isUnverifiedClaim) {
-      const linkToken = jwt.sign(
+    const linkToken = jwt.sign(
         { email: user.email, linkMessengerId: psid, intent: 'link_messenger' },
         process.env.JWT_SECRET || 'SECRET',
         { expiresIn: '15m' }
-      );
-      redirectPath += `?link_token=${linkToken}`; 
-    }
-    const directLink = `${FE_URL}/login?redirect=${encodeURIComponent(targetPath)}`;
+    );
+    finalRedirectUrl += `?link_token=${linkToken}`;
+}
+    const redirectParam = encodeURIComponent(finalRedirectUrl);
+    const directLink = `${FE_URL}/login?redirect=${redirectParam}`;
     let msg = `Dạ hệ thống ghi nhận email đã tồn tại trên hệ thống,anh chị vui lòng đăng nhập vào trang web ✅\n\n`;
 msg += `Để đảm bảo không phát sinh bất kỳ chi phí nào, nhân viên điều phối của HOMS sẽ liên hệ với anh/chị trên trang web để chốt chính xác danh sách đồ.\n`;
 msg += `Anh/chị có thể xem trước chi tiết lộ trình tại đây: 👉 ${directLink}`;

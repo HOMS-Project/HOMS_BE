@@ -527,6 +527,9 @@ async function _processSingleUserMessage(facebookId, messageText, imageUrls) {
 }
 
 const facebookService = {
+   sendTextMessage: async (facebookId, text) => {
+    return await sendMessageBackToUser(facebookId, text);
+  },
   processUserMessage: async (facebookId, messageText, imageUrls = []) => {
     if (!userMessageQueues.has(facebookId)) {
         userMessageQueues.set(facebookId, { messages: [], isProcessing: false, timer: null });
