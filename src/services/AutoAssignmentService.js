@@ -18,8 +18,8 @@ const User = require('../models/User');
 const RequestTicket = require('../models/RequestTicket');
 const GeocodeService = require('./geocodeService');
 
-const SOFT_LIMIT = 5;
-const HARD_LIMIT = 10;
+const SOFT_LIMIT = 25;
+const HARD_LIMIT = 50;
 
 // Statuses that count toward a dispatcher's current workload
 const ACTIVE_STATUSES = ['WAITING_REVIEW', 'WAITING_SURVEY', 'SURVEYED', 'QUOTED'];

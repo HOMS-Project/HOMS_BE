@@ -91,14 +91,13 @@ exports.registerUser = async ({ fullName, email, password, phone }) => {
   return newUser;
 };
 
-// Hàm đăng nhập
+// Hàm đăng nhập — both web and mobile use the same 7-day refresh token
 exports.loginUser = async ({ email, password }) => {
   // 1. Tìm user
   const user = await User.findOne({ email: email.toLowerCase() }).select(
     "+password",
   );
 
-  // --- SỬA LỖI Ở ĐÂY ---
   if (!user) {
     throw new AppError("Email hoặc mật khẩu không đúng", 401);
   }
@@ -108,23 +107,20 @@ exports.loginUser = async ({ email, password }) => {
   // 2. So khớp mật khẩu
   const isMatch = await bcrypt.compare(password, user.password);
 
-  // --- SỬA LỖI Ở ĐÂY ---
   if (!isMatch) {
     throw new AppError("Email hoặc mật khẩu không đúng", 401);
   }
 
-  // 2.5. Block login if user status is not Active
-  // Normalize status and check
+  // Block login if user status is not Active
   const userStatus = (user.status || "").toString();
   if (userStatus.toLowerCase() !== "active") {
-    // Provide a clear message for the client
     throw new AppError(
       "Tài khoản không được phép đăng nhập do tài khoản bị vô hiệu hóa",
       403,
     );
   }
 
-  // 3. Sinh token
+  // 3. Sinh token — 15-min access token + 7-day refresh token
   const accessToken = generateToken(user);
   const refreshToken = generateRefreshToken(user);
   const decoded = jwt.decode(accessToken);
@@ -178,12 +174,11 @@ exports.refreshAccessToken = async (refreshToken) => {
     throw new AppError("Refresh token expired", 401);
   }
 
-  // rotate token
+  // Rotate: issue a new 15-min access token + new 7-day refresh token
   const newAccessToken = generateToken(user);
   const newRefreshToken = generateRefreshToken(user);
 
   user.refreshTokens.splice(tokenIndex, 1);
-
   await storeRefreshToken(user, newRefreshToken);
 
   const newDecoded = jwt.decode(newAccessToken);
@@ -316,7 +311,10 @@ exports.resetPasswordWithEmail = async ({ email, newPassword }) => {
   return true;
 };
 
-const storeRefreshToken = async (user, refreshToken) => {
+/**
+ * Lưu refresh token đã hash vào database của user.
+ */
+const storeRefreshToken = async (user, refreshToken, ttlMs = 7 * 24 * 60 * 60 * 1000) => {
   const hashed = crypto.createHash("sha256").update(refreshToken).digest("hex");
 
   await User.findByIdAndUpdate(user._id, {
@@ -324,7 +322,7 @@ const storeRefreshToken = async (user, refreshToken) => {
       refreshTokens: {
         token: hashed,
         createdAt: new Date(),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        expiresAt: new Date(Date.now() + ttlMs),
       },
     },
   });
