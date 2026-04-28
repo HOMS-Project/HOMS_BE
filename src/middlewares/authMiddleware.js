@@ -32,6 +32,7 @@ const verifyToken = async (req, res, next) => {
       _id: user._id,
       userId: user._id,
       role: user.role,
+        email: user.email, 
       fullName: user.fullName,
       workingAreas: user.dispatcherProfile?.workingAreas || [],
       isGeneral: user.dispatcherProfile?.isGeneral || false

@@ -439,7 +439,10 @@ exports.facebookLogin = async ({ accessToken }) => {
         user.provider = user.provider === 'local' ? 'local_and_facebook' : 'facebook';
       }
       
-      if (!user.avatar) user.avatar = avatar; // Cập nhật avatar nếu chưa có
+      if (!user.avatar) user.avatar = avatar; 
+      if (!user.fullName || user.fullName === 'Khách hàng' || user.fullName === 'Khách hàng Facebook') {
+        user.fullName = name;
+      }
       await user.save();
     }
   }
@@ -500,12 +503,10 @@ exports.linkMessengerAccountService = async (userId, userEmail, linkToken) => {
     }
 
     // 3. Check email
-    if (decoded.email !== userEmail) {
-      throw new AppError(
-        "Token liên kết không thuộc về tài khoản này. Hành động bị từ chối!",
-        403
-      );
-    }
+   if (decoded.email.toLowerCase() !== userEmail.toLowerCase()) {
+    console.log("Mismatched:", decoded.email, userEmail);
+    throw new AppError("Token liên kết không thuộc về tài khoản này", 403);
+}
 
     // 4. Update DB
     const updatedUser = await User.findByIdAndUpdate(
