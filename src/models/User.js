@@ -37,6 +37,7 @@ const userSchema = new mongoose.Schema({
     default: 'local'
   },
  facebookId: { type: String, unique: true, sparse: true },
+  messengerId: { type: String, unique: true, sparse: true },
   googleId: String,
 
   avatar: String,

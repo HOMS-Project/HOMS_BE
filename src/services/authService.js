@@ -344,32 +344,31 @@ exports.logoutUser = async (refreshToken) => {
 
   return true;
 };
-exports.setupMagicAccount = async ({ token, password, confirmPassword, phone }) => {
-  try {
+exports.setupMagicAccount = async ({ token, password, phone }) => {
 
-    if (!token || !password) throw new Error('Vui lòng nhập mật khẩu mới.');
-    if (password !== confirmPassword) throw new Error('Mật khẩu xác nhận không khớp.');
-    
-      let decoded;
   try {
-    decoded = jwt.verify(token, process.env.JWT_SECRET || 'SECRET');
-  } catch (err) {
-    throw new Error('Link đã hết hạn hoặc không hợp lệ.');
-  }
-    if (decoded.type !== 'setup_account') throw new Error('Token không đúng mục đích.');
-
+ const decoded = jwt.verify(token, process.env.JWT_SECRET || 'SECRET');
+      if (decoded.type !== 'setup_account') {
+      throw new Error('Token không đúng mục đích.');
+    }
 
     const tempUser = await User.findById(decoded.id);
     if (!tempUser) throw new Error('Không tìm thấy tài khoản.');
 
     if (!tempUser.securityToken || decoded.st !== tempUser.securityToken) {
-    throw new Error('LINK_USED');
-  }
-
+      throw new Error('Link này đã được sử dụng hoặc không hợp lệ. Vui lòng đăng nhập.');
+    }
+     if (phone && phone !== tempUser.phone) {
+      const existingPhone = await User.findOne({ phone });
+      if (existingPhone) {
+        throw new Error('Số điện thoại này đã được gắn với một tài khoản khác. Vui lòng dùng số khác.');
+      }
+      tempUser.phone = phone;
+    }
     const salt = await bcrypt.genSalt(10);
     tempUser.password = await bcrypt.hash(password, salt);
-    tempUser.phone = phone || tempUser.phone;
-    tempUser.provider = 'local_and_facebook';
+    tempUser.phone = phone; 
+    tempUser.provider = 'local';
     tempUser.status = 'Active';
 
     tempUser.securityToken = crypto.randomBytes(16).toString('hex');
@@ -399,8 +398,13 @@ exports.setupMagicAccount = async ({ token, password, confirmPassword, phone }) 
     };
   } catch (error) {
     console.error("LỖI SETUP MAGIC:", error);
-    if (error.name === 'TokenExpiredError') throw new Error('Link đã hết hạn.');
-    throw new Error(error.message || 'Lỗi xử lý server');
+   if (error.name === 'TokenExpiredError') {
+      throw new Error('Link đã hết hạn. Vui lòng đăng nhập hoặc yêu cầu link mới.');
+    }
+    if (error.name === 'JsonWebTokenError') {
+      throw new Error('Link không hợp lệ hoặc đã bị thay đổi.');
+    }
+      throw new Error(error.message || 'Lỗi xử lý server');
   }
 };
 exports.facebookLogin = async ({ accessToken }) => {
@@ -431,7 +435,13 @@ exports.facebookLogin = async ({ accessToken }) => {
     if (user) {
       // Liên kết tài khoản: Gắn thêm facebookId và đổi provider
       user.facebookId = fbAppId;
-      user.provider = 'local_and_facebook';
+       if (user.status === 'Pending_Password') {
+        user.status = 'Active';
+      }
+      if (!user.provider.includes('facebook')) {
+        user.provider = user.provider === 'local' ? 'local_and_facebook' : 'facebook';
+      }
+      
       if (!user.avatar) user.avatar = avatar; // Cập nhật avatar nếu chưa có
       await user.save();
     }
@@ -451,8 +461,8 @@ exports.facebookLogin = async ({ accessToken }) => {
   } else {
     // Check status block
     const status = (user.status || "").toString().toLowerCase();
-    if (status !== "active") {
-      throw new AppError("Tài khoản không được phép đăng nhập do trạng thái tài khoản không hoạt động", 403);
+    if (status !== "active" && status !== "pending_password") {
+      throw new AppError("Tài khoản của bạn đã bị khóa hoặc không hoạt động.", 403);
     }
   }
 
@@ -477,4 +487,48 @@ exports.facebookLogin = async ({ accessToken }) => {
       avatar: user.avatar,
     },
   };
+};
+exports.linkMessengerAccountService = async (userId, userEmail, linkToken) => {
+  if (!linkToken) {
+    throw new AppError("Thiếu token liên kết", 400);
+  }
+
+  try {
+    // 1. Giải mã token
+    const decoded = jwt.verify(linkToken, process.env.JWT_SECRET);
+
+    // 2. Kiểm tra intent
+    if (decoded.intent !== 'link_messenger') {
+      throw new AppError("Token không hợp lệ", 400);
+    }
+
+    // 3. Check email
+    if (decoded.email !== userEmail) {
+      throw new AppError(
+        "Token liên kết không thuộc về tài khoản này. Hành động bị từ chối!",
+        403
+      );
+    }
+
+    // 4. Update DB
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { messengerId: decoded.linkMessengerId },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      throw new AppError("Không tìm thấy tài khoản người dùng", 404);
+    }
+
+    return updatedUser;
+  } catch (error) {
+    if (error.name === "TokenExpiredError") {
+      throw new AppError(
+        "Link liên kết Messenger đã hết hạn (quá 15 phút). Vui lòng thao tác lại trên Messenger.",
+        400
+      );
+    }
+    throw error;
+  }
 };

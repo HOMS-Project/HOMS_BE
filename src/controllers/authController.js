@@ -304,3 +304,23 @@ exports.facebookLogin = async (req, res, next) => {
     next(err);
   }
 };
+exports.linkMessengerAccount = async (req, res, next) => {
+  try {
+    const userId = req.user._id;       
+    const userEmail = req.user.email;  
+    const { linkToken } = req.body;
+
+    const updatedUser = await authService.linkMessengerAccountService(
+      userId,
+      userEmail,
+      linkToken
+    );
+
+    return res.status(200).json({
+      message: "Liên kết Messenger thành công",
+      data: updatedUser,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
