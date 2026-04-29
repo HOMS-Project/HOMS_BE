@@ -135,11 +135,13 @@ exports.DRIVER_NEW_ASSIGNMENT = ({ requestCode } = {}) => ({
 
 /**
  * Customer warned when their order will be dispatched with fewer staff than planned.
+ * @param {{ actualStaff?: number, requiredStaff?: number, durationIncrease?: number }} params
  */
-exports.DISPATCH_UNDERSTAFFED = () => ({
-  title: 'Thông báo về nhân sự đơn hàng',
-  message:
-    'Đơn hàng của bạn đã được điều phối nhưng có thể thiếu nhân sự so với dự kiến. Vui lòng thông cảm hoặc liên hệ tổng đài.',
+exports.DISPATCH_UNDERSTAFFED = ({ actualStaff, requiredStaff, durationIncrease } = {}) => ({
+  title: '⚠️ Thông báo: Đơn hàng thiếu hụt nhân sự',
+  message: actualStaff && requiredStaff 
+    ? `Đơn hàng của bạn sẽ được vận chuyển với ${actualStaff}/${requiredStaff} nhân sự. Thời gian thực hiện dự kiến tăng thêm khoảng ${durationIncrease}%.`
+    : 'Đơn hàng của bạn đã được điều phối nhưng có thể thiếu nhân sự so với dự kiến. Vui lòng thông cảm hoặc liên hệ tổng đài.',
   type: 'WARNING',
 });
 
@@ -153,14 +155,19 @@ exports.DISPATCH_SUCCESS = ({ ticketCode, dispatchTime, vehicleCount }) => ({
   type: 'Assignment',
 });
 
-/**
- * [SCENARIO B] Customer notified that the dispatcher has proposed a new dispatch time.
- * The original scheduled time is NOT changed until customer accepts.
- * @param {{ ticketCode: string, proposedTime: string }} params
- */
 exports.DISPATCH_RESCHEDULE_PROPOSED = ({ ticketCode, proposedTime }) => ({
   title: 'Đề xuất thay đổi lịch vận chuyển',
   message: `Đơn #${ticketCode}: Điều phối viên đề xuất dời lịch vận chuyển sang ${proposedTime}. Vui lòng vào ứng dụng để xác nhận hoặc từ chối.`,
+  type: 'System',
+});
+
+/**
+ * [SCENARIO 3B] Customer notified that the dispatcher has proposed a resource substitution.
+ * @param {{ ticketCode: string }} params
+ */
+exports.DISPATCH_RESOURCE_CHANGE_PROPOSED = ({ ticketCode }) => ({
+  title: 'Đề xuất thay đổi phương án vận chuyển',
+  message: `Đơn #${ticketCode}: Do thiếu hụt xe tải phù hợp, chúng tôi đề xuất thay đổi phương án xe. Vui lòng vào ứng dụng để xem chi tiết.`,
   type: 'System',
 });
 

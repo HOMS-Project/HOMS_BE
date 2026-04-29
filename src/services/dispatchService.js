@@ -12,7 +12,6 @@ const T = require('../utils/notificationTemplates');
 const LogisticsEngine = require('./logisticsEngine');
 const RequestTicket = require('../models/RequestTicket');
 const turf = require('@turf/turf');
-const ResourceValidator = require('./dispatch/resourceValidator');
 const FeasibilityEngine = require('./dispatch/feasibilityEngine');
 const AppError = require('../utils/appErrors');
 
@@ -36,6 +35,12 @@ class DispatchService {
 
     const safety = FeasibilityEngine.checkSafety(inputStaffCount, idealStaffCount, adjustedMinutes);
     const staffing = FeasibilityEngine.evaluateStaffing(inputStaffCount, idealStaffCount);
+
+    if (dispatchData.useExternalStaff) {
+      staffing.level = 'SAFE';
+      safety.isSafetyBlock = false;
+      safety.durationExceeded = false;
+    }
 
     const resourceIds = [
       ...(dispatchData.vehicles || []).map(v => v.vehicleId),
@@ -111,6 +116,22 @@ class DispatchService {
     }
 
     return { hasConflict, maxDelayMinutes, impactLevel };
+  }
+
+  /**
+   * Calculate adjusted duration for understaffed dispatch
+   * T_actual = T_base * (S_required / S_actual) ^ alpha
+   * alpha = 1.3 accounts for inefficiency
+   */
+  calculateAdjustedDuration(baseDuration, requiredStaff, actualStaff) {
+    if (!baseDuration || !requiredStaff || !actualStaff) return baseDuration;
+    if (actualStaff >= requiredStaff) return baseDuration;
+
+    const alpha = 1.3;
+    const ratio = requiredStaff / actualStaff;
+    const adjustmentFactor = Math.pow(ratio, alpha);
+
+    return Math.round(baseDuration * adjustmentFactor);
   }
 
   /**
@@ -419,6 +440,28 @@ class DispatchService {
   /**
    * Calculate required vehicles to fulfill load capacity
    */
+  /**
+   * Returns weight capacity (kg) for a given vehicle type.
+   * Used by allocateFleet to accumulate total cargo capacity.
+   */
+  /**
+   * Returns a capacity utilization status string based on how much of the vehicle
+   * capacity is being used (NORMAL / WARNING / OVERLOADED).
+   */
+  determineCapacityStatus(vehicleType, loadWeight) {
+    const capacity = this.getVehicleCapacity(vehicleType);
+    const ratio = loadWeight / capacity;
+    if (ratio > 1.0) return 'OVERLOAD';
+    if (ratio > 0.85) return 'FULL';
+    if (ratio > 0.5)  return 'OPTIMAL';
+    return 'UNDERUTILIZED';
+  }
+
+  getVehicleCapacity(vehicleType) {
+    const MAP = { '500KG': 500, '1TON': 1000, '1.5TON': 1500, '2TON': 2000, '5TON': 5000 };
+    return MAP[vehicleType] || 1000;
+  }
+
   async calculateVehicleNeeds(totalWeight, totalVolume) {
     const VEHICLE_SPECS = {
       '500KG': { maxWeight: 500, maxVolume: 5 },
@@ -803,6 +846,7 @@ class DispatchService {
     const session = await mongoose.startSession();
     let resultAssignment;
 
+    let driverNotificationContext = null;
     try {
       await session.withTransaction(async () => {
 
@@ -817,12 +861,11 @@ class DispatchService {
         if (!invoice) {
           throw new AppError('Invoice not found', 404);
         }
-        // ================================
+
+        // =========================
         // STEP 3: Save Assignment
-        // ================================
-
+        // =========================
         let assignment = await DispatchAssignment.findOne({ invoiceId }).session(session);
-
         if (!assignment) {
           assignment = new DispatchAssignment({ invoiceId });
         }
@@ -847,26 +890,35 @@ class DispatchService {
         // For simplicity now, let's treat it as a block that needs forceProceed or customerApproved
         const isResolutionNeeded = (feasibility.decision === 'CONFIRM' || feasibility.decision === 'REQUIRE_CUSTOMER');
 
-        // Step 1: Allocate fleet (vehicles)
-        console.log(`[BE] createDispatchAssignment: Step 1 - Allocating Fleet...`);
-        const { fleetAssignments, totalCapacity } = await this.allocateFleet(invoice, dispatchData, session);
-
-        // Step 2: Allocate personnel (drivers and helpers)
-        console.log(`[BE] createDispatchAssignment: Step 2 - Allocating Personnel...`);
-        let assignmentRecords, totalStaff;
+        let fleetAssignments, totalCapacity, idealVehicles, isResourceSubstitution, assignmentRecords, totalStaff;
         try {
+          // Step 1: Allocate fleet (vehicles)
+          console.log(`[BE] createDispatchAssignment: Step 1 - Allocating Fleet...`);
+          const fleetAlloc = await this.allocateFleet(invoice, dispatchData, session);
+          fleetAssignments = fleetAlloc.fleetAssignments;
+          totalCapacity = fleetAlloc.totalCapacity;
+
+          // Detect Resource Substitution
+          idealVehicles = await this.calculateVehicleNeeds(dispatchData.totalWeight, dispatchData.totalVolume);
+          isResourceSubstitution = dispatchData.isResourceSubstitution || 
+                                         (dispatchData.vehicles && dispatchData.vehicles.length > 0 && 
+                                          JSON.stringify(dispatchData.vehicles) !== JSON.stringify(idealVehicles));
+
+          // Step 2: Allocate personnel (drivers and helpers)
+          console.log(`[BE] createDispatchAssignment: Step 2 - Allocating Personnel...`);
           const allocResult = await this.allocatePersonnel(fleetAssignments, dispatchData, session);
           assignmentRecords = allocResult.assignmentRecords;
           totalStaff = allocResult.totalStaff;
 
-          if (totalStaff < idealStaffCount || feasibility.hasConflict) {
+          if ((totalStaff < idealStaffCount && !dispatchData.useExternalStaff) || feasibility.hasConflict) {
             // Even if staff count matches, if there's a conflict and we haven't forced it, we need resolution
-            if (isResolutionNeeded && !dispatchData.forceProceed) {
+            if (isResolutionNeeded && !dispatchData.forceProceed && !dispatchData.useExternalStaff) {
               throw new AppError('INSUFFICIENT_RESOURCES', 400);
             }
           }
         } catch (error) {
-          if ((error.message === 'RESOURCE_CONFLICT' || error.message === 'Staff availability conflict' || error.message === 'INSUFFICIENT_RESOURCES') && !dispatchData.forceProceed) {
+          const isVehicleShortage = error.message.includes('Not enough vehicles');
+          if ((error.message === 'RESOURCE_CONFLICT' || error.message === 'Staff availability conflict' || error.message === 'INSUFFICIENT_RESOURCES' || isVehicleShortage) && !dispatchData.forceProceed) {
             const assignedPickupTime = dispatchData.dispatchTime ? new Date(dispatchData.dispatchTime) : (invoice.scheduledTime || invoice.requestTicketId?.scheduledTime || new Date());
             const duration = dispatchData.estimatedDuration || 480;
 
@@ -902,7 +954,44 @@ class DispatchService {
         assignment.totalVehicles = assignmentRecords.length;
         assignment.totalStaff = totalStaff;
         assignment.totalCapacity = totalCapacity;
-        assignment.status = 'ASSIGNED';
+
+        // ── Scenario B: Time change → propose to customer instead of silently updating ──
+        // NOTE: isTimeChanged check happens BEFORE saving the assignment so we can set the
+        // correct status. If the time is different, keep the assignment as DRAFT until the
+        // customer approves. If accepted, the confirmReschedule controller upgrades it to ASSIGNED.
+        let isTimeChanged = false;
+        let newTimeFormatted = '';
+
+        if (dispatchData.dispatchTime) {
+          const newTime = new Date(dispatchData.dispatchTime);
+          const originalTime = invoice.requestTicketId?.scheduledTime || invoice.scheduledTime;
+
+          if (originalTime && Math.abs(originalTime.getTime() - newTime.getTime()) > 60000 && invoice.requestTicketId?.customerId) {
+            // Time differs by more than 1 min — propose, don't update yet
+            isTimeChanged = true;
+            const dayjs = require('dayjs');
+            newTimeFormatted = dayjs(newTime).format('HH:mm DD/MM/YYYY');
+
+            invoice.proposedDispatchTime = newTime;
+            invoice.rescheduleStatus = 'PENDING_APPROVAL';
+            // scheduledTime remains unchanged until customer approves
+
+            // ✅ FIX: Keep assignment as DRAFT while awaiting customer approval.
+            // The assignment will be promoted to ASSIGNED in confirmReschedule when customer ACCEPTs.
+            assignment.status = 'DRAFT';
+          } else {
+            // Same time or negligible diff → update directly and mark as ASSIGNED
+            invoice.scheduledTime = newTime;
+            assignment.status = 'ASSIGNED';
+
+            // Sync the confirmed time back to the RequestTicket so ViewMovingOrder shows it correctly
+            if (invoice.requestTicketId?._id) {
+              await RequestTicket.findByIdAndUpdate(invoice.requestTicketId._id, { scheduledTime: newTime }).session(session);
+            }
+          }
+        } else {
+          assignment.status = 'ASSIGNED';
+        }
 
         const explicitDriverIds = this.extractUniqueIdsFromAssignments(assignmentRecords, 'driverIds');
         const roleCandidateIds = this.extractUniqueIdsFromAssignments(assignmentRecords, 'staffIds');
@@ -914,7 +1003,37 @@ class DispatchService {
           requestCode
         };
 
-        if (dispatchData.forceProceed === true) {
+        // Handle Understaffed Logic
+        if (totalStaff < idealStaffCount) {
+          const originalDuration = dispatchData.estimatedDuration || 480;
+          const adjustedDuration = this.calculateAdjustedDuration(originalDuration, idealStaffCount, totalStaff);
+          const durationAdjustment = Math.round(((adjustedDuration / originalDuration) - 1) * 100);
+
+          assignment.understaffed = true;
+          assignment.originalDuration = originalDuration;
+          assignment.adjustedDuration = adjustedDuration;
+          assignment.durationAdjustment = durationAdjustment;
+          // Update delivery times in assignment records based on adjusted duration
+          assignment.assignments.forEach(rec => {
+            rec.estimatedDuration = adjustedDuration;
+            rec.deliveryTime = this.calculateDeliveryTime({
+              pickupTime: rec.pickupTime,
+              estimatedDuration: adjustedDuration
+            });
+          });
+        }
+
+        // Assignment status: DRAFT only when awaiting customer approval for reschedule (flow 2a).
+        // useExternalStaff resolves understaffing for flow 2b — mark audit flag.
+        if (dispatchData.useExternalStaff) {
+          assignment.externalStaffUsed = true;
+        }
+        // Only override to ASSIGNED here if not already set to DRAFT by the time-change block above
+        if (assignment.status !== 'DRAFT') {
+          assignment.status = 'ASSIGNED';
+        }
+
+        if (dispatchData.forceProceed === true && totalStaff < idealStaffCount && !dispatchData.useExternalStaff) {
           assignment.understaffed = true;
 
           if (invoice.requestTicketId?.customerId) {
@@ -922,7 +1041,11 @@ class DispatchService {
             try {
               await NotificationService.createNotification({
                 userId: ticket.customerId,
-                ...T.DISPATCH_UNDERSTAFFED(),
+                ...T.DISPATCH_UNDERSTAFFED({
+                  actualStaff: totalStaff,
+                  requiredStaff: idealStaffCount,
+                  durationIncrease: invoice.understaffedDetails?.estimatedDurationIncrease
+                }),
                 ticketId: ticket._id
               });
             } catch (notifErr) {
@@ -959,42 +1082,72 @@ class DispatchService {
 
         await assignment.save({ session });
 
-        // ================================
+        // =========================
         // STEP 4: Update Invoice
-        // ================================
+        // =========================
+        invoice.dispatchAssignmentId = assignment._id;
+        if (dispatchData.forceProceed === true && totalStaff < idealStaffCount && !dispatchData.useExternalStaff) {
+          assignment.understaffed = true;
 
+          if (invoice.requestTicketId?.customerId) {
+            const ticket = invoice.requestTicketId;
+            try {
+              await NotificationService.createNotification({
+                userId: ticket.customerId,
+                ...T.DISPATCH_UNDERSTAFFED({
+                  actualStaff: totalStaff,
+                  requiredStaff: idealStaffCount,
+                  durationIncrease: invoice.understaffedDetails?.estimatedDurationIncrease
+                }),
+                ticketId: ticket._id
+              });
+            } catch (notifErr) {
+              console.error('[BE] Warning: Failed to send understaffed notification', notifErr);
+            }
+          }
+        }
+
+        // Phase 3: Materialized View (Interim Cache) Update
+        for (const record of assignmentRecords) {
+          const targetDate = new Date(record.pickupTime);
+          targetDate.setHours(0, 0, 0, 0);
+
+          // Build a bulk operation for this record's users
+          const participants = [
+            ...record.driverIds.map(id => ({ id, type: 'USER' })),
+            ...record.staffIds.map(id => ({ id, type: 'USER' })),
+            { id: record.vehicleId, type: 'VEHICLE' }
+          ];
+
+          for (const participant of participants) {
+            if (!participant.id) continue;
+            await ResourceScheduleView.findOneAndUpdate(
+              { resourceId: participant.id, date: targetDate },
+              {
+                $set: { resourceType: participant.type },
+                $max: { nextAvailableTime: record.deliveryTime },
+                $inc: { workloadCount: 1 }
+              },
+              { upsert: true, session, new: true }
+            );
+          }
+        }
+
+        await assignment.save({ session });
+
+        // =========================
+        // STEP 4: Update Invoice
+        // =========================
         invoice.dispatchAssignmentId = assignment._id;
         if (dispatchData.routeId) {
           invoice.routeId = dispatchData.routeId;
         }
 
-        // ── Scenario B: Time change → propose to customer instead of silently updating ──
-        let isTimeChanged = false;
-        let newTimeFormatted = '';
-
-        if (dispatchData.dispatchTime) {
-          const newTime = new Date(dispatchData.dispatchTime);
-          const originalTime = invoice.requestTicketId?.scheduledTime || invoice.scheduledTime;
-
-          if (originalTime && Math.abs(originalTime.getTime() - newTime.getTime()) > 60000 && invoice.requestTicketId?.customerId) {
-            // Time differs by more than 1 min — propose, don't update yet
-            isTimeChanged = true;
-            const dayjs = require('dayjs');
-            newTimeFormatted = dayjs(newTime).format('HH:mm DD/MM/YYYY');
-
-            invoice.proposedDispatchTime = newTime;
-            invoice.rescheduleStatus = 'PENDING_APPROVAL';
-            // scheduledTime remains unchanged until customer approves
-          } else {
-            // Same time or negligible diff → update directly
-            invoice.scheduledTime = newTime;
-          }
-        }
-
+        // Mark invoice as ASSIGNED after successful dispatch
         invoice.status = 'ASSIGNED';
         await invoice.save({ session });
 
-        // ── Scenario A: Dispatch success notification ───────────────────────────────────
+        // ── Scenario A: Dispatch success notification ─────────────────────
         try {
           const ticket = invoice.requestTicketId;
           let ioInstance = null;
@@ -1004,7 +1157,7 @@ class DispatchService {
             userId: ticket.customerId,
             ...T.DISPATCH_SUCCESS({
               ticketCode: ticket?.code || 'Không xác định',
-              dispatchTime: dayjs(invoice.proposedDispatchTime || invoice.scheduledTime).format('HH:mm DD/MM/YYYY'),
+              dispatchTime: dayjs(invoice.scheduledTime).format('HH:mm DD/MM/YYYY'),
               vehicleCount: fleetAssignments ? fleetAssignments.length : 1
             }),
             ticketId: ticket._id
@@ -1013,17 +1166,18 @@ class DispatchService {
           console.error('[BE] Warning: Failed to send dispatch success notification', notifErr);
         }
 
-        // ── Scenario B: Notify customer of proposed reschedule ─────────────────────────
-        if (isTimeChanged) {
+        // ── Scenario B: Notify customer of reschedule proposal ─────────────
+        if (invoice.rescheduleStatus === 'PENDING_APPROVAL') {
           try {
             const ticket = invoice.requestTicketId;
             let ioInstance = null;
             try { const { getIo } = require('../utils/socket'); ioInstance = getIo(); } catch (_) { /* no-op */ }
+            const dayjs = require('dayjs');
             await NotificationService.createNotification({
               userId: ticket.customerId,
               ...T.DISPATCH_RESCHEDULE_PROPOSED({
                 ticketCode: ticket?.code || 'Không xác định',
-                proposedTime: newTimeFormatted
+                proposedTime: dayjs(invoice.proposedDispatchTime).format('HH:mm DD/MM/YYYY')
               }),
               ticketId: ticket._id
             }, ioInstance);
@@ -1035,9 +1189,8 @@ class DispatchService {
         // Phase 2: Log the decision & Run Heuristic Scoring
         const logDurationMs = dispatchData.estimatedDuration ? dispatchData.estimatedDuration * 60000 : 480 * 60000;
         const requestedTime = dispatchData.dispatchTime || invoice.scheduledTime;
-
-        // Calculate the "Optimal" ML recommendation (even if manual override occurred)
         const vehicleCount = fleetAssignments ? fleetAssignments.length : 1;
+
         const optimalSuggestion = await this.suggestResources(requestedTime, logDurationMs / 60000, {
           requiredDrivers: vehicleCount - 1,
           requiredHelpers: Math.max(0, idealStaffCount - vehicleCount),
@@ -1083,10 +1236,8 @@ class DispatchService {
     }
   }
 
-  // ================================
-  // EXISTING LOGIC (GIỮ NGUYÊN)
-  // ================================
-
+  // =========================  // EXISTING LOGIC (GIỮ NGUYÊN)
+  // =========================
   async calculateVehicleNeeds(totalWeight, totalVolume) {
     const VEHICLE_SPECS = {
       '500KG': { maxWeight: 500, maxVolume: 5 },
@@ -1192,17 +1343,19 @@ class DispatchService {
             logisticsPlan.vehicles[0].type = surveyData.suggestedVehicle;
           }
           if (surveyData.suggestedStaffCount) {
-            logisticsPlan.staffTotal = surveyData.suggestedStaffCount;
+            neededTotalStaff = surveyData.suggestedStaffCount;
+          } else if (logisticsPlan && logisticsPlan.staffTotal) {
+            neededTotalStaff = logisticsPlan.staffTotal;
           }
 
           if (logisticsPlan && logisticsPlan.vehicles && logisticsPlan.vehicles.length > 0) {
             chosenVehicleType = logisticsPlan.vehicles[0].type;
-            neededTotalStaff = logisticsPlan.staffTotal;
           }
         }
       } catch (e) {
-        console.error('[DispatchService] Error running LogisticsEngine fallback to legacy:', e);
+        console.error('[DispatchService] LogisticsEngine error:', e.message, e.stack?.split('\n')[1]);
       }
+      console.log('[BE] After engine: logisticsPlan?.staffTotal =', logisticsPlan?.staffTotal, '| neededTotalStaff =', neededTotalStaff, '| items count =', logisticsPlan === null ? 'ENGINE_SKIPPED' : 'ran');
     }
 
     // 2. Legacy fallback
@@ -1228,6 +1381,7 @@ class DispatchService {
     // 4. Find staff
     // neededCapacity defines the true number of staff required. If not derived from the new engine, fallback to driver+1
     const neededCapacity = neededTotalStaff !== null ? neededTotalStaff : (vehicle.maxStaff || 2);
+    console.log('[BE] neededTotalStaff:', neededTotalStaff, 'neededCapacity:', neededCapacity, 'surveyData.suggestedStaffCount:', surveyData?.suggestedStaffCount);
 
     let duration = 480;
     if (surveyData && surveyData.estimatedHours) {
@@ -1244,7 +1398,7 @@ class DispatchService {
 
     const requiredLeaders = 1;
     const requiredDrivers = Math.max(0, totalVehicles - 1);
-    const requiredHelpers = Math.max(0, neededCapacity - totalVehicles);
+    const requiredHelpers = Math.max(0, neededCapacity - requiredLeaders - requiredDrivers);
 
     const rules = {
       requiredLeaders,
