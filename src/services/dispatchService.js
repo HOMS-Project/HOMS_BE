@@ -42,14 +42,24 @@ class DispatchService {
       safety.durationExceeded = false;
     }
 
-    const resourceIds = [
-      ...(dispatchData.vehicles || []).map(v => v.vehicleId),
+    // 1. SAFELY EXTRACT AND CLEAN RESOURCE IDs
+    // check for both v.vehicleId (backend norm) and v._id (UI payload norm)
+    const rawIds = [
+      ...(dispatchData.vehicles || []).map(v => v.vehicleId || v._id),
       dispatchData.leaderId,
       ...(dispatchData.driverIds || []),
       ...(dispatchData.staffIds || [])
-    ].filter(id => id);
+    ];
 
-    const conflictInfo = await FeasibilityEngine.detectConflicts(this, resourceIds, dispatchData.dispatchTime || new Date(), adjustedMinutes);
+    // remove nulls, undefined, and duplicates to create a pristine array of string IDs
+    const resourceIds = [...new Set(rawIds.filter(id => id != null).map(id => id.toString()))];
+
+    // 2. bypass the global FeasibilityEngine and use the local Resource-Specific detector
+    const conflictInfo = await this.detectDownstreamConflicts(
+      resourceIds,
+      dispatchData.dispatchTime || new Date(),
+      adjustedMinutes
+    );
 
     let decision = 'ALLOW';
     if (safety.durationExceeded || safety.isSafetyBlock) {
@@ -494,19 +504,31 @@ class DispatchService {
   }
 
   /**
-   * Find available active vehicles matching requested type
+   * Find available active vehicles matching requested type & time slot
    */
-  async findAvailableVehicles(vehicleType, count = 1) {
+  async findAvailableVehicles(vehicleType, count = 1, pickupTime = null, estimatedDuration = 120) {
     try {
-      const vehicles = await Vehicle.find({
+      let query = {
         vehicleType,
         status: 'Available',
         isActive: true
-      }).limit(count);
+      };
+
+      // NEW: Filter out vehicles that are busy during this specific time slot
+      if (pickupTime) {
+        const availability = await this.checkResourceAvailability(pickupTime, estimatedDuration);
+        const freeVehicleIds = availability.vehicles
+          .filter(v => v.availabilityStatus !== 'UNAVAILABLE')
+          .map(v => v._id);
+
+        query._id = { $in: freeVehicleIds };
+      }
+
+      const vehicles = await Vehicle.find(query).limit(count);
 
       if (vehicles.length < count) {
         throw new AppError(
-          `Not enough available ${vehicleType} vehicles. Need: ${count}, Available: ${vehicles.length}`,
+          `Không đủ xe ${vehicleType} trống lịch. Cần: ${count}, Đang rảnh: ${vehicles.length}`,
           400
         );
       }
@@ -640,8 +662,16 @@ class DispatchService {
 
       // Assign vehicles
       for (const need of vehicleNeeds) {
-        // Temporarily ignoring session for findAvailableVehicles since we need to modify its arguments. We will just pass session to assignStaff where conflict checking happens.
-        const vehicles = await this.findAvailableVehicles(need.vehicleType, need.count);
+        const assignedPickupTime = dispatchData.dispatchTime ? new Date(dispatchData.dispatchTime) : (invoice.scheduledTime || ticket?.scheduledTime || new Date());
+        const estimatedDuration = dispatchData.estimatedDuration || 120; // fallback to 120 (2 hrs)
+
+        // now passing the time and duration to ensure the truck is actually free
+        const vehicles = await this.findAvailableVehicles(
+          need.vehicleType,
+          need.count,
+          assignedPickupTime,
+          estimatedDuration
+        );
 
         for (const vehicle of vehicles) {
           const assignedPickupTime = dispatchData.dispatchTime ? new Date(dispatchData.dispatchTime) : (invoice.scheduledTime || ticket?.scheduledTime || new Date());
@@ -1394,13 +1424,9 @@ class DispatchService {
     }
 
     // =========================
-    // 2. Vehicle Selection
+    // 2. Vehicle Selection (TIME-AWARE)
     // =========================
 
-    // console.log('\n--- [getOptimalSquad] START VEHICLE SELECTION ---');
-    // console.log('[getOptimalSquad] 1. Initial logisticsPlan vehicles:', JSON.stringify(logisticsPlan?.vehicles || 'null'));
-
-    // Normalize LogisticsEngine types → Vehicle model enum (MUST BE DECLARED FIRST)
     const vehicleTypeMap = {
       '500KG': '500KG',
       '1000KG': '1TON',
@@ -1410,50 +1436,55 @@ class DispatchService {
     };
 
     let vehicleNeeds = [];
-
-    // Safely extract the array (supports both named conventions just in case)
     const manualVehicles = surveyData?.suggestedVehicles || surveyData?.vehicles || [];
 
-    // Priority 1: Use explicitly saved Survey Data first (Manual Override)
+    // Priority 1: explicitly saved Survey Data first
     if (manualVehicles.length > 0) {
       vehicleNeeds = manualVehicles.map(v => ({
         vehicleType: vehicleTypeMap[v.vehicleType] || v.vehicleType,
         count: parseInt(v.count) || 1
       }));
-      // console.log('[getOptimalSquad] 2. Mapped vehicleNeeds from surveyData:', vehicleNeeds);
     }
     // Priority 2: Logistics Engine Auto-Calculation
     else if (logisticsPlan?.vehicles?.length > 0) {
       vehicleNeeds = logisticsPlan.vehicles.map(v => ({
-        vehicleType: vehicleTypeMap[v.type] || v.type, // Safe to use now
+        vehicleType: vehicleTypeMap[v.type] || v.type,
         count: v.count || 1
       }));
-      // console.log('[getOptimalSquad] 2. Mapped vehicleNeeds from logisticsPlan:', vehicleNeeds);
     }
     // Priority 3: Basic Fallback Calculation
     else {
       vehicleNeeds = await this.calculateVehicleNeeds(totalWeight, totalVolume);
-      // console.log('[getOptimalSquad] 2. Calculated vehicleNeeds from fallback:', vehicleNeeds);
     }
 
-    // Calculate the TRUE total of vehicles needed by summing the counts
     const requestedVehicleCount = vehicleNeeds.reduce((sum, v) => sum + (parseInt(v.count) || 1), 0);
-
-    // Extract all unique vehicle types requested
     const requestedTypes = [...new Set(vehicleNeeds.map(v => v.vehicleType))];
-    // console.log(`[getOptimalSquad] 3. Requested Total Vehicles: ${requestedVehicleCount}, Requested Types:`, requestedTypes);
 
-    // Fetch all available vehicles that match ANY of the requested types
+    // --- NEW: Time & Duration Calculation (Moved up from Section 4) ---
+    // Using 120 (2 hrs) fallback instead of 480 to prevent the massive 8-hour blocks
+    const duration = surveyData?.estimatedHours
+      ? surveyData.estimatedHours * 60
+      : (logisticsPlan?.estimatedMinutes || 120);
+
+    const requestedTime = options.dispatchTime || ticket?.scheduledTime || new Date();
+
+    // --- NEW: Filter Free Vehicles ---
+    // Poll the availability engine to see which trucks are actually free at this time
+    const availability = await this.checkResourceAvailability(requestedTime, duration);
+    const freeVehicleIds = availability.vehicles
+      .filter(v => v.availabilityStatus !== 'UNAVAILABLE')
+      .map(v => v._id);
+
+    // Fetch all available vehicles that match ANY of the requested types AND are currently free
     const availableVehicles = await Vehicle.find({
       vehicleType: { $in: requestedTypes },
       status: 'Available',
-      isActive: true
+      isActive: true,
+      _id: { $in: freeVehicleIds } // <-- THIS PREVENTS TRUCK DOMINO CONFLICTS
     }).lean();
 
-    // console.log(`[getOptimalSquad] 4. Found ${availableVehicles.length} available vehicles in DB matching types.`);
-
     if (!availableVehicles.length) {
-      throw new AppError(`No vehicles available for the requested types: ${requestedTypes.join(', ')}`, 400);
+      throw new AppError(`Không đủ xe tải trống lịch. Cần các loại: ${requestedTypes.join(', ')}`, 400);
     }
 
     let sortedVehicles = availableVehicles;
@@ -1470,13 +1501,9 @@ class DispatchService {
       }).sort((a, b) => a.distance - b.distance);
     }
 
-    // Determine the final number of vehicles based on availability vs requested
     const numberOfVehicles = Math.min(requestedVehicleCount, sortedVehicles.length);
-
-    // console.log(`[getOptimalSquad] 5. Math.min(requested: ${requestedVehicleCount}, sorted DB: ${sortedVehicles.length}) = Final numberOfVehicles: ${numberOfVehicles}`);
-
     const selectedVehicles = sortedVehicles.slice(0, numberOfVehicles);
-    const vehicle = selectedVehicles[0]; // Primary vehicle (carries the squad leader)
+    const vehicle = selectedVehicles[0]; // Primary vehicle
 
     // =========================
     // 3. Staff + Driver Scoring
@@ -1513,20 +1540,11 @@ class DispatchService {
     // =========================
     // 4. Capacity + Smart Squad
     // =========================
-
-    // console.log('\n--- [getOptimalSquad] START SMART SQUAD ---');
-
     const neededCapacity = neededTotalStaff !== null
       ? neededTotalStaff
       : (vehicle.maxStaff || 2);
 
-    // console.log(`[getOptimalSquad] 6. neededCapacity determined as: ${neededCapacity} (Total Staff Needed: ${neededTotalStaff})`);
-
-    const duration = surveyData?.estimatedHours
-      ? surveyData.estimatedHours * 60
-      : (logisticsPlan?.estimatedMinutes || 480);
-
-    const requestedTime = options.dispatchTime || ticket?.scheduledTime || new Date();
+    // `duration` and `requestedTime` are already calculated in Section 2, so we reuse them directly
 
     // Role assignment model:
     //   1 leader  (doubles as primary vehicle driver)
@@ -1534,11 +1552,6 @@ class DispatchService {
     //   remaining = helpers
     const requiredCoDrivers = Math.max(0, numberOfVehicles - 1);
     const requiredHelpers = Math.max(0, neededCapacity - 1 - requiredCoDrivers);
-
-    // console.log(`[getOptimalSquad] 7. Staff Distribution Math:`);
-    // console.log(`    - Leaders: 1`);
-    // console.log(`    - Co-Drivers: ${requiredCoDrivers} (numberOfVehicles[${numberOfVehicles}] - 1)`);
-    // console.log(`    - Helpers: ${requiredHelpers} (neededCapacity[${neededCapacity}] - 1 - requiredCoDrivers[${requiredCoDrivers}])`);
 
     const rules = {
       requiredLeaders: 1,
@@ -1548,13 +1561,6 @@ class DispatchService {
     };
 
     const suggested = await this.suggestResources(requestedTime, duration, rules);
-
-    // console.log(`[getOptimalSquad] 8. suggestResources Output:`);
-    // console.log(`    - Leader found: ${!!suggested.rawTeam.leader}`);
-    // console.log(`    - Drivers found: ${suggested.rawTeam.drivers.length}`);
-    // console.log(`    - Helpers found: ${suggested.rawTeam.helpers.length}`);
-    // console.log('--- [getOptimalSquad] END ---\n');
-
     const nextSlots = await this.suggestTimeSlots(requestedTime, duration, rules);
 
     const squadDispatchData = {
