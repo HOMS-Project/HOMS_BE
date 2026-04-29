@@ -440,3 +440,169 @@ exports.cancelInvoice = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * PATCH /api/invoices/:invoiceId/confirm-reschedule
+ * Scenario B — Customer accepts or rejects a dispatcher-proposed dispatch time change.
+ *
+ * Body: { action: 'ACCEPT' | 'REJECT' }
+ *
+ * ACCEPT: moves proposedDispatchTime → scheduledTime, clears proposal fields,
+ *         notifies customer of confirmation.
+ * REJECT: clears proposal, notifies the dispatcher to revisit the plan.
+ */
+exports.confirmReschedule = async (req, res, next) => {
+  try {
+    const { invoiceId } = req.params;
+    const { action } = req.body; // 'ACCEPT' | 'REJECT'
+    const userId = req.user?.userId || req.user?._id || req.user?.id;
+
+    if (!['ACCEPT', 'REJECT'].includes(action)) {
+      throw new AppError("action phải là 'ACCEPT' hoặc 'REJECT'", 400);
+    }
+
+    const Invoice = require('../models/Invoice');
+    const NotificationService = require('../services/notificationService');
+    const T = require('../utils/notificationTemplates');
+    const dayjs = require('dayjs');
+
+    const invoice = await Invoice.findById(invoiceId)
+      .populate('requestTicketId', 'code customerId dispatcherId scheduledTime')
+      .populate('customerId', '_id');
+
+    if (!invoice) throw new AppError('Invoice không tồn tại', 404);
+
+    // Auth: only the owning customer may call this endpoint
+    const role = (req.user?.role || '').toLowerCase();
+    const custId = invoice.customerId?._id?.toString() || invoice.customerId?.toString();
+    if (role === 'customer' && custId !== String(userId)) {
+      throw new AppError('Bạn không có quyền xác nhận lịch của hóa đơn này.', 403);
+    }
+
+    const isReschedulePending = invoice.rescheduleStatus === 'PENDING_APPROVAL' && invoice.proposedDispatchTime;
+    const isProposalPending = invoice.dispatchProposal?.status === 'PENDING_APPROVAL';
+
+    if (!isReschedulePending && !isProposalPending) {
+      throw new AppError('Không có đề xuất nào đang chờ xác nhận.', 400);
+    }
+
+    const ticket = invoice.requestTicketId;
+    let ioInstance = null;
+    try { const { getIo } = require('../utils/socket'); ioInstance = getIo(); } catch (_) { /* no-op */ }
+
+    if (action === 'ACCEPT') {
+      const confirmedTime = dayjs(invoice.proposedDispatchTime).format('HH:mm DD/MM/YYYY');
+      const newScheduledTime = invoice.proposedDispatchTime;
+
+      if (isReschedulePending) {
+        invoice.scheduledTime = newScheduledTime;
+        invoice.proposedDispatchTime = null;
+        invoice.rescheduleStatus = 'ACCEPTED';
+      }
+
+      if (isProposalPending) {
+        invoice.dispatchProposal.status = 'ACCEPTED';
+      }
+
+      invoice.status = 'ASSIGNED';  // the customer confirmed, promote invoice to ASSIGNED
+
+      // Promote the associated DispatchAssignment from DRAFT to ASSIGNED
+      if (invoice.dispatchAssignmentId) {
+        const DispatchAssignment = require('../models/DispatchAssignment');
+        await DispatchAssignment.findByIdAndUpdate(
+          invoice.dispatchAssignmentId,
+          { $set: { status: 'ASSIGNED' } }
+        );
+      }
+
+      await invoice.save();
+
+      // Sync the new scheduled time back to the RequestTicket so the customer
+      // order page (ViewMovingOrder) reflects the correct date and time.
+      if (ticket?._id) {
+        const RequestTicket = require('../models/RequestTicket');
+        await RequestTicket.findByIdAndUpdate(ticket._id, { scheduledTime: newScheduledTime });
+      }
+
+      // Notify customer: schedule confirmed
+      await NotificationService.createNotification({
+        userId: ticket.customerId,
+        ...T.DISPATCH_RESCHEDULE_ACCEPTED({ ticketCode: invoice.code, confirmedTime }),
+        ticketId: ticket._id
+      }, ioInstance);
+
+      // Notify dispatcher: customer accepted the proposed time
+      if (ticket.dispatcherId) {
+        await NotificationService.createNotification({
+          userId: ticket.dispatcherId,
+          ...T.DISPATCH_RESCHEDULE_ACCEPTED_BY_CUSTOMER({ ticketCode: invoice.code, confirmedTime }),
+          ticketId: ticket._id
+        }, ioInstance);
+      }
+
+      return res.json({ success: true, message: 'Đã xác nhận lịch vận chuyển mới.', data: invoice });
+    }
+
+    // REJECT — revert invoice back to CONFIRMED so dispatcher can reassign
+    if (isReschedulePending) {
+      invoice.proposedDispatchTime = null;
+      invoice.rescheduleStatus = 'REJECTED';
+    }
+
+    if (isProposalPending) {
+      invoice.dispatchProposal.status = 'REJECTED';
+    }
+
+    invoice.status = 'CONFIRMED';          // ← revert so it reappears in the dispatcher queue
+
+    // Reset the existing DispatchAssignment to DRAFT (don't just null the reference).
+    // This prevents the stale ASSIGNED document from remaining in the collection while we reassign.
+    if (invoice.dispatchAssignmentId) {
+      const DispatchAssignment = require('../models/DispatchAssignment');
+      await DispatchAssignment.findByIdAndUpdate(
+        invoice.dispatchAssignmentId,
+        { $set: { status: 'DRAFT' } }
+      );
+    }
+
+    invoice.dispatchAssignmentId = null;   // ← clear the reference so dispatcher starts fresh
+    await invoice.save();
+
+    // Notify dispatcher (if assigned) that customer rejected
+    if (ticket.dispatcherId) {
+      await NotificationService.createNotification({
+        userId: ticket.dispatcherId,
+        ...T.DISPATCH_RESCHEDULE_REJECTED({ ticketCode: invoice.code }),
+        ticketId: ticket._id
+      }, ioInstance);
+    }
+
+    return res.json({ success: true, message: 'Đã từ chối đề xuất đổi lịch.', data: invoice });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PATCH /api/invoices/:id/confirm-understaffed
+ */
+exports.confirmUnderstaffed = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { action } = req.body;
+    const customerId = req.user?.userId || req.user?._id || req.user?.id;
+
+    const invoice = await InvoiceService.confirmUnderstaffed(id, action, customerId);
+
+    // If rejected, we might want to revert status or notify dispatcher
+    // For now, just recording the action is enough as the dispatcher will see it in the dashboard
+    
+    res.json({
+      success: true,
+      message: 'Action recorded successfully',
+      data: invoice
+    });
+  } catch (error) {
+    next(error);
+  }
+};

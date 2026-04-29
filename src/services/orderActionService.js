@@ -27,7 +27,7 @@ async function getCoordinates(address) {
 
     const res = await axios.get('https://rsapi.goong.io/geocode', {
       params: { address: searchAddress, api_key: GOONG_API_KEY },
-       timeout: 5000
+      timeout: 5000
     });
     if (res.data.results && res.data.results.length > 0) {
       return res.data.results[0].geometry.location; // { lat, lng }
@@ -73,11 +73,23 @@ async function getRouteDistance(originCoords, destCoords) {
   return 5; // Fallback mặc định
 }
 
+/** Tính thời gian ước tính cho đơn hàng */
+async function computeEstimatedHours({ distanceKm = 0, floors = 0, suggestedStaffCount = 2, moveType }) {
+  let hours = 2;
 
+  if (moveType === 'TRUCK_RENTAL' || moveType === 'SPECIFIC_ITEMS') {
+    hours = 1;
+  }
 
+  hours += distanceKm * 0.1;
 
+  if (moveType === 'FULL_HOUSE') {
+    hours += floors * 0.5;
+    if (suggestedStaffCount <= 2) hours += 1;
+  }
 
-
+  return Math.ceil(hours);
+}
 
 // ─────────────────────────────────────────────────────────────
 // ACTION: TÍNH GIÁ
@@ -91,7 +103,7 @@ async function getRouteDistance(originCoords, destCoords) {
  */
 async function handleCalculatePrice(aiAction, session) {
   const data = aiAction.data;
-  const moveType = aiAction.movingType || 'FULL_HOUSE'; 
+  const moveType = aiAction.movingType || 'FULL_HOUSE';
 
   if (!data.from || !data.to || data.from === 'địa chỉ đi') {
     return '[HỆ_THỐNG_BÁO_LỖI]: Bạn chưa lấy đủ địa chỉ ĐI và ĐẾN chi tiết. Hãy khéo léo xin lỗi và hỏi lại khách hàng ngay lập tức!';
@@ -99,83 +111,82 @@ async function handleCalculatePrice(aiAction, session) {
   if (!data.movingTime) {
     return '[HỆ_THỐNG_BÁO_LỖI]: Thiếu thông tin thời gian chuyển. Hãy hỏi khách hàng muốn chuyển vào ngày giờ nào để kiểm tra kẹt xe/cấm tải.';
   }
-const pickupTime = new Date(data.movingTime);
+  const pickupTime = new Date(data.movingTime);
   const now = new Date();
 
   // 1. Kiểm tra nếu AI không chuyển đổi được thời gian (trả về chữ hoặc sai format)
   if (isNaN(pickupTime.getTime())) {
-      return '[HỆ_THỐNG_BÁO_LỖI]: AI chưa chuyển được thời gian sang dạng ngày tháng cụ thể. Bạn BẮT BUỘC phải yêu cầu khách cung cấp lại ngày dương lịch chính xác (ví dụ: ngày 28/04/2026).';
+    return '[HỆ_THỐNG_BÁO_LỖI]: AI chưa chuyển được thời gian sang dạng ngày tháng cụ thể. Bạn BẮT BUỘC phải yêu cầu khách cung cấp lại ngày dương lịch chính xác (ví dụ: ngày 28/04/2026).';
   }
 
   // 2. Kiểm tra nếu chọn giờ quá khứ (Cho phép du di 1 tiếng - 3600000ms)
   if (pickupTime < new Date(now.getTime() - 3600000)) {
-      return '[HỆ_THỐNG_BÁO_LỖI]: Thời gian chuyển không hợp lệ vì nằm trong quá khứ. Hãy nhờ khách cho ngày cụ thể ở TƯƠNG LAI (Ví dụ: 25/04/2026).';
+    return '[HỆ_THỐNG_BÁO_LỖI]: Thời gian chuyển không hợp lệ vì nằm trong quá khứ. Hãy nhờ khách cho ngày cụ thể ở TƯƠNG LAI (Ví dụ: 25/04/2026).';
   }
 
   console.log('🔄 Đang tính giá bằng API thật...', data);
 
   // 1. Lấy tọa độ
   const fromCoords = await getCoordinates(data.from);
-  const toCoords   = await getCoordinates(data.to);
+  const toCoords = await getCoordinates(data.to);
   if (!fromCoords || !toCoords) {
     return '[HỆ_THỐNG_BÁO_LỖI]: Không tìm thấy địa chỉ này trên bản đồ Đà Nẵng. Nhờ khách kiểm tra lại tên đường/quận.';
   }
 
   // 2. Khoảng cách & quận
-  const distanceKm       = await getRouteDistance(fromCoords, toCoords);
-  const pickupDistrict   = await GeocodeService.reverseGeocode(fromCoords.lat, fromCoords.lng);
+  const distanceKm = await getRouteDistance(fromCoords, toCoords);
+  const pickupDistrict = await GeocodeService.reverseGeocode(fromCoords.lat, fromCoords.lng);
   const deliveryDistrict = await GeocodeService.reverseGeocode(toCoords.lat, toCoords.lng);
 
-
-  let suggestedVehicle = '1TON'; 
+  let suggestedVehicle = '1TON';
   let suggestedStaffCount = 1;
   let finalActualWeight = 0;
   let finalActualVolume = 0;
   let routeWarnings = [];
-const ITEM_DICTIONARY = {
-  "tủ lạnh": { weight: 60, volume: 0.8 },
-  "tủ lạnh 4 cánh": { weight: 120, volume: 1.5 },
-  "máy giặt": { weight: 40, volume: 0.4 },
-  "giường": { weight: 50, volume: 1.0 },
-  "nệm": { weight: 20, volume: 1.2 },
-  "tủ quần áo": { weight: 80, volume: 2.0 },
-  "sofa": { weight: 60, volume: 1.5 },
-  "thùng carton": { weight: 15, volume: 0.1 },
-  "xe máy": { weight: 100, volume: 1.0 }
-};
+  const ITEM_DICTIONARY = {
+    "tủ lạnh": { weight: 60, volume: 0.8 },
+    "tủ lạnh 4 cánh": { weight: 120, volume: 1.5 },
+    "máy giặt": { weight: 40, volume: 0.4 },
+    "giường": { weight: 50, volume: 1.0 },
+    "nệm": { weight: 20, volume: 1.2 },
+    "tủ quần áo": { weight: 80, volume: 2.0 },
+    "sofa": { weight: 60, volume: 1.5 },
+    "thùng carton": { weight: 15, volume: 0.1 },
+    "xe máy": { weight: 100, volume: 1.0 }
+  };
 
   let rawItems = [...(session.visionItems || []), ...(data.items || [])];
-let finalItems = rawItems.map(item => {
-  let itemName = (item.name || '').toLowerCase();
-  
-  let matchedRule = Object.keys(ITEM_DICTIONARY).find(key => itemName.includes(key));
-  let defaultWeight = matchedRule ? ITEM_DICTIONARY[matchedRule].weight : 20;
-  let defaultVolume = matchedRule ? ITEM_DICTIONARY[matchedRule].volume : 0.2;
+  let finalItems = rawItems.map(item => {
+    let itemName = (item.name || '').toLowerCase();
 
-  const weight = Number(item.actualWeight) > 0 ? Number(item.actualWeight) : defaultWeight; 
-  const volume = Number(item.actualVolume) > 0 ? Number(item.actualVolume) : defaultVolume;
-  
-  return {
-    name: item.name || 'Đồ đạc',
-    quantity: Number(item.quantity) || 1,
-    actualWeight: weight * (Number(item.quantity) || 1), 
-    actualVolume: volume * (Number(item.quantity) || 1)
-  };
-});
-   let totalCalculatedWeight = finalItems.reduce((sum, item) => sum + item.actualWeight, 0);
-  let totalCalculatedVolume = finalItems.reduce((sum, item) => sum + item.actualVolume, 0);
-   if (moveType === 'FULL_HOUSE') {
+    let matchedRule = Object.keys(ITEM_DICTIONARY).find(key => itemName.includes(key));
+    let defaultWeight = matchedRule ? ITEM_DICTIONARY[matchedRule].weight : 20;
+    let defaultVolume = matchedRule ? ITEM_DICTIONARY[matchedRule].volume : 0.2;
+
+    const weight = Number(item.actualWeight) > 0 ? Number(item.actualWeight) : defaultWeight;
+    const volume = Number(item.actualVolume) > 0 ? Number(item.actualVolume) : defaultVolume;
+
+    return {
+      name: item.name || 'Đồ đạc',
+      quantity: Number(item.quantity) || 1,
+      actualWeight: weight * (Number(item.quantity) || 1),
+      actualVolume: volume * (Number(item.quantity) || 1)
+    };
+  });
+
+  let totalCalculatedWeight = finalItems.reduce((sum, item) => sum + item.actualWeight, 0);
+  if (moveType === 'FULL_HOUSE') {
     if (totalCalculatedWeight < 300) totalCalculatedWeight = 300;
     if (totalCalculatedVolume < 3) totalCalculatedVolume = 3;
   }
+
   const floors = Number(data.floors) || 0;
 
   if (moveType === 'TRUCK_RENTAL') {
-  
+
     suggestedVehicle = data.suggestedVehicle || '1TON';
-    suggestedStaffCount = Number(data.suggestedStaffCount) || 1; 
+    suggestedStaffCount = Number(data.suggestedStaffCount) || 1;
   } else {
-  
     const estimation = await SurveyService.estimateResources(
       finalItems, distanceKm, floors, data.hasElevator
     );
@@ -187,16 +198,16 @@ let finalItems = rawItems.map(item => {
   }
 
   // 4. Validate lộ trình (Cấm tải, khung giờ)
+  const estimatedHours = await computeEstimatedHours({ distanceKm, floors, suggestedStaffCount, moveType });
   const routeValidation = await RouteValidationService.validateRoute(null, {
     vehicleType: suggestedVehicle,
     totalWeight: finalActualWeight,
     totalVolume: finalActualVolume,
     pickupTime,
-    pickupAddress:  data.from,
+    pickupAddress: data.from,
     deliveryAddress: data.to
   });
- const existingImages = session.surveyDataCache?.images || [];
-
+  const existingImages = session.surveyDataCache?.images || [];
   const surveyData = {
     movingType: moveType,
     images: existingImages,
@@ -210,28 +221,24 @@ let finalItems = rawItems.map(item => {
     needsPacking: data.needsPacking || false,
     items: finalItems,
     scheduledTime: pickupTime,
-    
 
     suggestedVehicle,
     suggestedStaffCount,
-    rentalDurationHours: Number(data.rentalDurationHours) || 1, 
-    estimatedHours: Number(data.rentalDurationHours) || undefined,
-    
+    rentalDurationHours: Number(data.rentalDurationHours) || 1,
+    estimatedHours: Number(data.rentalDurationHours) || estimatedHours,
+
     totalActualWeight: finalActualWeight,
     totalActualVolume: finalActualVolume,
     insuranceRequired: false,
     declaredValue: 0
   };
 
-  
   session.surveyDataCache = surveyData;
 
   let finalPrice = 0;
   try {
-
     const priceList = await PricingCalculationService.getActivePriceList();
     if (!priceList) throw new Error('Không có bảng giá active');
-
 
     const priceResult = await PricingCalculationService.calculatePricing(
       surveyData,
@@ -241,7 +248,7 @@ let finalItems = rawItems.map(item => {
 
     finalPrice = priceResult.totalPrice;
     session.calculatedPriceResult = priceResult;
-    session.calculatedBreakdown   = priceResult.breakdown;
+    session.calculatedBreakdown = priceResult.breakdown;
   } catch (pricingErr) {
     console.error('[Pricing Error]', pricingErr.message);
     session.calculatedBreakdown = null;
@@ -253,12 +260,14 @@ let finalItems = rawItems.map(item => {
   if (routeWarnings && routeWarnings.length > 0) {
     routeAlertMsg += `\n[LƯU Ý XE]: ${routeWarnings.join(' ')}`;
   }
+
   if (routeValidation && routeValidation.violations?.length > 0) {
     routeAlertMsg += `\n[VI PHẠM QUY ĐỊNH]: ${routeValidation.violations.join(' | ')}. Báo khách hàng khung giờ này cấm tải hoặc xe không vào được, đề nghị đổi giờ.`;
   }
-const lowPrice = finalPrice - 500000;
-const highPrice = finalPrice + 500000;
- if (moveType === 'TRUCK_RENTAL') {
+
+  const lowPrice = finalPrice - 500000;
+  const highPrice = finalPrice + 500000;
+  if (moveType === 'TRUCK_RENTAL') {
     return (
       `[GIÁ_THỰC_TẾ_TỪ_HỆ_THỐNG]: Mức giá TẠM TÍNH cho dịch vụ Thuê xe tải dự kiến rơi vào khoảng từ ${lowPrice.toLocaleString()} VNĐ đến ${highPrice.toLocaleString()} VNĐ (Khoảng cách: ${distanceKm}km).${routeAlertMsg}\n\n` +
       `Hãy báo giá này cho khách một cách tự nhiên. Dặn khách đây là giá thuê xe tạm tính, khi chốt đơn bộ phận điều phối sẽ gọi lại để chốt chính xác thời gian và xác nhận loại xe phù hợp ạ.`
@@ -288,6 +297,7 @@ async function checkAvailablePromotions() {
     validUntil: { $gte: now }
   }).limit(3); // Lấy tối đa 3 mã để gợi ý
 }
+
 async function handleRequestDiscount(aiAction) {
   const activePromos = await checkAvailablePromotions();
 
@@ -305,21 +315,22 @@ async function handleRequestDiscount(aiAction) {
     );
   }
 }
+
 async function generateMagicLinkForUser(facebookId, orderId = null) {
   const user = await User.findOne({ facebookId });
   if (!user) return null;
 
   const targetPath = orderId ? `/customer/order` : '/customer';
-  
+
   const setupToken = jwt.sign(
-    { 
-      id: user._id, 
-      facebookId: user.facebookId, 
-      st: user.securityToken, 
+    {
+      id: user._id,
+      facebookId: user.facebookId,
+      st: user.securityToken,
       email: user.email,
-      phone: user.phone, 
-      type: 'setup_account' 
-    }, 
+      phone: user.phone,
+      type: 'setup_account'
+    },
     process.env.JWT_SECRET || 'SECRET',
     { expiresIn: '10m' }
   );
@@ -338,38 +349,39 @@ async function generateMagicLinkForUser(facebookId, orderId = null) {
  * @returns {string} - Tin nhắn cuối gửi cho khách (không qua AI nữa)
  */
 async function handleCreateOrder(aiAction, session, facebookId) {
-   const phone = aiAction.phone || (aiAction.data && aiAction.data.phone);
+  const phone = aiAction.phone || (aiAction.data && aiAction.data.phone);
   const phoneRegex = /^[0-9]{10,11}$/;
-  
+
   if (!phone || !phoneRegex.test(phone)) {
     return '[HỆ_THỐNG_BÁO_LỖI]: Bạn chưa có số điện thoại hợp lệ của khách. Hãy yêu cầu khách cung cấp số điện thoại (10-11 chữ số) để tiện liên lạc ạ.';
   }
- const extractedEmail = aiAction.email || (aiAction.data && aiAction.data.email) || '';  
-const rawEmailText = extractedEmail.toLowerCase(); 
+  const extractedEmail = aiAction.email || (aiAction.data && aiAction.data.email) || '';
+  const rawEmailText = extractedEmail.toLowerCase();
 
-const emailMatch = rawEmailText.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/);
-const email = emailMatch ? emailMatch[0] : null;
- console.log('Email nhận được từ AI:', extractedEmail, '-> Email sau khi RegEx:', email);
-console.log(email);
+  const emailMatch = rawEmailText.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/);
+  const email = emailMatch ? emailMatch[0] : null;
+  console.log('Email nhận được từ AI:', extractedEmail, '-> Email sau khi RegEx:', email);
+  console.log(email);
   if (!email) {
     return '[HỆ_THỐNG_BÁO_LỖI]: Email không hợp lệ hoặc chưa được cung cấp. Hãy xin lại email chính xác từ khách hàng!';
-    
+
   }
 
-   if (!session.surveyDataCache) {
+  if (!session.surveyDataCache) {
     throw new Error('Không có dữ liệu tính giá — Vui lòng báo khách hàng tính giá trước khi chốt đơn.');
   }
-  
- const psid = facebookId;
 
-  const userByFb = await User.findOne({  messengerId: psid });
+  const psid = facebookId;
+
+  const userByFb = await User.findOne({ messengerId: psid });
   const userByEmail = await User.findOne({ email });
- let isReturningCustomer = false;
+  let isReturningCustomer = false;
   let fullName = 'Khách hàng Facebook';
   let user = null;
-  let isUnverifiedClaim = false; 
-  let needToUpdateUser = false; 
-   if (userByFb && userByEmail) {
+  let isUnverifiedClaim = false;
+  let needToUpdateUser = false;
+
+  if (userByFb && userByEmail) {
     if (userByFb._id.toString() !== userByEmail._id.toString()) {
       // Trường hợp: FB này đang thuộc User A, nhưng email lại thuộc User B
       return `[HỆ_THỐNG_BÁO]: Email ${email} đã được đăng ký bởi một tài khoản khác. Anh/chị vui lòng kiểm tra lại hoặc sử dụng email khác.`;
@@ -381,33 +393,29 @@ console.log(email);
       user.phone = phone;
       needToUpdateUser = true;
     }
-    
   } else if (userByFb) {
     // Trường hợp: Đã có FB, nhưng email này là mới (chưa ai dùng)
     user = userByFb;
     user.email = email; // Cập nhật email mới
-    
+
     // Cập nhật sđt nếu trước đó chưa có
     if (!user.phone && phone) {
       user.phone = phone;
     }
     needToUpdateUser = true;
-
   } else if (userByEmail) {
     // Trường hợp: Email đã có trong hệ thống, nhưng nick FB này là nick lạ
     user = userByEmail;
-    isUnverifiedClaim = true; 
-   // KHÔNG gán messengerId ở đây. Chờ frontend khách đăng nhập web xong mới link.
-
+    isUnverifiedClaim = true;
+    // KHÔNG gán messengerId ở đây. Chờ frontend khách đăng nhập web xong mới link.
   } else {
-    
-    user = new User({ 
-       messengerId: psid,
-      email, 
+    user = new User({
+      messengerId: psid,
+      email,
       phone,
-      provider: 'pending',  
-      fullName: 'Khách hàng', 
-      role: 'customer', 
+      provider: 'pending',
+      fullName: 'Khách hàng',
+      role: 'customer',
       securityToken: crypto.randomBytes(16).toString('hex'),
       status: 'Pending_Password'
     });
@@ -422,20 +430,20 @@ console.log(email);
   // BƯỚC 2: CHUẨN BỊ DỮ LIỆU ĐỌC 
   // ─────────────────────────────────────────────────────────────
   const priceCache = session.calculatedPriceResult;
- let finalSubtotal   = priceCache?.subtotal    || 1500000;
-let finalTax        = priceCache?.tax         || 0;
-let finalTotalPrice = priceCache?.totalPrice  || 1500000;
-let finalBreakdown  = priceCache?.breakdown   || session.calculatedBreakdown || {
-  baseTransportFee: finalTotalPrice, vehicleFee: 0, laborFee: 0,
-  stairsFee: 0, packingFee: 0, assemblingFee: 0
-};
+  let finalSubtotal = priceCache?.subtotal || 1500000;
+  let finalTax = priceCache?.tax || 0;
+  let finalTotalPrice = priceCache?.totalPrice || 1500000;
+  let finalBreakdown = priceCache?.breakdown || session.calculatedBreakdown || {
+    baseTransportFee: finalTotalPrice, vehicleFee: 0, laborFee: 0,
+    stairsFee: 0, packingFee: 0, assemblingFee: 0
+  };
 
   const actualMoveType = session.surveyDataCache.movingType;
   const pricingDataObjectId = new mongoose.Types.ObjectId();
   const randomString = crypto.randomBytes(2).toString('hex').toUpperCase();
   const code = `REQ-${new Date().getFullYear()}-${randomString}`;
 
-  const ticketStatus = 'WAITING_REVIEW'; 
+  const ticketStatus = 'WAITING_REVIEW';
   const ticketNotes = `[TẠO TỪ AI BOT - GỬI QUOTED CHO KHÁCH] ${aiAction.notes || ''}`;
 
   let activePriceList = await PricingCalculationService.getActivePriceList().catch(() => null);
@@ -446,7 +454,7 @@ let finalBreakdown  = priceCache?.breakdown   || session.calculatedBreakdown || 
   const dbSession = await mongoose.startSession();
   dbSession.startTransaction();
 
-  let newTicket; 
+  let newTicket;
 
   try {
     // 1. Lưu User mới hoặc User đổi email
@@ -455,25 +463,27 @@ let finalBreakdown  = priceCache?.breakdown   || session.calculatedBreakdown || 
     }
 
     // 2. Tạo RequestTicket
-     newTicket = new RequestTicket({
+    newTicket = new RequestTicket({
       code,
       customerId: user._id,
       moveType: actualMoveType,
       pickup: session.surveyDataCache.pickup,
       delivery: session.surveyDataCache.delivery,
       scheduledTime: session.surveyDataCache.scheduledTime,
-      status: ticketStatus, 
+      status: ticketStatus,
       notes: ticketNotes,
-      pricing: { subtotal: finalSubtotal, totalPrice: finalTotalPrice, tax: finalTax,   discountAmount: 0,
-        promotionCode: null, pricingDataId: pricingDataObjectId }
+      pricing: {
+        subtotal: finalSubtotal, totalPrice: finalTotalPrice, tax: finalTax, discountAmount: 0,
+        promotionCode: null, pricingDataId: pricingDataObjectId
+      }
     });
     const assignedDispatcherId = await AutoAssignmentService.assignDispatcher(newTicket);
     if (assignedDispatcherId) {
-    newTicket.dispatcherId = assignedDispatcherId;
-    newTicket.status = 'WAITING_REVIEW';
-} else {
-    newTicket.status = 'PENDING_ASSIGNMENT';
-}
+      newTicket.dispatcherId = assignedDispatcherId;
+      newTicket.status = 'WAITING_REVIEW';
+    } else {
+      newTicket.status = 'PENDING_ASSIGNMENT';
+    }
     await newTicket.save({ session: dbSession });
 
     // 3. Tạo SurveyData
@@ -481,13 +491,13 @@ let finalBreakdown  = priceCache?.breakdown   || session.calculatedBreakdown || 
       requestTicketId: newTicket._id,
       surveyType: 'ONLINE',
       status: 'COMPLETED',
-       images: session.surveyDataCache.images || [],
-      ...session.surveyDataCache 
+      images: session.surveyDataCache.images || [],
+      ...session.surveyDataCache
     });
     await newSurvey.save({ session: dbSession });
 
     // 4. Tạo PricingData
-     const newPricing = new PricingData({
+    const newPricing = new PricingData({
       _id: pricingDataObjectId,
       requestTicketId: newTicket._id,
       surveyDataId: newSurvey._id,
@@ -507,7 +517,7 @@ let finalBreakdown  = priceCache?.breakdown   || session.calculatedBreakdown || 
     // ROLLBACK
     await dbSession.abortTransaction();
     console.error('[CreateOrder] Transaction Error:', error);
-     return `[HỆ_THỐNG_BÁO_LỖI]: Đã xảy ra lỗi khi tạo đơn hàng (${error.message}). Bạn hãy xin lỗi khách hàng và báo họ thử lại sau ít phút.`;
+    return `[HỆ_THỐNG_BÁO_LỖI]: Đã xảy ra lỗi khi tạo đơn hàng (${error.message}). Bạn hãy xin lỗi khách hàng và báo họ thử lại sau ít phút.`;
   } finally {
     dbSession.endSession();
   }
@@ -518,29 +528,28 @@ let finalBreakdown  = priceCache?.breakdown   || session.calculatedBreakdown || 
   // ─────────────────────────────────────────────────────────────
   // BƯỚC 4: SINH LINK VÀ TIN NHẮN TRẢ VỀ
   // ─────────────────────────────────────────────────────────────
-  const FE_URL = process.env.FRONTEND_URL ;
- const targetPath = `/customer/order`; 
-if (isReturningCustomer) {
-   let finalRedirectUrl = targetPath;
-     if (isUnverifiedClaim) {
-    const linkToken = jwt.sign(
+  const FE_URL = process.env.FRONTEND_URL;
+  const targetPath = `/customer/order`;
+  if (isReturningCustomer) {
+    let finalRedirectUrl = targetPath;
+    if (isUnverifiedClaim) {
+      const linkToken = jwt.sign(
         { email: user.email, linkMessengerId: psid, intent: 'link_messenger' },
         process.env.JWT_SECRET || 'SECRET',
         { expiresIn: '15m' }
-    );
-    finalRedirectUrl += `?link_token=${linkToken}`;
-}
+      );
+      finalRedirectUrl += `?link_token=${linkToken}`;
+    }
     const redirectParam = encodeURIComponent(finalRedirectUrl);
     const directLink = `${FE_URL}/login?redirect=${redirectParam}`;
     let msg = `Dạ hệ thống ghi nhận email đã tồn tại trên hệ thống,anh chị vui lòng đăng nhập vào trang web ✅\n\n`;
-msg += `Để đảm bảo không phát sinh bất kỳ chi phí nào, nhân viên điều phối của HOMS sẽ liên hệ với anh/chị trên trang web để chốt chính xác danh sách đồ.\n`;
-msg += `Anh/chị có thể xem trước chi tiết lộ trình tại đây: 👉 ${directLink}`;
+    msg += `Để đảm bảo không phát sinh bất kỳ chi phí nào, nhân viên điều phối của HOMS sẽ liên hệ với anh/chị trên trang web để chốt chính xác danh sách đồ.\n`;
+    msg += `Anh/chị có thể xem trước chi tiết lộ trình tại đây: 👉 ${directLink}`;
     return msg;
-
   } else {
     // Khách mới
     const setupToken = jwt.sign(
-      { id: user._id, facebookId,st: user.securityToken, email, fullName,phone, type: 'setup_account' },
+      { id: user._id, facebookId, st: user.securityToken, email, fullName, phone, type: 'setup_account' },
       process.env.JWT_SECRET || 'SECRET',
       { expiresIn: '10m' }
     );

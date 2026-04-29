@@ -98,6 +98,13 @@ const startOrderByStaff = async ({ invoiceId, staffId }) => {
   });
 
   dispatchAssignment.status = "IN_DISPATCH";
+
+  // Gate: Prevent starting if understaffed and customer hasn't approved
+  const invoiceDoc = await Invoice.findById(invoiceId);
+  if (dispatchAssignment.understaffed && invoiceDoc.understaffedApproval !== 'ACCEPT') {
+    throw new AppError("Đơn hàng này đang chờ khách hàng phê duyệt do thiếu nhân sự hoặc xung đột lịch trình.", 400);
+  }
+
   await dispatchAssignment.save();
 
   const { invoice, customerEmail, orderId } = await getCustomerEmailFromInvoice(

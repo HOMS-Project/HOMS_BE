@@ -46,12 +46,13 @@ exports.getAssignmentsByVehicle = async (req, res, next) => {
  */
 exports.suggestOptimalSquad = async (req, res, next) => {
   try {
-    const { totalWeight, totalVolume, pickupLocation, requiredSkills } = req.body;
+    const { totalWeight, totalVolume, pickupLocation, requiredSkills, requestTicketId, dispatchTime } = req.body;
     const squad = await DispatchService.getOptimalSquad(
       totalWeight || 1000,
       totalVolume || 10,
       pickupLocation,
-      requiredSkills || []
+      requiredSkills || [],
+      { requestTicketId, dispatchTime }
     );
 
     res.status(200).json({
@@ -75,8 +76,12 @@ exports.dispatchVehicles = async (req, res, next) => {
       staffIds,
       vehicleType,
       vehicleCount,
+      vehicles,
       routeId,
-      estimatedDuration
+      estimatedDuration,
+      dispatchTime,
+      forceProceed,
+      useExternalStaff
     } = req.body;
 
     // Truy xuất thông tin SurveyData để lấy khối lượng thực tế
@@ -105,11 +110,17 @@ exports.dispatchVehicles = async (req, res, next) => {
       staffIds,
       vehicleType,
       vehicleCount,
+      vehicles,
       routeId,
-      estimatedDuration
+      estimatedDuration,
+      dispatchTime,
+      forceProceed,
+      useExternalStaff,
+      dispatcherId: req.user?.userId || req.user?._id
     });
 
-    // Cập nhật invoice status
+    // Move to ASSIGNED status immediately to lock resources
+    // The "understaffedApproval" field will handle the gating for starting the work
     await Invoice.findByIdAndUpdate(invoiceId, {
       status: 'ASSIGNED'
     });
@@ -119,7 +130,7 @@ exports.dispatchVehicles = async (req, res, next) => {
       data: assignment
     });
   } catch (error) {
-    next(error); 
+    next(error);
     // we use next(error) instead of sending 400 to let errorMiddleware handle AppError properly
   }
 };
@@ -155,10 +166,10 @@ exports.checkAvailability = async (req, res, next) => {
     if (!dispatchTime) {
       throw new AppError('dispatchTime is required', 400);
     }
-    
+
     const duration = estimatedDuration || 480;
     const data = await DispatchService.checkResourceAvailability(dispatchTime, duration);
-    
+
     res.status(200).json({
       success: true,
       data

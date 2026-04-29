@@ -96,8 +96,19 @@ const dispatchAssignmentSchema = new mongoose.Schema({
     default: 'DRAFT'
   },
 
-  notes: String
+  notes: String,
 
+  feasibility: {
+    staffingRatio: Number,
+    staffingLevel: { type: String, enum: ['SAFE', 'WARNING', 'CRITICAL'] },
+    estimatedDuration: Number,
+    durationExceeded: Boolean,
+    hasConflict: Boolean,
+    impactLevel: { type: String, enum: ['NONE', 'LOW', 'HIGH'] },
+    decision: { type: String, enum: ['BLOCK', 'ALLOW', 'CONFIRM', 'REQUIRE_CUSTOMER'] }
+  },
+
+  externalStaffUsed: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // Index for checking staff overlapping shifts

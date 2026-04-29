@@ -7,6 +7,7 @@ const RequestTicket = require('../models/RequestTicket');
 const AppError = require('../utils/appErrors');
 const PricingCalculationService = require('./pricingCalculationService');
 const NotificationService = require("./notificationService");
+const T = require("../utils/notificationTemplates");
 const RecommendationService = require('./recommendationService');
 const PricingAdjustmentService = require('./pricingAdjustmentService');
 const { getIo } = require("../utils/socket");
@@ -64,9 +65,7 @@ class SurveyService {
     await NotificationService.createNotification(
       {
         userId: ticket.customerId,
-        title: "Lịch khảo sát đã được xác nhận",
-        message: `Khảo sát được lên lịch vào ${schedDate.toLocaleString()}`,
-        type: "System",
+        ...T.SURVEY_SCHEDULED({ scheduledDate: schedDate.toLocaleString('vi-VN') }),
         ticketId: ticket._id
       },
       io
@@ -100,6 +99,7 @@ class SurveyService {
     // 2️⃣ Destructure đúng field mới
     const {
       suggestedVehicle,
+      suggestedVehicles,
       suggestedStaffCount,
       distanceKm,
       carryMeter = 0,
@@ -116,7 +116,7 @@ class SurveyService {
     } = surveyData;
 
     // Validate
-    if (!suggestedVehicle || suggestedStaffCount == null) {
+    if ((!suggestedVehicle && (!suggestedVehicles || suggestedVehicles.length === 0)) || suggestedStaffCount == null) {
       throw new AppError('Thiếu dữ liệu khảo sát bắt buộc', 400);
     }
 
@@ -143,6 +143,7 @@ class SurveyService {
         status: 'COMPLETED',
         completedDate: new Date(),
         suggestedVehicle,
+        suggestedVehicles,
         suggestedStaffCount,
         distanceKm,
         carryMeter,
@@ -313,50 +314,192 @@ class SurveyService {
   }
 
   /**
-   * Tính toán ước lượng: loại xe, số nhân viên cơ bản dựa trên items
+   * Tính toán ước lượng: loại xe, số nhân viên, thời gian làm việc dựa trên workload
    */
-  async estimateResources(items, distanceKm, floors, hasElevator) {
-    let totalVolume = 0;
-    let totalWeight = 0;
+  async estimateResources({ items, distanceKm = 0, floors = 0, hasElevator = false, carryMeter = 0, needsAssembling = false, needsPacking = false }) {
+    const ITEM_BASELINES = {
+      chair:      { volume: 0.3, weight: 5, category: 'default' },
+      table:      { volume: 1.2, weight: 20, category: 'bulky' },
+      sofa:       { volume: 2.5, weight: 50, category: 'bulky' },
+      bed:        { volume: 3.0, weight: 60, category: 'bulky' },
+      wardrobe:   { volume: 4.0, weight: 80, category: 'bulky' },
+      fridge:     { volume: 2.0, weight: 70, category: 'heavy' },
+      washing_machine: { volume: 1.5, weight: 60, category: 'heavy' },
+      tv:         { volume: 0.5, weight: 10, category: 'default' },
+      piano:      { volume: 3.5, weight: 250, category: 'heavy' },
+      safe:       { volume: 1.0, weight: 300, category: 'heavy' },
+      desk:       { volume: 1.5, weight: 30, category: 'bulky' },
+      bookshelf:  { volume: 2.5, weight: 45, category: 'bulky' },
+      microwave:  { volume: 0.8, weight: 20, category: 'default' },
+      mattress:   { volume: 2.0, weight: 25, category: 'bulky' },
+      box_small:  { volume: 0.1, weight: 5, category: 'default' },
+      box_medium: { volume: 0.2, weight: 15, category: 'default' },
+      box_large:  { volume: 0.4, weight: 30, category: 'default' },
+      default:    { volume: 0.5, weight: 10, category: 'default' }
+    };
 
+    const BASE_HANDLING = {
+      default: 0.5,
+      bulky: 0.8,
+      heavy: 1.2
+    };
+
+    let reasons = [];
+    
+    // 1. Normalization Layer
+    let normalizedItems = [];
     if (items && Array.isArray(items)) {
-      items.forEach(item => {
-        totalVolume += (item.actualVolume || 0);
-        totalWeight += (item.actualWeight || 0);
+      normalizedItems = items.map(item => {
+        let volume = item.actualVolume;
+        let weight = item.actualWeight;
+        let category = item.category || 'default';
+        let source = item.source || 'USER';
+
+        if (!volume || !weight) {
+          // Normalize type/name to match keys
+          const key = (item.type || item.name || 'default').toLowerCase().replace(/\s+/g, '_');
+          const base = ITEM_BASELINES[key] || ITEM_BASELINES.default;
+          volume = volume || base.volume;
+          weight = weight || base.weight;
+          category = base.category;
+        }
+
+        return { ...item, actualVolume: volume, actualWeight: weight, category, source };
       });
     }
 
-    // Xác định loại xe dựa trên Volume & Weight
+    // 2. Workload Calculation
+    let workload = 0;
+    let totalVolume = 0;
+    let totalWeight = 0;
+
+    normalizedItems.forEach(item => {
+      totalVolume += item.actualVolume;
+      totalWeight += item.actualWeight;
+
+      let baseCost = (BASE_HANDLING[item.category] || BASE_HANDLING.default) + item.actualVolume;
+      
+      if (item.actualWeight > 100) baseCost *= 2;
+      if (item.actualWeight > 200) baseCost *= 3;
+      if (item.isSpecialItem || item.condition === 'FRAGILE') baseCost *= 1.5;
+      if (item.requiresManualHandling) baseCost *= 1.2;
+
+      workload += baseCost;
+    });
+
+    if (needsPacking) {
+      workload += normalizedItems.length * 0.5;
+      reasons.push({ type: 'SERVICE', message: 'Packing service increases handling time', impact: 'MEDIUM' });
+    }
+
+    if (needsAssembling) {
+      workload += normalizedItems.length * 0.7;
+      reasons.push({ type: 'SERVICE', message: 'Assembly/disassembly required', impact: 'HIGH' });
+    }
+
+    // Interaction penalty
+    let interactionPenalty = 1;
+    if (normalizedItems.length > 5 && normalizedItems.some(i => i.category === 'heavy')) {
+      interactionPenalty = 1.1;
+    }
+    workload *= interactionPenalty;
+
+    // Multipliers Stack
+    let riskBuffer = 1;
+    if (normalizedItems.length > 0) {
+      if (!normalizedItems.some(i => i.actualWeight > 100)) riskBuffer += 0.1;
+      if (normalizedItems.length > 10) riskBuffer += Math.min(0.2, normalizedItems.length * 0.01);
+      
+      const aiCount = normalizedItems.filter(i => i.source === 'AI').length;
+      if (aiCount === normalizedItems.length) {
+        riskBuffer += 0.1;
+      } else if (aiCount > 0) {
+        riskBuffer += 0.05;
+      }
+    }
+
+    const carryFactor = 1 + (carryMeter / 100);
+    if (carryMeter > 50) reasons.push({ type: 'CARRY', message: 'Long carrying distance increases workload', impact: 'MEDIUM' });
+
+    let floorFactor = hasElevator ? (1 + floors * 0.15) : (1 + floors * 0.5);
+    if (floorFactor > 3) floorFactor = 3 + (floorFactor - 3) * 0.3; // Soft cap
+    
+    if (floors > 3 && !hasElevator) {
+      reasons.push({ type: 'FLOOR', message: 'High floor without elevator significantly increases effort', impact: 'HIGH' });
+    }
+
+    const MAX_TOTAL_MULTIPLIER = 4.0;
+    let totalMultiplier = Math.min(floorFactor * carryFactor * riskBuffer, MAX_TOTAL_MULTIPLIER);
+
+    workload = Math.round(workload * totalMultiplier * 100) / 100;
+
+    // 3. Time Conversion & Staff Estimation
+    const WORKLOAD_TO_MINUTES = process.env.WORKLOAD_TO_MINUTES || 12;
+    const estimatedMinutes = Math.round(workload * WORKLOAD_TO_MINUTES);
+    
+    let suggestedStaffCount = 2; // Min staff
+    if (workload >= 18) suggestedStaffCount = 5;
+    else if (workload >= 10) suggestedStaffCount = 4;
+    else if (workload >= 5) suggestedStaffCount = 3;
+
+    if (normalizedItems.some(i => i.actualWeight > 200)) suggestedStaffCount = Math.max(suggestedStaffCount, 3);
+    const MAX_STAFF = 5;
+    suggestedStaffCount = Math.min(suggestedStaffCount, MAX_STAFF);
+
+    // 4. Vehicle Suggestion
     let suggestedVehicle = '500KG';
-    if (totalWeight > 1000 || totalVolume > 5) {
-      suggestedVehicle = '1.5TON';
-    } else if (totalWeight > 500 || totalVolume > 2.5) {
+    let vehicleCapacity = 3; // base volume capacity
+
+    if (totalWeight > 1500 || totalVolume > 8) { suggestedVehicle = '2TON'; vehicleCapacity = 12; }
+    else if (totalWeight > 1000 || totalVolume > 5) { suggestedVehicle = '1.5TON'; vehicleCapacity = 8; }
+    else if (totalWeight > 500 || totalVolume > 2.5) { suggestedVehicle = '1TON'; vehicleCapacity = 5; }
+    
+    if (normalizedItems.some(i => i.isOversized || i.actualVolume > 2.5) && suggestedVehicle === '500KG') {
       suggestedVehicle = '1TON';
+      vehicleCapacity = 5;
     }
 
-    if (totalWeight > 1500 || totalVolume > 8) {
-      suggestedVehicle = '2TON';
-    }
+    let trips = 1;
+    if (totalVolume > vehicleCapacity) trips = Math.ceil(totalVolume / vehicleCapacity);
 
-    // Đề xuất nhân viên cơ bản
-    let suggestedStaffCount = 2;
-    if (totalVolume > 5 || totalWeight > 500) suggestedStaffCount += 1;
-    if (floors > 2 && !hasElevator) suggestedStaffCount += 1;
-    if (suggestedStaffCount > 5) suggestedStaffCount = 5;
-
-    // Check luật giao thông
     const routeWarnings = [];
     if (suggestedVehicle === '2TON' || suggestedVehicle === '1.5TON') {
       routeWarnings.push(`Lưu ý: Xe ${suggestedVehicle} có thể bị cấm tải trong giờ cao điểm nội thành.`);
     }
 
+    // 5. Confidence Level
+    let confidenceLevel = 'HIGH';
+    if (normalizedItems.length > 0) {
+      const aiRatio = normalizedItems.filter(i => i.source === 'AI').length / normalizedItems.length;
+      if (aiRatio >= 0.5) confidenceLevel = 'LOW';
+      else if (aiRatio > 0) confidenceLevel = 'MEDIUM';
+    }
+
+    console.log('[estimateResources Debug]', JSON.stringify({
+      workload,
+      multipliers: { riskBuffer, carryFactor, floorFactor, interactionPenalty, totalMultiplier },
+      estimatedMinutes,
+      staff: suggestedStaffCount,
+      vehicle: `${suggestedVehicle} (x${trips})`,
+      reasonsCount: reasons.length
+    }, null, 2));
+
     return {
       suggestedVehicle,
+      trips,
       suggestedStaffCount,
       totalVolume,
       totalWeight,
+      workload,
+      estimatedMinutes,
+      confidenceLevel,
+      routeWarnings,
       distanceKm,
-      routeWarnings
+      reasons,
+      debug: {
+        normalizedItems,
+        workloadBreakdown: { interactionPenalty, riskBuffer, carryFactor, floorFactor, totalMultiplier }
+      }
     };
   }
 }

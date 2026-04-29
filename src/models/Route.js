@@ -145,6 +145,5 @@ const routeSchema = new mongoose.Schema({
 
 /* ===== INDEXES - faster query time for route ===== */
 routeSchema.index({ area: 1, district: 1, name: 1 });
-routeSchema.index({ code: 1 });
 
 module.exports = mongoose.model("Route", routeSchema);

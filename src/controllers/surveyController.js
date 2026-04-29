@@ -52,12 +52,12 @@ exports.estimateResources = async (req, res, next) => {
       throw new AppError('Thiếu thông báo khoảng cách hoặc số tầng', 400);
     }
 
-    const estimate = await SurveyService.estimateResources(
+    const estimate = await SurveyService.estimateResources({
       items,
-      Number(distanceKm),
-      Number(floors),
-      Boolean(hasElevator)
-    );
+      distanceKm: Number(distanceKm),
+      floors: Number(floors),
+      hasElevator: Boolean(hasElevator)
+    });
 
     res.json({
       success: true,
@@ -91,7 +91,7 @@ exports.completeSurvey = async (req, res, next) => {
     }
 
     // ✅ Validate bắt buộc (an toàn undefined)
-    if (!surveyData?.suggestedVehicle) {
+    if (!surveyData?.suggestedVehicle && (!surveyData?.suggestedVehicles || surveyData.suggestedVehicles.length === 0)) {
       throw new AppError('Thiếu loại xe đề xuất', 400);
     }
 

@@ -2,6 +2,7 @@ const User = require('../../models/User');
 const bcrypt = require('bcryptjs');
 const AuditLog = require('../../models/AuditLog');
 const NotificationService = require('../../services/notificationService');
+const T = require('../../utils/notificationTemplates');
 
 /**
  * Lấy danh sách users (có phân trang và filter)
@@ -180,9 +181,7 @@ exports.banUser = async (id, { reason, performedBy } = {}) => {
     try {
         await NotificationService.createNotification({
             userId: user._id,
-            title: 'Tài khoản bị cấm',
-            message: reason ? `Tài khoản của bạn đã bị cấm: ${reason}` : 'Tài khoản của bạn đã bị cấm bởi quản trị viên.',
-            type: 'account'
+            ...T.USER_BANNED({ reason })
         });
     } catch (err) {
         // don't block flow if notification fails
@@ -223,9 +222,7 @@ exports.unbanUser = async (id, { reason, performedBy } = {}) => {
     try {
         await NotificationService.createNotification({
             userId: user._id,
-            title: 'Tài khoản đã được kích hoạt',
-            message: 'Tài khoản của bạn đã được gỡ cấm và hoạt động trở lại.',
-            type: 'account'
+            ...T.USER_UNBANNED()
         });
     } catch (err) {
         console.error('Failed to create unban notification', err.message || err);

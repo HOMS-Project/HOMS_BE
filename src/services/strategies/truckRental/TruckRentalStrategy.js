@@ -3,6 +3,7 @@ const AppError = require('../../../utils/appErrors');
 const SurveyData = require('../../../models/SurveyData');
 const AutoAssignmentService = require('../../AutoAssignmentService');
 const NotificationService = require('../../notificationService');
+const T = require('../../../utils/notificationTemplates');
 const User = require('../../../models/User');
 const TicketStateMachine = require('../../TicketStateMachine');
 
@@ -51,12 +52,12 @@ class TruckRentalStrategy extends BaseStrategy {
       const PriceList = require('../../../models/PriceList');
 
       // 1. BE calculates resources based on the AI items array
-      const estimate = await SurveyService.estimateResources(
-        data.items, 
-        data.distanceKm || 0, 
-        0, 
-        false 
-      );
+      const estimate = await SurveyService.estimateResources({
+        items: data.items, 
+        distanceKm: data.distanceKm || 0, 
+        floors: 0, 
+        hasElevator: false 
+      });
 
       // 2. Try to get a Dry-Run price based on BE resources
       let estimatedPrice = 0;
@@ -136,9 +137,7 @@ class TruckRentalStrategy extends BaseStrategy {
     await NotificationService.createNotification(
       {
         userId: ticket.customerId,
-        title: 'Đơn hàng đã được tiếp nhận',
-        message: 'Yêu cầu của bạn đã được xác nhận. Chúng tôi sẽ sớm gửi báo giá chi tiết.',
-        type: 'System',
+        ...T.ORDER_ACCEPTED_TRUCK_RENTAL(),
         ticketId: ticket._id
       },
       io

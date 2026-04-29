@@ -3,6 +3,7 @@ const AppError = require('../../../utils/appErrors');
 const SurveyData = require('../../../models/SurveyData');
 const AutoAssignmentService = require('../../AutoAssignmentService');
 const NotificationService = require('../../notificationService');
+const T = require('../../../utils/notificationTemplates');
 const User = require('../../../models/User');
 const TicketStateMachine = require('../../TicketStateMachine');
 
@@ -22,13 +23,13 @@ class ItemMovingStrategy extends BaseStrategy {
   getAllowedTransitions(currentStatus) {
     // SPECIFIC_ITEMS skips survey — goes to district dispatcher review after HD approval
     const transitions = {
-      CREATED:           ['WAITING_REVIEW', 'CANCELLED'],
-      WAITING_REVIEW:    ['QUOTED', 'CANCELLED'],
+      CREATED: ['WAITING_REVIEW', 'CANCELLED'],
+      WAITING_REVIEW: ['QUOTED', 'CANCELLED'],
       ASSIGNMENT_FAILED: ['WAITING_REVIEW', 'CANCELLED'], // Head dispatcher reassigns manually
-      QUOTED:            ['ACCEPTED', 'CANCELLED'],
-      ACCEPTED:          ['CONVERTED', 'CANCELLED'],
-      CONVERTED:         [],
-      CANCELLED:         []
+      QUOTED: ['ACCEPTED', 'CANCELLED'],
+      ACCEPTED: ['CONVERTED', 'CANCELLED'],
+      CONVERTED: [],
+      CANCELLED: []
     };
     return transitions[currentStatus] || [];
   }
@@ -40,12 +41,12 @@ class ItemMovingStrategy extends BaseStrategy {
       const PriceList = require('../../../models/PriceList');
 
       // 1. BE calculates resources based on the AI items array (ignoring AI's vehicle/staff suggestion)
-      const estimate = await SurveyService.estimateResources(
-        data.items, 
-        data.distanceKm || 0, 
-        0, // floors typically unknown initially
-        false // elevator unknown initially
-      );
+      const estimate = await SurveyService.estimateResources({
+        items: data.items,
+        distanceKm: data.distanceKm || 0,
+        floors: 0, // floors typically unknown initially
+        hasElevator: false // elevator unknown initially
+      });
 
       // 2. Perform a Dry-Run Pricing Calculation to get an Estimated Price for the UI
       let estimatedPrice = 0;
@@ -95,12 +96,12 @@ class ItemMovingStrategy extends BaseStrategy {
       }
 
       const surveyData = new SurveyData(surveyDataOptions);
-      
+
       await surveyData.save();
     }
   }
 
-  async handleApproval(ticket, approverId, additionalData, io) {
+  async handleApproval(ticket, approverId, additionalData = {}, io) {
     await TicketStateMachine.transition(ticket, 'WAITING_REVIEW');
 
     let assignedDispatcherId = additionalData?.surveyorId;
@@ -121,9 +122,7 @@ class ItemMovingStrategy extends BaseStrategy {
       await NotificationService.createNotification(
         {
           userId: ticket.customerId,
-          title: 'Đơn hàng đã được tiếp nhận',
-          message: 'Yêu cầu của bạn đã được xác nhận và đang được xử lý bởi nhân viên điều phối.',
-          type: 'System',
+          ...T.ORDER_ACCEPTED_ITEM_MOVING(),
           ticketId: ticket._id
         },
         io
@@ -144,9 +143,7 @@ class ItemMovingStrategy extends BaseStrategy {
         await NotificationService.createNotification(
           {
             userId: hd._id,
-            title: `Phân công tự động thất bại — Đơn #${ticket.code}`,
-            message: 'Tất cả nhân viên điều phối đang quá tải. Vui lòng phân công thủ công.',
-            type: 'System',
+            ...T.AUTO_ASSIGNMENT_FAILED_ITEM_MOVING({ ticketCode: ticket.code }),
             ticketId: ticket._id
           },
           io

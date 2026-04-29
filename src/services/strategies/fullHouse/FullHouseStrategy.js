@@ -1,6 +1,7 @@
 const BaseStrategy = require('../BaseStrategy');
 const AppError = require('../../../utils/appErrors');
 const NotificationService = require('../../notificationService');
+const T = require('../../../utils/notificationTemplates');
 const SurveyData = require('../../../models/SurveyData');
 const TicketStateMachine = require('../../TicketStateMachine');
 const AutoAssignmentService = require('../../AutoAssignmentService');
@@ -31,7 +32,7 @@ class FullHouseStrategy extends BaseStrategy {
     const transitions = {
       CREATED: ['WAITING_SURVEY', 'CANCELLED'],
       WAITING_SURVEY: ['SURVEYED', 'QUOTED', 'CANCELLED'],
-        WAITING_REVIEW: ['QUOTED', 'CANCELLED'],
+      WAITING_REVIEW: ['QUOTED', 'CANCELLED'],
       SURVEYED: ['QUOTED', 'CANCELLED'],
       QUOTED: ['ACCEPTED', 'CANCELLED'],
       ACCEPTED: ['CONVERTED', 'CANCELLED'],
@@ -41,7 +42,7 @@ class FullHouseStrategy extends BaseStrategy {
     return transitions[currentStatus] || [];
   }
 
-  async handleApproval(ticket, approverId, additionalData, io) {
+  async handleApproval(ticket, approverId, additionalData = {}, io) {
     let assignedDispatcherId = additionalData?.surveyorId;
     let assignmentMethod = 'MANUAL';
 
@@ -60,9 +61,7 @@ class FullHouseStrategy extends BaseStrategy {
       await NotificationService.createNotification(
         {
           userId: ticket.customerId,
-          title: 'Đơn hàng của bạn đã được xác nhận',
-          message: 'Nhân viên khảo sát đã được phân công. Vui lòng chờ lịch hẹn khảo sát.',
-          type: 'System',
+          ...T.ORDER_CONFIRMED_SURVEY_PENDING(),
           ticketId: ticket._id
         },
         io
@@ -81,9 +80,7 @@ class FullHouseStrategy extends BaseStrategy {
         await NotificationService.createNotification(
           {
             userId: hd._id,
-            title: `Phân công tự động thất bại — Đơn #${ticket.code}`,
-            message: 'Tất cả nhân viên khảo sát đang quá tải. Vui lòng phân công thủ công.',
-            type: 'System',
+            ...T.AUTO_ASSIGNMENT_FAILED_SURVEY({ ticketCode: ticket.code }),
             ticketId: ticket._id
           },
           io

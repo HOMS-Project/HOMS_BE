@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const invoiceSchema = new mongoose.Schema(
   {
-    code: { type: String, unique: true, index: true },
+    code: { type: String, unique: true },
 
     requestTicketId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -91,6 +91,19 @@ const invoiceSchema = new mongoose.Schema(
     scheduledTime: {
       type: Date,
     },
+
+    // Scenario B: Dispatcher-proposed reschedule awaiting customer approval
+    proposedDispatchTime: {
+      type: Date,
+      default: null,
+    },
+    rescheduleStatus: {
+      type: String,
+      enum: ['NONE', 'PENDING_APPROVAL', 'ACCEPTED', 'REJECTED'],
+      default: 'NONE',
+    },
+
+
 
     paidAmount: {
       type: Number,
