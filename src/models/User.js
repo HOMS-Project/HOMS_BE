@@ -13,8 +13,8 @@ const userSchema = new mongoose.Schema({
   fullName: {
     type: String,
     required: function () {
-      return this.provider === 'local';
-    }
+  return this.provider.includes('local');
+}
   },
 
   email: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
@@ -27,14 +27,14 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: function () {
-      return this.provider === 'local';
-    }
+  return this.provider.includes('local');
+}
   },
 
   provider: {
-    type: String,
-    enum: ['local', 'google','facebook','local_and_facebook','pending'],
-    default: 'local'
+    type: [String],
+    enum: ['local', 'google','facebook','pending'],
+    default:  ['local']
   },
  facebookId: { type: String, unique: true, sparse: true },
   messengerId: { type: String, unique: true, sparse: true },

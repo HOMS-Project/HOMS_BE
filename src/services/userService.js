@@ -105,20 +105,22 @@ exports.changePassword = async (userId, { currentPassword, newPassword }) => {
     throw new AppError("Thiếu mật khẩu hiện tại hoặc mật khẩu mới", 400);
   }
 
-  if (!user.password) {
-    throw new AppError(
-      "Tài khoản này không có mật khẩu (đăng nhập Google). Vui lòng đặt mật khẩu bằng chức năng đặt lại mật khẩu.",
-      400,
-    );
+ const hasLocalAccount = user.provider && user.provider.includes('local');
+
+  if (hasLocalAccount) {
+
+    if (!currentPassword) {
+      throw new AppError("Vui lòng nhập mật khẩu hiện tại", 400);
+    }
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      throw new AppError("Mật khẩu hiện tại không đúng", 400);
+    }
+  } else {
+    if (!user.provider.includes('local')) {
+      user.provider.push('local');
+    }
   }
-
-  // So khớp mật khẩu hiện tại
-  const isMatch = await bcrypt.compare(currentPassword, user.password);
-
-  if (!isMatch) {
-    throw new AppError("Mật khẩu hiện tại không đúng", 401);
-  }
-
   // Hash mật khẩu mới
   const hashedPassword = await bcrypt.hash(newPassword, 12);
   user.password = hashedPassword;

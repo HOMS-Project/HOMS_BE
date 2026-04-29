@@ -191,72 +191,84 @@ exports.refreshAccessToken = async (refreshToken) => {
 };
 
 exports.googleLogin = async ({ token }) => {
-  if (!token) {
-    const err = new Error("No Google token provided");
-    err.statusCode = 400;
-    throw err;
-  }
+  if (!token) throw new AppError("No Google token provided", 400);
 
-  // Verify token Google
   const ticket = await client.verifyIdToken({
     idToken: token,
     audience: process.env.CLIENT_ID,
   });
 
-  const payload = ticket.getPayload();
-  const { email, name, picture, sub } = payload;
+  const { email, name, picture, sub } = ticket.getPayload();
 
+  // 1. Tìm user theo Email
   let user = await User.findOne({ email });
 
-  if (!user) {
+  if (user) {
+    if (user.status !== "Active" && user.status !== "Pending_Password") {
+      throw new AppError("Tài khoản không hợp lệ hoặc bị khóa", 403);
+    }
+
+    // MERGE LOGIC: Nếu chưa có googleId thì cập nhật
+    if (!user.googleId) {
+      user.googleId = sub;
+
+      // Thêm 'google' vào mảng provider nếu chưa có
+      if (!user.provider.includes("google")) {
+        user.provider.push("google");
+      }
+
+      // Update avatar nếu user chưa có avatar
+      if (!user.avatar) user.avatar = picture;
+
+      await user.save();
+    } else if (user.googleId !== sub) {
+      throw new AppError(
+        "Email này đã liên kết với một tài khoản Google khác",
+        403,
+      );
+    }
+  } else {
+    // TẠO MỚI
     user = await User.create({
-      fullName: name || "Google User",
+      fullName: name,
       email,
       googleId: sub,
-      provider: "google",
+      provider: ["google"], // Lưu dạng mảng
       status: "Active",
-      verified: true,
       role: "customer",
       avatar: picture,
     });
-  } else {
-    const status = (user.status || "").toString().toLowerCase();
-    if (status !== "active") {
-      const err = new Error(
-        "Tài khoản không được phép đăng nhập do trạng thái tài khoản không hoạt động",
-      );
-      err.statusCode = 403;
-      throw err;
-    }
   }
+
   const accessToken = generateToken(user);
   const refreshToken = generateRefreshToken(user);
-  const decoded = jwt.decode(accessToken);
-  const expiresInMs = (decoded.exp - decoded.iat) * 1000;
   await storeRefreshToken(user, refreshToken);
+
   return {
     accessToken,
     refreshToken,
-    expiresInMs,
+    expiresInMs:
+      (jwt.decode(accessToken).exp - jwt.decode(accessToken).iat) * 1000,
     user: {
       id: user._id,
       fullName: user.fullName,
       email: user.email,
+        phone: user.phone,      
+      address: user.address, 
       role: user.role,
-      createdAt: user.createdAt,
       avatar: user.avatar,
+      provider: user.provider, 
     },
   };
 };
+
 exports.forgotPassword = async (email) => {
   const user = await User.findOne({ email });
 
   if (!user) {
     throw new AppError("Không tìm thấy tài khoản với email này", 404);
   }
-  if (user.provider === "google") {
-    throw new AppError("Tài khoản Google không thể đặt lại mật khẩu", 400);
-  }
+  
 
   await sendOtp("FORGOT_PASSWORD", email, email, user.fullName);
   return true;
@@ -305,6 +317,9 @@ exports.resetPasswordWithEmail = async ({ email, newPassword }) => {
   user.otpResetPassword = undefined;
   user.otpResetExpires = undefined;
   user.otpVerified = undefined;
+  if (!user.provider.includes('local')) {
+    user.provider.push('local');
+  }
 
   await user.save();
 
@@ -314,7 +329,11 @@ exports.resetPasswordWithEmail = async ({ email, newPassword }) => {
 /**
  * Lưu refresh token đã hash vào database của user.
  */
-const storeRefreshToken = async (user, refreshToken, ttlMs = 7 * 24 * 60 * 60 * 1000) => {
+const storeRefreshToken = async (
+  user,
+  refreshToken,
+  ttlMs = 7 * 24 * 60 * 60 * 1000,
+) => {
   const hashed = crypto.createHash("sha256").update(refreshToken).digest("hex");
 
   await User.findByIdAndUpdate(user._id, {
@@ -343,35 +362,37 @@ exports.logoutUser = async (refreshToken) => {
   return true;
 };
 exports.setupMagicAccount = async ({ token, password, phone }) => {
-
   try {
- const decoded = jwt.verify(token, process.env.JWT_SECRET || 'SECRET');
-      if (decoded.type !== 'setup_account') {
-      throw new Error('Token không đúng mục đích.');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "SECRET");
+    if (decoded.type !== "setup_account") {
+      throw new Error("Token không đúng mục đích.");
     }
 
     const tempUser = await User.findById(decoded.id);
-    if (!tempUser) throw new Error('Không tìm thấy tài khoản.');
+    if (!tempUser) throw new Error("Không tìm thấy tài khoản.");
 
     if (!tempUser.securityToken || decoded.st !== tempUser.securityToken) {
-      throw new Error('Link này đã được sử dụng hoặc không hợp lệ. Vui lòng đăng nhập.');
+      throw new Error(
+        "Link này đã được sử dụng hoặc không hợp lệ. Vui lòng đăng nhập.",
+      );
     }
-     if (phone && phone !== tempUser.phone) {
+    if (phone && phone !== tempUser.phone) {
       const existingPhone = await User.exists({ phone });
       if (existingPhone) {
-        throw new Error('Số điện thoại này đã được gắn với một tài khoản khác. Vui lòng dùng số khác.');
+        throw new Error(
+          "Số điện thoại này đã được gắn với một tài khoản khác. Vui lòng dùng số khác.",
+        );
       }
       tempUser.phone = phone;
     }
     const salt = await bcrypt.genSalt(10);
     tempUser.password = await bcrypt.hash(password, salt);
-    tempUser.provider = 'local';
-    tempUser.status = 'Active';
+    tempUser.provider = "local";
+    tempUser.status = "Active";
 
-    tempUser.securityToken = crypto.randomBytes(16).toString('hex');
-    
+    tempUser.securityToken = crypto.randomBytes(16).toString("hex");
+
     await tempUser.save();
-
 
     const accessToken = generateToken(tempUser);
     const refreshToken = generateRefreshToken(tempUser);
@@ -391,17 +412,19 @@ exports.setupMagicAccount = async ({ token, password, phone }) => {
         phone: tempUser.phone,
         role: tempUser.role,
         avatar: tempUser.avatar,
-      }
+      },
     };
   } catch (error) {
     console.error("LỖI SETUP MAGIC:", error);
-   if (error.name === 'TokenExpiredError') {
-      throw new Error('Link đã hết hạn. Vui lòng đăng nhập hoặc yêu cầu link mới.');
+    if (error.name === "TokenExpiredError") {
+      throw new Error(
+        "Link đã hết hạn. Vui lòng đăng nhập hoặc yêu cầu link mới.",
+      );
     }
-    if (error.name === 'JsonWebTokenError') {
-      throw new Error('Link không hợp lệ hoặc đã bị thay đổi.');
+    if (error.name === "JsonWebTokenError") {
+      throw new Error("Link không hợp lệ hoặc đã bị thay đổi.");
     }
-      throw new Error(error.message || 'Lỗi xử lý server');
+    throw new Error(error.message || "Lỗi xử lý server");
   }
 };
 exports.facebookLogin = async ({ accessToken }) => {
@@ -413,7 +436,7 @@ exports.facebookLogin = async ({ accessToken }) => {
   let fbData;
   try {
     const { data } = await axios.get(
-      `https://graph.facebook.com/me?fields=id,name,email,picture.type(large)&access_token=${accessToken}`
+      `https://graph.facebook.com/me?fields=id,name,email,picture.type(large)&access_token=${accessToken}`,
     );
     fbData = data;
   } catch (error) {
@@ -432,15 +455,19 @@ exports.facebookLogin = async ({ accessToken }) => {
     if (user) {
       // Liên kết tài khoản: Gắn thêm facebookId và đổi provider
       user.facebookId = fbAppId;
-       if (user.status === 'Pending_Password') {
-        user.status = 'Active';
+      if (user.status === "Pending_Password") {
+        user.status = "Active";
       }
-      if (!user.provider.includes('facebook')) {
-        user.provider = user.provider === 'local' ? 'local_and_facebook' : 'facebook';
+      if (!user.provider.includes("facebook")) {
+        user.provider.push('facebook');
       }
-      
-      if (!user.avatar) user.avatar = avatar; 
-      if (!user.fullName || user.fullName === 'Khách hàng' || user.fullName === 'Khách hàng Facebook') {
+
+      if (!user.avatar) user.avatar = avatar;
+      if (
+        !user.fullName ||
+        user.fullName === "Khách hàng" ||
+        user.fullName === "Khách hàng Facebook"
+      ) {
         user.fullName = name;
       }
       await user.save();
@@ -462,7 +489,10 @@ exports.facebookLogin = async ({ accessToken }) => {
     // Check status block
     const status = (user.status || "").toString().toLowerCase();
     if (status !== "active" && status !== "pending_password") {
-      throw new AppError("Tài khoản của bạn đã bị khóa hoặc không hoạt động.", 403);
+      throw new AppError(
+        "Tài khoản của bạn đã bị khóa hoặc không hoạt động.",
+        403,
+      );
     }
   }
 
@@ -471,7 +501,7 @@ exports.facebookLogin = async ({ accessToken }) => {
   const refreshToken = generateRefreshToken(user);
   const decoded = jwt.decode(systemAccessToken);
   const expiresInMs = (decoded.exp - decoded.iat) * 1000;
-  
+
   await storeRefreshToken(user, refreshToken);
 
   return {
@@ -482,9 +512,12 @@ exports.facebookLogin = async ({ accessToken }) => {
       id: user._id,
       fullName: user.fullName,
       email: user.email,
+      phone: user.phone,       
+      address: user.address, 
       role: user.role,
       createdAt: user.createdAt,
       avatar: user.avatar,
+      provider: user.provider, 
     },
   };
 };
@@ -498,21 +531,21 @@ exports.linkMessengerAccountService = async (userId, userEmail, linkToken) => {
     const decoded = jwt.verify(linkToken, process.env.JWT_SECRET);
 
     // 2. Kiểm tra intent
-    if (decoded.intent !== 'link_messenger') {
+    if (decoded.intent !== "link_messenger") {
       throw new AppError("Token không hợp lệ", 400);
     }
 
     // 3. Check email
-   if (decoded.email.toLowerCase() !== userEmail.toLowerCase()) {
-    console.log("Mismatched:", decoded.email, userEmail);
-    throw new AppError("Token liên kết không thuộc về tài khoản này", 403);
-}
+    if (decoded.email.toLowerCase() !== userEmail.toLowerCase()) {
+      console.log("Mismatched:", decoded.email, userEmail);
+      throw new AppError("Token liên kết không thuộc về tài khoản này", 403);
+    }
 
     // 4. Update DB
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { messengerId: decoded.linkMessengerId },
-      { new: true }
+      { new: true },
     );
 
     if (!updatedUser) {
@@ -524,7 +557,7 @@ exports.linkMessengerAccountService = async (userId, userEmail, linkToken) => {
     if (error.name === "TokenExpiredError") {
       throw new AppError(
         "Link liên kết Messenger đã hết hạn (quá 15 phút). Vui lòng thao tác lại trên Messenger.",
-        400
+        400,
       );
     }
     throw error;
