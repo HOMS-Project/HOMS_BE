@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const refreshTokenSchema = new mongoose.Schema(
   {
     token: { type: String, required: true },
@@ -32,10 +33,11 @@ const userSchema = new mongoose.Schema({
 
   provider: {
     type: String,
-    enum: ['local', 'google','facebook','local_and_facebook'],
+    enum: ['local', 'google','facebook','local_and_facebook','pending'],
     default: 'local'
   },
  facebookId: { type: String, unique: true, sparse: true },
+  messengerId: { type: String, unique: true, sparse: true },
   googleId: String,
 
   avatar: String,
@@ -71,9 +73,11 @@ const userSchema = new mongoose.Schema({
   otpResetPassword: String,
   otpResetExpires: Date,
   otpVerified: Boolean,
-  refreshTokens: [refreshTokenSchema]
+  
+  refreshTokens: [refreshTokenSchema],
+  securityToken: { type: String, default: () => crypto.randomBytes(16).toString('hex') }
 }, { timestamps: true });
 
-
+userSchema.index({ currentLocation: '2dsphere' });
 
 module.exports = mongoose.model('User', userSchema);

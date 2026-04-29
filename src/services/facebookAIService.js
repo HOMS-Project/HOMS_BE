@@ -1,122 +1,130 @@
 const axios = require('axios');
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require('@google/generative-ai');
-
-const { processIncomingImage } = require('./visionService');
-const { handleCalculatePrice, handleRequestDiscount, handleCreateOrder } = require('./orderActionService');
+const cloudinary = require("cloudinary").v2;
+const streamifier = require("streamifier");
+ const User = require('../models/User'); 
+const RequestTicket = require('../models/RequestTicket');
+const { processIncomingImages } = require('./visionService');
+const { handleCalculatePrice, handleRequestDiscount, handleCreateOrder,generateMagicLinkForUser } = require('./orderActionService');
 
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || process.env.REACT_APP_GEMINI_API_KEY);
 const ChatSession = require('../models/ChatSession');
 const FRONTEND_URL = process.env.FRONTEND_URL;
-
+const uploadToCloudinary = (buffer) => {
+    return new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+            { folder: "customer_uploads",
+              fetch_format: "auto",
+              quality: "auto",
+              transformation: [
+            { width: 1200, crop: "limit" } 
+        ]
+            },
+            
+            (error, result) => {
+                if (error) return reject(error);
+                resolve({
+                    url: result.secure_url,
+                    publicId: result.public_id,
+                    resourceType: result.resource_type || 'image'
+                });
+              }
+        );
+        streamifier.createReadStream(buffer).pipe(uploadStream);
+    });
+};
 // ==============================================================
 // 1. SYSTEM PROMPT ĐỘNG (BƠM TRẠNG THÁI VÀO PROMPT ĐỂ AI KHÔNG QUÊN)
 // ==============================================================
 function buildDynamicSystemPrompt(session) {
-    const currentMoveType = session.surveyDataCache?.movingType || 'Chưa chọn (BẮT BUỘC HỎI KHÁCH)';
-    const today = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'full', timeStyle: 'long' }) + ' (GMT+7)';
-  // Lấy dữ liệu đã thu thập bơm vào Prompt để dù có cắt history AI cũng không quên
-  const collectedData = `
-    [TRẠNG THÁI HIỆN TẠI CỦA KHÁCH HÀNG - BẮT BUỘC GHI NHỚ]:
-      [THÔNG TIN HỆ THỐNG]: Hôm nay là ${today}.
-    - Lựa chọn dịch vụ hiện tại: ${currentMoveType}
-    - Đồ đạc đã quét/nhận diện: ${session.visionItems?.length ? JSON.stringify(session.visionItems) : 'Chưa có'}
-    - Đã báo giá chưa: ${session.calculatedPriceResult ? 'Đã báo giá' : 'Chưa báo giá'}
-  `;
-
+  const currentMoveType = session.surveyDataCache?.movingType || 'CHƯA CHỌN';
+  const today = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', dateStyle: 'full', timeStyle: 'long' }) + ' (GMT+7)';
+  const collectedItems = session.visionItems?.length ? JSON.stringify(session.visionItems) : 'Chưa có';
+  
   return `
-    <ROLE>
-    Bạn là Trợ lý AI của HOMS - Tư vấn viên dịch vụ chuyển nhà, thuê xe tải thân thiện. LUÔN TỰ XƯNG LÀ AI.
-    Nhiệm vụ: Tư vấn, báo giá, xin email và chốt đơn để chờ điều phối viên xem xét .
-    QUY TẮC SỐ 1: Phải xác định rõ khách hàng đang chọn 1 trong 3 dịch vụ: 
-    - Thuê xe tải (TRUCK_RENTAL)
-    - Chuyển đồ lẻ (SPECIFIC_ITEMS)
-    - Chuyển nhà trọn gói (FULL_HOUSE)
-    NẾU KHÁCH CHƯA CHỌN, BẠN BẮT BUỘC PHẢI HỎI KHÁCH CHỌN DỊCH VỤ TRƯỚC KHI TƯ VẤN THÊM.
-    </ROLE>
-    ${collectedData}
-      <SERVICE_GUIDE>
-  1. Thuê xe tải (Mã: TRUCK_RENTAL): Khách tự bốc xếp.
-    2. Chuyển đồ lẻ (Mã: SPECIFIC_ITEMS): Có nhân viên hỗ trợ bê đồ nặng.
-    3. Chuyển nhà trọn gói (Mã: FULL_HOUSE): HOMS làm hết từ A-Z.
-    </SERVICE_GUIDE>
-    <KNOWLEDGE_BASE>
-    QUAN TRỌNG: HOMS cung cấp 3 dịch vụ hoàn toàn khác nhau. 
-    1. CÁC DỊCH VỤ:
-       - TRUCK_RENTAL (Thuê xe tải): Khách tự bốc xếp, chỉ thuê xe. (Rẻ nhất).
-       - SPECIFIC_ITEMS  (Chuyển đồ lẻ): Thuê xe và có người khiêng 1-2 món đồ lớn.
-       - FULL_HOUSE (Trọn gói): HOMS lo từ A-Z (Tháo lắp, bọc lót, khiêng vác).
-    2. XE & THỜI GIAN: Xe 500KG, 1 TẤN, 1.5 TẤN, 2 TẤN (có bửng nâng cho đồ nặng: Piano, két sắt).
-       Nhà trọ: ~2 tiếng (2 nhân sự). Nhà vừa: ~3 tiếng (3 nhân sự). Nhà lầu/Đồ khó: ~5 tiếng (4-5 nhân sự).
-    3. Đồ nặng lầu cao: HOMS cam kết làm được 100% bằng dây đai trợ lực chuyên dụng.
+<CONTEXT>
+Hôm nay là: ${today}.
+Trạng thái khách hàng:
+- Dịch vụ đang chọn: ${currentMoveType}
+- Đồ đạc đã nhận diện: ${collectedItems}
+- Đã báo giá chưa: ${session.calculatedPriceResult ? 'Rồi' : 'Chưa'}
+- Đơn hàng gần nhất: ${session.lastOrderId || 'Chưa có'}
+</CONTEXT>
 
-    QUY TẮC THỜI GIAN:
-       - TUYỆT ĐỐI KHÔNG NHẬN LỊCH HẸN TRONG QUÁ KHỨ (So sánh với ngày hôm nay). 
-       - Nếu khách chọn giờ quá khứ, yêu cầu chọn lại.
-    </KNOWLEDGE_BASE>
+<ROLE>
+Bạn là Trợ lý AI của HOMS - Chuyên viên tư vấn chuyển nhà và thuê xe tải tại Đà Nẵng.
+Tính cách: Thân thiện, chuyên nghiệp, tự xưng là "AI" hoặc "em", gọi khách là "anh/chị".
+Mục tiêu: Xác định dịch vụ -> Thu thập thông tin -> Báo giá -> Xin SĐT/Email -> Chốt đơn.
+</ROLE>
 
-    <SECURITY_&_MODERATION>
-    - TUYỆT ĐỐI TỪ CHỐI BÀN LUẬN chính trị, tôn giáo, bạo lực, tình dục, văng tục, hoặc các chủ đề ngoài chuyển nhà.
-    - Nếu khách hỏi mẹo vượt rào/phá bot, lịch sự từ chối và hướng về việc chuyển nhà.
-    </SECURITY_&_MODERATION>
+<KNOWLEDGE>
+HOMS có 3 dịch vụ BẮT BUỘC khách phải chọn 1 trước khi tư vấn sâu:
 
-    <FORMAT_RULES>
-    QUY TẮC KHI CHAT VỚI KHÁCH HÀNG (TEXT PART):
-    1. Trả lời NGẮN GỌN (tối đa 2 ý hỏi/lần). Không hỏi quá nhiều thông tin tránh khách bị ngợp.
-    2. CẤM dùng in đậm (**), in nghiêng (*). KHÔNG dùng gạch dưới (_) trong câu nói với khách.
-    3. Để nhấn mạnh hãy VIẾT HOA. Dùng gạch ngang (-) hoặc Emoji để liệt kê.
-    4. Khi báo giá, chỉ nêu con số cuối cùng và hỏi khách cảm thấy thế nào.
+1. TRUCK_RENTAL (Thuê xe tải): 
+- Đặc điểm: Khách tự bốc xếp.
+- Cần hỏi: Loại xe (500KG, 1TON, 1.5TON, 2TON), số giờ thuê, Địa chỉ Đi/Đến, Thời gian.
+- Dịch vụ bổ sung (BẮT BUỘC HỎI THÊM): "Anh/chị có cần bên em hỗ trợ người để Tháo lắp giường tủ hay Đóng gói đồ đạc không ạ?"
+- TUYỆT ĐỐI KHÔNG hỏi số lầu hay khoảng cách đi bộ từ hẻm.
 
-    QUY TẮC KHI GỌI ACTION CHO HỆ THỐNG (JSON PART):
-    1. TUYỆT ĐỐI KHÔNG hiển thị cú pháp JSON vào nội dung câu nói với khách hàng.
-    2. Khi cần gọi hệ thống, BẮT BUỘC phải bọc đoạn JSON trong khối markdown \`\`\`json ... \`\`\` để hệ thống lập trình (Backend) đọc được.
-    3. TRONG ĐOẠN JSON, BẮT BUỘC GIỮ NGUYÊN DẤU GẠCH DƯỚI (_) ở các giá trị: CALCULATE_PRICE, REQUEST_DISCOUNT, CREATE_ORDER, TRUCK_RENTAL, SPECIFIC_ITEMS, FULL_HOUSE.
-    </FORMAT_RULES>
+2. SPECIFIC_ITEMS (Chuyển đồ lẻ) & 3. FULL_HOUSE (Chuyển nhà trọn gói): 
+- Đặc điểm: HOMS cung cấp nhân sự bốc xếp.
+- BẮT BUỘC HỎI ĐỦ: Danh sách đồ (hoặc xin ảnh) + Địa chỉ Đi/Đến + Thời gian + Nhà có lầu/thang máy không + Hẻm xe tải vào tận nơi được không (cách mấy mét) + Có cần hỗ trợ Đóng gói, Tháo lắp không.
+</KNOWLEDGE>
 
-    <STEPS>
-    BƯỚC 1: Nếu chưa có 'Dịch vụ khách chọn', hãy chào mừng và yêu cầu khách chọn 1 trong 3 dịch vụ. 
-    - Không dùng câu chào dài dòng kiểu CSKH, không dùng "rất vui được hỗ trợ".
-    - Trả lời ngắn, tự nhiên, giống người thật. Ưu tiên câu hỏi trực tiếp. 
-    
-    BƯỚC 2: Tùy vào dịch vụ đã chọn:
-       - Nếu TRUCK_RENTAL: Chỉ cần hỏi ước lượng đồ nhiều ít.
-       - Nếu SPECIFIC_ITEMS / FULL_HOUSE: Khảo sát đồ chi tiết (xin ảnh).
-       
-    BƯỚC 3: Lấy địa chỉ ĐI và ĐẾN cụ thể tại Đà Nẵng.
-    
-    BƯỚC 4: Hỏi địa hình (Lầu/Trệt, hẻm, thang máy). Xe tải vào được không?
-    
-    BƯỚC 5: Lấy thời gian chuyển (Bắt buộc là tương lai). Gom tóm tắt xác nhận.
-    [QUAN TRỌNG]: Trước khi gọi action tính giá, BẮT BUỘC HỎI KHÁCH:
-    1. Khoảng cách đi bộ từ xe vào nhà bao nhiêu mét?
-    2. Có cần tháo lắp/đóng gói không?
-    (Nếu thiếu 1 trong các thông tin trên, KHÔNG trả về JSON mà hãy đặt câu hỏi tiếp).
+<WORKFLOW>
+Bước 1: Nếu [Dịch vụ đang chọn] là CHƯA CHỌN, hãy hỏi khách muốn dùng dịch vụ nào (1 trong 3).
+Bước 2: Thu thập thông tin theo <KNOWLEDGE>. Hỏi ngắn gọn, tối đa 2 ý/lần. 
+Bước 3: Tự động chuyển đổi thời gian tương đối (ngày mai, mốt...) sang chuẩn ISO (YYYY-MM-DD). Nếu khách nói chung chung, phải hỏi ngày cụ thể. Tuyệt đối không nhận lịch trong quá khứ.
+Bước 4: Khi ĐÃ ĐỦ THÔNG TIN (Địa chỉ Đi, ĐĐ Đến, Thời gian chuyển), sử dụng Action \`CALCULATE_PRICE\`.
+Bước 5: Khi khách chốt đơn, xin SĐT và Email, sau đó sử dụng Action \`CREATE_ORDER\`.
+</WORKFLOW>
 
-    BƯỚC 6: Gọi Action Tính giá bằng cách tạo một block JSON. Mọi giá trị JSON phải viết chính xác như format sau:
-    \`\`\`json
-    {
-      "action": "CALCULATE_PRICE",
-      "movingType": "TRUCK_RENTAL", 
-      "data": { 
-        "from": "Địa chỉ đi", 
-        "to": "Địa chỉ đến", 
-        "floors": 0, 
-        "hasElevator": false, 
-        "carryMeter": 0, 
-        "needsPacking": false, 
-        "needsAssembling": false, 
-        "movingTime": "2024-12-01T08:00:00+07:00",
-        "items": [{ "name": "Tủ lạnh", "quantity": 1 }]
-      }
-    }
-    \`\`\`
-    *Lưu ý cho AI: Phần movingTime BẮT BUỘC phải giữ đuôi múi giờ +07:00. movingType phải điền đúng mã (TRUCK_RENTAL, SPECIFIC_ITEMS, FULL_HOUSE).*
+<ACTIONS>
+Khi cần hệ thống xử lý, BẮT BUỘC xuất ra một block Markdown JSON (không bọc trong thẻ khác) theo chuẩn sau:
 
-    BƯỚC 7: Nhận giá từ hệ thống -> Báo khách. Nếu khách chê đắt, xin mã giảm giá.
-    BƯỚC 8: Khách chốt -> BẮT BUỘC xin Email -> Gọi CREATE_ORDER.
-    "Khi người dùng cung cấp email, hãy trích xuất duy nhất địa chỉ email đó vào biến email, tuyệt đối không kèm theo bất kỳ văn bản, dấu chấm câu hay khoảng trắng nào khác."
-    [LƯU Ý]: Đi kèm với JSON tạo đơn, CHỈ ĐƯỢC NÓI: "Dạ anh/chị đợi em 1 chút, em đang gửi hồ sơ về cho Trưởng bộ phận điều phối duyệt đơn. Hệ thống sẽ gửi link theo dõi đơn hàng trực tiếp tại đây luôn nhé!". TUYỆT ĐỐI KHÔNG bảo khách kiểm tra Email.
-    </STEPS>
+1. Tính giá (Chỉ gọi khi ĐỦ ĐIỀU KIỆN ở Bước 4):
+Text phản hồi khách: "Dạ để em tính giá cho mình nhé ạ!" (TUYỆT ĐỐI KHÔNG BỊA CON SỐ NÀO Ở ĐÂY).
+\`\`\`json
+{
+  "action": "CALCULATE_PRICE",
+  "movingType": "TRUCK_RENTAL | SPECIFIC_ITEMS | FULL_HOUSE",
+  "data": { 
+    "from": "Địa chỉ đi", "to": "Địa chỉ đến", "movingTime": "YYYY-MM-DDTHH:mm:00+07:00",
+    "items": [], "floors": 0, "hasElevator": false, "carryMeter": 0, 
+    "needsPacking": false, "needsAssembling": false, 
+    "suggestedVehicle": "1TON", "rentalDurationHours": 2
+  }
+}
+\`\`\`
+[QUY TẮC ĐIỀN DATA BẮT BUỘC]:
+- Nếu TRUCK_RENTAL: Phải điền needsPacking, needsAssembling (nếu khách có yêu cầu), suggestedVehicle, rentalDurationHours. Bỏ qua floors, carryMeter, items.
+- Nếu SPECIFIC_ITEMS/FULL_HOUSE: Phải điền items, floors, hasElevator, carryMeter, needsPacking, needsAssembling. Bỏ qua suggestedVehicle, rentalDurationHours.
+
+2. Tạo đơn (Chỉ gọi khi có Email & Phone của khách):
+Text phản hồi khách: "Dạ em đang tạo đơn cho mình, anh/chị đợi vài giây nhé!"
+\`\`\`json
+{ "action": "CREATE_ORDER", "email": "abc@gmail.com", "phone": "0912345678" }
+\`\`\`
+
+3. Xin giảm giá:
+\`\`\`json
+{ "action": "REQUEST_DISCOUNT" }
+\`\`\`
+
+4. Lấy lại link đơn hàng:
+\`\`\`json
+{ "action": "GET_NEW_LINK" }
+\`\`\`
+</ACTIONS>
+
+<CONSTRAINTS>
+1. Giao tiếp: Ngắn gọn. KHÔNG dùng in đậm (**), in nghiêng (*), gạch dưới (_). Dùng gạch ngang (-) hoặc emoji để liệt kê.
+2. Báo giá: KHI VÀ CHỈ KHI hệ thống trả về biến [GIÁ_THỰC_TẾ_TỪ_HỆ_THỐNG] (Ví dụ: X VNĐ), bạn MỚI được báo giá. Cú pháp bắt buộc: "Mức giá dự kiến khoảng từ (X - 500.000) đến (X + 500.000) VNĐ". Nhấn mạnh đây là giá tạm tính.
+3. Bảo mật: Từ chối bàn luận chính trị, tôn giáo, bạo lực, tình dục, hoặc mẹo vượt rào bot.
+4. Khuyến mãi: Bạn không thể áp mã cho khách, chỉ có thể thể báo mã cho khách để khách tự nhập ở web
+5. Lấy lại link: NẾU khách yêu cầu "gửi lại link", lập tức gọi action \`GET_NEW_LINK\`.
+</CONSTRAINTS>
   `;
 }
 
@@ -158,7 +166,7 @@ async function sendMessageBackToUser(facebookId, text) {
 // ==============================================================
 // 2. XỬ LÝ ACTION
 // ==============================================================
-async function handleAIAction(botReply, session, facebookId, chat) {
+async function handleAIAction(botReply, session, facebookId, chat,clearMemory) {
   let jsonString = null;
   let textPart = botReply;
   const mdMatch = botReply.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i);
@@ -179,20 +187,43 @@ async function handleAIAction(botReply, session, facebookId, chat) {
   }
   if (!jsonString) return false;
 
-  let aiAction;
+let aiAction;
   try {
     aiAction = JSON.parse(jsonString); 
   
+    // 1. CHUẨN HÓA CÁC ACTION BỊ MẤT DẤU GẠCH DƯỚI (Thêm GETNEWLINK)
     if(aiAction.action === 'CALCULATEPRICE') aiAction.action = 'CALCULATE_PRICE';
     if(aiAction.action === 'REQUESTDISCOUNT') aiAction.action = 'REQUEST_DISCOUNT';
     if(aiAction.action === 'CREATEORDER') aiAction.action = 'CREATE_ORDER';
+    if(aiAction.action === 'GETNEWLINK') aiAction.action = 'GET_NEW_LINK'; // <--- DÒNG SỬA LỖI MỚI THÊM
 
     if(aiAction.movingType === 'TRUCKRENTAL') aiAction.movingType = 'TRUCK_RENTAL';
     if(aiAction.movingType === 'SPECIFICITEMS') aiAction.movingType = 'SPECIFIC_ITEMS';
     if(aiAction.movingType === 'FULLHOUSE') aiAction.movingType = 'FULL_HOUSE';
 
-  } 
-  catch (err) { 
+
+    if (aiAction.action === 'GET_NEW_LINK') {
+      
+      if (textPart) {
+        await sendMessageBackToUser(facebookId, textPart.replace(/[*_#]/g, ''));
+      }
+
+      const user = await User.findOne({ facebookId });
+      if (user && user.password) {
+        await sendMessageBackToUser(facebookId, "Dạ hệ thống báo anh/chị đã thiết lập mật khẩu trước đó rồi ạ. Mình truy cập vào đây để đăng nhập xem đơn nhé: " + FRONTEND_URL + "/login\n\n(Nếu lỡ quên mật khẩu, anh/chị cứ bấm 'Quên mật khẩu' trên web nhé!)");
+      }
+      else {
+        const link = await generateMagicLinkForUser(facebookId, session.lastOrderId);
+        if (!link) {
+          await sendMessageBackToUser(facebookId, "Dạ em chưa tìm thấy tài khoản của mình trên hệ thống. Anh/chị cho em xin email để em kiểm tra lại nhé!");
+        } else {
+          await sendMessageBackToUser(facebookId, `Dạ đây là link truy cập đơn hàng (bảo mật) dành riêng cho anh/chị ạ: ${link}\n\nLưu ý: Link này sẽ tự động hết hạn sau 10 phút nhé!`);
+        }
+      }
+      return true; 
+    }
+
+  } catch (err) { 
     console.error('[JSON Parse Error]', err.message, '\nRaw JSON bị lỗi:', jsonString);
     if (textPart) {
       await sendMessageBackToUser(facebookId, textPart.replace(/[*_#]/g, ''));
@@ -201,32 +232,55 @@ async function handleAIAction(botReply, session, facebookId, chat) {
     return true; 
   }
 
-  // 5. Gửi phần Text mào đầu (VD: "Mình sẽ gửi yêu cầu...") cho khách hàng
+  // 5. Gửi phần Text mào đầu 
   if (textPart) {
     await sendMessageBackToUser(facebookId, textPart.replace(/[*_#]/g, ''));
   }
 
   try {
     // ---- XỬ LÝ CALCULATE_PRICE ----
-    if (aiAction.action === 'CALCULATE_PRICE') {
-        if(!session.surveyDataCache) session.surveyDataCache = {};
-        session.surveyDataCache.movingType = aiAction.movingType; 
-        
-        const systemResult = await handleCalculatePrice(aiAction, session);
-        const shortPrompt = `Hệ thống tính xong giá là ${systemResult}. 
-                             Hãy báo giá này cho khách cực kỳ NGẮN GỌN và hỏi khách có đồng ý không. 
-                             Không nhắc lại các thông tin thừa thãi.`;
-        
-        const followUp = await chat.sendMessage(shortPrompt);
+ if (aiAction.action === 'CALCULATE_PRICE') {
+    if (!session.surveyDataCache) session.surveyDataCache = {};
+    const requiredFields = ['from', 'to', 'movingTime'];
+    const missing = requiredFields.filter(f => !aiAction.data[f]);
+
+    if (missing.length > 0) {
+        await chat.sendMessage(`Hệ thống thiếu thông tin: ${missing.join(', ')}. Hãy hỏi khách hàng các thông tin này.`);
+        await sendMessageBackToUser(facebookId, "Dạ mình còn thiếu một vài thông tin quan trọng (Địa chỉ/Thời gian), anh/chị cho em xin lại nhé ạ!");
+        return true;
+    }
+
+    session.surveyDataCache.movingType = aiAction.movingType;
+
+    // 1. Lấy giá và câu lệnh từ hệ thống
+    const systemResult = await handleCalculatePrice(aiAction, session);
+
+    // 2. NẾU HỆ THỐNG BÁO LỖI (Ví dụ: sai địa chỉ, thời gian quá khứ)
+    if (systemResult.includes('[HỆ_THỐNG_BÁO_LỖI]')) {
+        const followUp = await chat.sendMessage(`Hệ thống từ chối tính giá với lỗi: "${systemResult}". Đóng vai CSKH, hãy xin lỗi và khéo léo hỏi lại khách thông tin bị sai.`);
         session.history = await chat.getHistory();
         await sendMessageBackToUser(facebookId, followUp.response.text().replace(/[*_#]/g, ''));
         return true;
     }
 
+    // 3. ĐƯA KẾT QUẢ CHO AI ĐỂ AI TỰ TRẢ LỜI KHÁCH HÀNG (SỬA LỖI Ở ĐÂY)
+    const promptToAI = `${systemResult}\n\n[QUY TẮC LÚC NÀY]: Bạn hãy dùng con số ở trên để báo giá cho khách một cách tự nhiên. TUYỆT ĐỐI KHÔNG tự ý trừ tiền khuyến mãi vào mức giá này. KHÔNG ĐƯỢC nói là đã áp mã giảm giá. Hãy dặn khách là họ sẽ tự nhập mã giảm giá (nếu có) trên link hệ thống sau khi chốt đơn. Cuối câu BẮT BUỘC hỏi khách có đồng ý chốt đơn không.`;
+    
+    // Yêu cầu AI soạn câu trả lời
+    const followUp = await chat.sendMessage(promptToAI);
+    
+    // Gửi câu trả lời mượt mà của AI cho khách
+    await sendMessageBackToUser(facebookId, followUp.response.text().replace(/[*_#]/g, ''));
+    
+    // 4. Cập nhật lịch sử
+    session.history = await chat.getHistory();
+    return true;
+}
     // ---- XỬ LÝ REQUEST_DISCOUNT ----
-    if (aiAction.action === 'REQUEST_DISCOUNT') {
-      const triggerMsg = await handleRequestDiscount(aiAction);
-      const followUp = await chat.sendMessage(triggerMsg);
+     if (aiAction.action === 'REQUEST_DISCOUNT') {
+      const systemResult = await handleRequestDiscount(aiAction);
+      const promptToAI = `${systemResult}\n\n[QUY TẮC LÚC NÀY]: Hãy đóng vai nhân viên CSKH, sử dụng thông tin trên để trả lời khách hàng một cách tự nhiên, thân thiện và lịch sự nhất. Cuối câu hãy khéo léo hỏi khách có muốn tiếp tục chốt đơn không.`;
+      const followUp = await chat.sendMessage(promptToAI);
       session.history = await chat.getHistory();
       await sendMessageBackToUser(facebookId, followUp.response.text().replace(/[*_#]/g, ''));
       return true;
@@ -238,6 +292,15 @@ async function handleAIAction(botReply, session, facebookId, chat) {
         await sendMessageBackToUser(facebookId, 'Dạ anh/chị cho em xin lại địa chỉ chính xác để em tính giá cho đơn của mình nhé ạ.');
         return true;
       }
+         const email = aiAction.email; 
+    
+    if (!email) {
+        await sendMessageBackToUser(facebookId, 'Dạ anh/chị vui lòng xác nhận lại địa chỉ email để em lưu đơn hàng nhé ạ!');
+        return true;
+    }
+
+    session.surveyDataCache.email = email;
+
       const replyMessage = await handleCreateOrder(aiAction, session, facebookId);
       if (replyMessage.includes('[HỆ_THỐNG_BÁO]') || replyMessage.toLowerCase().includes('lỗi')) {
         const systemPromptToAI = `Hệ thống vừa trả về lỗi khi tạo đơn: "${replyMessage}". 
@@ -253,7 +316,7 @@ async function handleAIAction(botReply, session, facebookId, chat) {
       }
       
       await sendMessageBackToUser(facebookId, replyMessage);
-      facebookService.clearMemory(facebookId);
+       await clearMemory(facebookId);
       session.isCleared = true; 
       return true;
     }
@@ -271,35 +334,58 @@ const userMessageQueues = new Map();
 async function processNextMessage(facebookId) {
   const queue = userMessageQueues.get(facebookId);
   
-  // Nếu không có queue, queue rỗng, hoặc ĐANG XỬ LÝ tin nhắn trước đó thì dừng lại chờ
   if (!queue || queue.messages.length === 0 || queue.isProcessing) {
     return;
   }
 
-  // 1. Khóa queue lại (để không bị lặp gửi AI 2 lần nếu khách spam phím enter)
+  // 1. Khóa queue
   queue.isProcessing = true; 
   
-  // 2. Lấy tin nhắn đầu tiên ra khỏi hàng đợi
-  const { messageText, imageUrl } = queue.messages.shift();
+  // 2. LẤY TẤT CẢ tin nhắn hiện có ra để gộp (Batching)
+  const batchMessages = [...queue.messages];
+  queue.messages = []; // Làm rỗng queue
+  
+  let combinedText = "";
+  let lastText = "";
+  let combinedImageUrls = [];
+
+  // Gộp các tin nhắn lại
+  for (const msg of batchMessages) {
+      const currentText = msg.messageText?.trim().toLowerCase();
+      
+      // Chống spam: Bỏ qua nếu câu hiện tại giống hệt câu liền trước đó
+      if (msg.messageText && currentText !== lastText) {
+          combinedText += (combinedText ? "\n" : "") + msg.messageText.trim();
+          lastText = currentText;
+      }
+      
+     if (msg.imageUrls && msg.imageUrls.length > 0) {
+        combinedImageUrls.push(...msg.imageUrls); 
+    }
+  }
 
   try {
-    // 3. Gọi hàm xử lý AI chính
-    await _processSingleUserMessage(facebookId, messageText, imageUrl);
+    // 3. Chỉ gọi AI nếu có text hoặc có ảnh sau khi đã lọc
+   if (combinedText || combinedImageUrls.length > 0) {
+    await _processSingleUserMessage(facebookId, combinedText, combinedImageUrls);
+}
   } catch (err) {
     console.error(`[LỖI HÀNG ĐỢI] User ${facebookId}:`, err);
   } finally {
-    // 4. QUAN TRỌNG NHẤT: Mở khóa queue để xử lý tin nhắn tiếp theo
+    // 4. Mở khóa queue
     queue.isProcessing = false;
     
-    // Gọi đệ quy lại chính nó để vét cạn các tin nhắn khách vừa spam lúc bot đang bận
-    processNextMessage(facebookId); 
+    // Nếu trong lúc AI đang rep (mất 5-10s), khách lại chat thêm, thì gọi đệ quy để xử lý tiếp
+    if (queue.messages.length > 0) {
+        processNextMessage(facebookId); 
+    }
   }
 }
 
 // ==============================================================
 // 3. MAIN MESSAGE HANDLER (Giải quyết History & Message Limit)
 // ==============================================================
-async function _processSingleUserMessage(facebookId, messageText, imageUrl) {
+async function _processSingleUserMessage(facebookId, messageText, imageUrls) {
   console.log(`[DEBUG] 👉 Bắt đầu xử lý cho user: ${facebookId}`);
 
   try {
@@ -309,7 +395,15 @@ async function _processSingleUserMessage(facebookId, messageText, imageUrl) {
     if (!session) {
       console.log(`[DEBUG] 1.1. User mới, tạo session mới.`);
       session = new ChatSession({ facebookId, history: [], messageCount: 0 });
+  const user = await User.findOne({ facebookId });
+      if (user) {
+         const lastTicket = await RequestTicket.findOne({ customerId: user._id }).sort({ createdAt: -1 });
+         if (lastTicket) {
+             session.lastOrderId = lastTicket._id;
+         }
+      }
     }
+ if (!session.surveyDataCache) session.surveyDataCache = {};
 
     // BƯỚC 2: Kiểm tra Quota
     const MAX_QUOTA = parseInt(process.env.MAX_AI_MESSAGES) || 40;
@@ -339,22 +433,32 @@ async function _processSingleUserMessage(facebookId, messageText, imageUrl) {
       safetySettings: safetySettings,
       generationConfig: {
     maxOutputTokens: 6000, 
-    temperature: 1,     
+    temperature: 0.8,     
   },
     });
     const chat = model.startChat({ history: session.history || [] });
 
     // Quét ảnh (nếu có)
-    let finalMessage = messageText || '';
-    if (imageUrl) {
-      console.log(`[DEBUG] 4.1. Đang quét ảnh...`);
-      await sendMessageBackToUser(facebookId, 'Dạ em đang quét ảnh, anh/chị đợi xíu nhé! ⏳');
-      const visionResult = await processIncomingImage(imageUrl);
-      if (visionResult) {
-        session.visionItems = [...(session.visionItems || []), ...visionResult.items];
-        session.visionWeight = (session.visionWeight || 0) + (visionResult.totalWeight || 0);
-        finalMessage += `\n[HỆ THỐNG]: Đã quét ảnh, danh sách đồ: ${visionResult.systemMessage}`;
-      }
+   let finalMessage = messageText || '';
+    if (imageUrls.length > 0) {
+        console.log(`[DEBUG] 4.1. Đang quét ${imageUrls.length} ảnh...`);
+        await sendMessageBackToUser(facebookId, 'Dạ em đang quét ảnh, anh/chị đợi xíu nhé! ⏳');
+  let newUploadedUrls = [];
+      session.surveyDataCache.images = session.surveyDataCache.images || [];
+          for (const imageUrl of imageUrls) {
+            const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+           const cloudinaryObj = await uploadToCloudinary(Buffer.from(response.data));
+             session.surveyDataCache.images.push(cloudinaryObj);
+             newUploadedUrls.push(cloudinaryObj.url); 
+        }
+
+          if (newUploadedUrls.length > 0) {
+            console.log(`[DEBUG] Tiến hành AI Vision cho ${newUploadedUrls.length} ảnh...`);
+            const visionResult = await processIncomingImages(newUploadedUrls);
+            session.visionItems = [...(session.visionItems || []), ...visionResult.items];
+            session.visionWeight = (session.visionWeight || 0) + (visionResult.totalWeight || 0);
+            finalMessage += `\n[HỆ THỐNG]: Đã quét ảnh mới, danh sách đồ: ${visionResult.systemMessage}`;
+        }
     }
 
     // BƯỚC 5: Gửi tin nhắn cho AI
@@ -376,7 +480,10 @@ async function _processSingleUserMessage(facebookId, messageText, imageUrl) {
 
     // BƯỚC 6: Xử lý Action JSON
     console.log(`[DEBUG] 6. Đang kiểm tra handleAIAction...`);
-    const handled = await handleAIAction(botReply, session, facebookId, chat);
+   const handled = await handleAIAction(
+  botReply, session, facebookId, chat,
+  (id) => ChatSession.deleteOne({ facebookId: id }) 
+);
     
     // BƯỚC 7: Nếu AI chỉ chat text bình thường (không có JSON)
     if (!handled) {
@@ -390,9 +497,9 @@ async function _processSingleUserMessage(facebookId, messageText, imageUrl) {
 
     if (session.isCleared) {
       console.log(`[DEBUG] 8. Session đã clear (vừa tạo đơn xong). Kết thúc vòng đời.`);
+       userMessageQueues.delete(facebookId);
       return;
     }
-
     // BƯỚC 8: Lưu DB
     console.log(`[DEBUG] 9. Đang lưu session vào DB...`);
     const cleanHistory = (session.history || []).slice(-30);
@@ -420,10 +527,22 @@ async function _processSingleUserMessage(facebookId, messageText, imageUrl) {
 }
 
 const facebookService = {
-  processUserMessage: async (facebookId, messageText, imageUrl = null) => {
-    if (!userMessageQueues.has(facebookId)) userMessageQueues.set(facebookId, { messages: [], isProcessing: false });
-    userMessageQueues.get(facebookId).messages.push({ messageText, imageUrl });
-    processNextMessage(facebookId);
+   sendTextMessage: async (facebookId, text) => {
+    return await sendMessageBackToUser(facebookId, text);
+  },
+  processUserMessage: async (facebookId, messageText, imageUrls = []) => {
+    if (!userMessageQueues.has(facebookId)) {
+        userMessageQueues.set(facebookId, { messages: [], isProcessing: false, timer: null });
+    }
+   
+    const queue = userMessageQueues.get(facebookId);
+    queue.messages.push({ messageText, imageUrls }); 
+    if (queue.timer) {
+        clearTimeout(queue.timer);
+    }
+    queue.timer = setTimeout(() => {
+        processNextMessage(facebookId);
+    }, 3000); 
   },
   clearMemory: async (facebookId) => { await ChatSession.deleteOne({ facebookId }); }
 };

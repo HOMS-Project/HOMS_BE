@@ -65,8 +65,11 @@ exports.toggleActive = async (req, res, next) => {
 
 exports.deletePriceList = async (req, res, next) => {
     try {
-        const priceList = await adminPriceListService.deletePriceList(req.params.id);
-        res.status(200).json({ success: true, message: 'PriceList deactivated', data: priceList });
+        const id = req.params.id;
+        console.log(`[admin] DELETE /api/admin/price-lists/${id} called by user=${req.user?.id || 'unknown'}`);
+        const priceList = await adminPriceListService.deletePriceList(id);
+        console.log(`[admin] PriceList ${id} deleted successfully`);
+        res.status(200).json({ success: true, message: 'PriceList deleted', data: priceList });
     } catch (error) {
         if (error.message === 'PriceList not found') {
             return res.status(404).json({ success: false, message: error.message });

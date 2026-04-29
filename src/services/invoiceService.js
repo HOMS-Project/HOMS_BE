@@ -93,8 +93,8 @@ class InvoiceService {
       throw new AppError(`Không thể tạo invoice từ trạng thái ${ticket.status}. Trạng thái phải là ACCEPTED`, 400);
     }
 
-    if (!ticket.pricing?.pricingDataId || !ticket.pricing?.subtotal) {
-      throw new AppError('RequestTicket chưa có pricing snapshot', 400);
+    if (!ticket.pricing?.pricingDataId || !ticket.pricing?.subtotal || !ticket.pricing?.totalPrice) {
+      throw new AppError('RequestTicket chưa có báo giá đầy đủ (pricing snapshot)', 400);
     }
 
     // ── Idempotency guard ──────────────────────────────────────────────────────
@@ -109,7 +109,8 @@ class InvoiceService {
 
     // Generate invoice code
     const count = await Invoice.countDocuments();
-    const code = `INV-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}`;
+    const randomSuffix = Math.random().toString(36).substring(2, 5).toUpperCase();
+    const code = `INV-${new Date().getFullYear()}-${String(count + 1).padStart(5, '0')}-${randomSuffix}`;
 
     console.log(`[InvoiceService] Ticket districts from DB — pickup: "${ticket.pickup?.district}" | delivery: "${ticket.delivery?.district}"`);
 
@@ -142,6 +143,8 @@ class InvoiceService {
       },
       paymentStatus: 'UNPAID',
       status: 'DRAFT',
+      paidAmount: 0,
+      remainingAmount: ticket.pricing.totalAfterPromotion || ticket.pricing.totalPrice,
       timeline: [{
         status: 'DRAFT',
         updatedAt: new Date(),
@@ -328,31 +331,42 @@ class InvoiceService {
    * Tạo link thanh toán tiền cọc (50%)
    */
   async createMovingDepositPayment(ticketId) {
-    let invoice = await Invoice.findOne({ requestTicketId: ticketId });
-    if (!invoice) {
-      console.log(`[InvoiceService] Invoice missing for ticket ${ticketId}. Attempting lazy creation...`);
-      try {
+    try {
+      let invoice = await Invoice.findOne({ requestTicketId: ticketId });
+      if (!invoice) {
+        console.log(`[InvoiceService] Invoice missing for ticket ${ticketId}. Attempting lazy creation...`);
         invoice = await this.createInvoiceFromTicket(ticketId);
-      } catch (err) {
-        console.error(`[InvoiceService] Lazy invoice creation failed: ${err.message}`);
-        throw new Error("Không thể khởi tạo hóa đơn để thanh toán. Vui lòng liên hệ hỗ trợ.");
       }
+
+      const depositAmount = Math.floor(invoice.priceSnapshot.totalPrice * 0.5);
+
+      if (!depositAmount || isNaN(depositAmount) || depositAmount < 2000) {
+        throw new AppError(`Số tiền cọc không hợp lệ: ${depositAmount}. Tối thiểu 2,000 VNĐ.`, 400);
+      }
+      const orderCode = Number(`${Date.now()}${Math.floor(Math.random() * 100)}`);
+
+      console.log(`[InvoiceService] Creating deposit payment for ticket ${ticketId}:`, {
+        invoiceCode: invoice.code,
+        depositAmount,
+        orderCode
+      });
+
+      invoice.paymentOrderCode = orderCode;
+      await invoice.save();
+
+      const checkoutUrl = await PaymentService.createPayosPayment({
+        orderCode,
+        amount: depositAmount,
+        ticket: { code: invoice.code, _id: invoice.requestTicketId },
+        paymentType: "MOVING_DEPOSIT"
+      });
+
+      return { checkoutUrl };
+    } catch (err) {
+      console.error(`[InvoiceService] createMovingDepositPayment failed for ticket ${ticketId}:`, err);
+      if (err instanceof AppError) throw err;
+      throw new AppError(err.message || "Lỗi khi tạo link thanh toán cọc.", 500);
     }
-
-    const depositAmount = Math.floor(invoice.priceSnapshot.totalPrice * 0.5);
-    const orderCode = Number(`${Date.now()}${Math.floor(Math.random() * 100)}`);
-
-    invoice.paymentOrderCode = orderCode;
-    await invoice.save();
-
-    const checkoutUrl = await PaymentService.createPayosPayment({
-      orderCode,
-      amount: depositAmount,
-      ticket: { code: invoice.code, _id: invoice.requestTicketId },
-      paymentType: "MOVING_DEPOSIT"
-    });
-
-    return { checkoutUrl };
   }
 
   /**

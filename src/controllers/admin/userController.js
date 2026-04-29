@@ -2,6 +2,7 @@ const adminUserService = require('../../services/admin/userService');
 
 exports.getAllUsers = async (req, res, next) => {
     try {
+    
         const result = await adminUserService.getAllUsers(req.query);
         res.status(200).json({ success: true, data: result });
     } catch (error) {

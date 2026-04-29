@@ -145,19 +145,68 @@ module.exports = {
   deleteVehicleById,
   // Return dashboard stats: counts and breakdowns used by admin FE
   async getDashboard() {
-    // total count
-    const total = await Vehicle.countDocuments();
-    // basic status counts
-    const available = await Vehicle.countDocuments({ status: 'Available' });
-    const inTransit = await Vehicle.countDocuments({ status: 'InTransit' });
-    const maintenance = await Vehicle.countDocuments({ status: 'Maintenance' });
+    // We'll compute dashboard counts by considering DispatchAssignment documents
+    // so that vehicles currently assigned/in-transit are counted accurately.
+    const vehicles = await Vehicle.find({}).lean();
+    const total = vehicles.length;
 
     // counts by vehicleType
-    const agg = await Vehicle.aggregate([
-      { $group: { _id: '$vehicleType', count: { $sum: 1 } } }
-    ]).exec();
     const countsByType = {};
-    agg.forEach(a => { countsByType[a._id] = a.count; });
+    vehicles.forEach(v => {
+      if (!v) return;
+      const t = v.vehicleType || 'UNKNOWN';
+      countsByType[t] = (countsByType[t] || 0) + 1;
+    });
+
+    // maintenance count from vehicle.record
+    const maintenance = vehicles.filter(v => v.status === 'Maintenance').length;
+
+    // Determine assigned/in-transit vehicles by inspecting DispatchAssignment docs
+    const vehicleObjectIds = vehicles.map(v => v._id).filter(Boolean);
+    let inTransit = 0;
+    let available = 0;
+
+    if (vehicleObjectIds.length === 0) {
+      // no vehicles
+      return { total, available: 0, inTransit: 0, maintenance, countsByType };
+    }
+
+    const dispatchDocs = await DispatchAssignment.find({
+      $or: [
+        { status: { $in: ['ASSIGNED', 'CONFIRMED', 'IN_DISPATCH'] }, 'assignments.vehicleId': { $in: vehicleObjectIds } },
+        { 'assignments': { $elemMatch: { vehicleId: { $in: vehicleObjectIds }, status: { $in: ['CONFIRMED', 'ACCEPTED', 'IN_PROGRESS'] } } } }
+      ]
+    }).lean();
+
+    const activeVehicleIdSet = new Set();
+    dispatchDocs.forEach(doc => {
+      const outerActive = ['ASSIGNED', 'CONFIRMED', 'IN_DISPATCH'].includes(doc.status);
+      (doc.assignments || []).forEach(a => {
+        if (!a || !a.vehicleId) return;
+        const vid = String(a.vehicleId);
+        if (outerActive || ['CONFIRMED', 'ACCEPTED', 'IN_PROGRESS'].includes(a.status)) {
+          activeVehicleIdSet.add(vid);
+        }
+      });
+    });
+
+    // compute final status counts: respect Maintenance state from vehicle record
+    vehicles.forEach(v => {
+      try {
+        const idStr = String(v._id);
+        if (v.status === 'Maintenance') {
+          // counted already in maintenance
+          return;
+        }
+        if (activeVehicleIdSet.has(idStr)) {
+          inTransit += 1;
+        } else {
+          available += 1;
+        }
+      } catch (e) {
+        // ignore per-vehicle errors
+      }
+    });
 
     return { total, available, inTransit, maintenance, countsByType };
   }

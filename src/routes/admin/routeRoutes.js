@@ -12,6 +12,12 @@ router.route('/')
     .get(adminRouteController.getAllRoutes)
     .post(authorize('admin', 'staff'), adminRouteController.createRoute); // Chỉ admin/staff dc tạo
 
+// Summary stats for dashboard/cards
+router.get('/stats', adminRouteController.getRouteStats);
+
+// POST filter endpoint for UI (accepts JSON body)
+router.post('/filter', adminRouteController.filterRoutes);
+
 // Route: /api/admin/routes/:id
 router.route('/:id')
     .get(adminRouteController.getRouteById)

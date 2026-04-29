@@ -1,0 +1,234 @@
+[
+  {
+    "_id": "69ecc014d783d474ae9079ee",
+    "invoiceId": "69ecc014d783d474ae9079e5",
+    "assignments": [
+      {
+        "vehicleId": "69ecc013d783d474ae9079ae",
+        "driverIds": [
+          "69ecc013d783d474ae90799c"
+        ],
+        "staffIds": [
+          "69ecc014d783d474ae9079ea",
+          "69ecc014d783d474ae9079eb"
+        ],
+        "staffRole": [],
+        "routeValidation": {
+          "violations": [],
+          "warnings": [],
+          "restrictedSegments": []
+        },
+        "status": "PENDING",
+        "_id": "69ecc014d783d474ae9079ef",
+        "routeDeviations": []
+      }
+    ],
+    "status": "CONFIRMED",
+    "createdAt": "2026-04-25T13:22:28.014Z",
+    "updatedAt": "2026-04-25T13:22:28.014Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc014d783d474ae9079ec",
+    "invoiceId": "69ecc014d783d474ae9079e4",
+    "assignments": [
+      {
+        "vehicleId": "69ecc013d783d474ae9079ae",
+        "driverIds": [
+          "69ecc013d783d474ae90799c"
+        ],
+        "staffIds": [
+          "69ecc014d783d474ae9079e8",
+          "69ecc014d783d474ae9079e9"
+        ],
+        "staffRole": [],
+        "routeValidation": {
+          "violations": [],
+          "warnings": [],
+          "restrictedSegments": []
+        },
+        "status": "PENDING",
+        "_id": "69ecc014d783d474ae9079ed",
+        "routeDeviations": []
+      }
+    ],
+    "status": "CONFIRMED",
+    "createdAt": "2026-04-25T13:22:28.014Z",
+    "updatedAt": "2026-04-25T13:22:28.014Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc1829ef0e79765ae681e",
+    "invoiceId": "69ecc1829ef0e79765ae6816",
+    "assignments": [
+      {
+        "vehicleId": "69ecc1829ef0e79765ae67df",
+        "driverIds": [
+          "69ecc1829ef0e79765ae67d4"
+        ],
+        "staffIds": [
+          "69ecc1829ef0e79765ae681a",
+          "69ecc1829ef0e79765ae681b"
+        ],
+        "staffRole": [],
+        "routeValidation": {
+          "violations": [],
+          "warnings": [],
+          "restrictedSegments": []
+        },
+        "status": "PENDING",
+        "_id": "69ecc1829ef0e79765ae681f",
+        "routeDeviations": []
+      }
+    ],
+    "status": "CONFIRMED",
+    "createdAt": "2026-04-25T13:28:34.676Z",
+    "updatedAt": "2026-04-25T13:28:34.676Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc1829ef0e79765ae6820",
+    "invoiceId": "69ecc1829ef0e79765ae6817",
+    "assignments": [
+      {
+        "vehicleId": "69ecc1829ef0e79765ae67df",
+        "driverIds": [
+          "69ecc1829ef0e79765ae67d4"
+        ],
+        "staffIds": [
+          "69ecc1829ef0e79765ae681c",
+          "69ecc1829ef0e79765ae681d"
+        ],
+        "staffRole": [],
+        "routeValidation": {
+          "violations": [],
+          "warnings": [],
+          "restrictedSegments": []
+        },
+        "status": "PENDING",
+        "_id": "69ecc1829ef0e79765ae6821",
+        "routeDeviations": []
+      }
+    ],
+    "status": "CONFIRMED",
+    "createdAt": "2026-04-25T13:28:34.676Z",
+    "updatedAt": "2026-04-25T13:28:34.676Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc19f13926d61e5d8cd2a",
+    "invoiceId": "69ecc19f13926d61e5d8cd22",
+    "assignments": [
+      {
+        "vehicleId": "69ecc19f13926d61e5d8cceb",
+        "driverIds": [
+          "69ecc19f13926d61e5d8cce0"
+        ],
+        "staffIds": [
+          "69ecc19f13926d61e5d8cd26",
+          "69ecc19f13926d61e5d8cd27"
+        ],
+        "staffRole": [],
+        "routeValidation": {
+          "violations": [],
+          "warnings": [],
+          "restrictedSegments": []
+        },
+        "status": "PENDING",
+        "_id": "69ecc19f13926d61e5d8cd2b",
+        "routeDeviations": []
+      }
+    ],
+    "status": "CONFIRMED",
+    "createdAt": "2026-04-25T13:29:03.481Z",
+    "updatedAt": "2026-04-25T13:29:03.481Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc19f13926d61e5d8cd2c",
+    "invoiceId": "69ecc19f13926d61e5d8cd23",
+    "assignments": [
+      {
+        "vehicleId": "69ecc19f13926d61e5d8cceb",
+        "driverIds": [
+          "69ecc19f13926d61e5d8cce0"
+        ],
+        "staffIds": [
+          "69ecc19f13926d61e5d8cd28",
+          "69ecc19f13926d61e5d8cd29"
+        ],
+        "staffRole": [],
+        "routeValidation": {
+          "violations": [],
+          "warnings": [],
+          "restrictedSegments": []
+        },
+        "status": "PENDING",
+        "_id": "69ecc19f13926d61e5d8cd2d",
+        "routeDeviations": []
+      }
+    ],
+    "status": "CONFIRMED",
+    "createdAt": "2026-04-25T13:29:03.481Z",
+    "updatedAt": "2026-04-25T13:29:03.481Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913656",
+    "invoiceId": "69ecc21799984dbe4291364d",
+    "assignments": [
+      {
+        "vehicleId": "69ecc21799984dbe42913615",
+        "driverIds": [
+          "69ecc21799984dbe4291360a"
+        ],
+        "staffIds": [
+          "69ecc21799984dbe42913652",
+          "69ecc21799984dbe42913653"
+        ],
+        "staffRole": [],
+        "routeValidation": {
+          "violations": [],
+          "warnings": [],
+          "restrictedSegments": []
+        },
+        "status": "PENDING",
+        "_id": "69ecc21799984dbe42913657",
+        "routeDeviations": []
+      }
+    ],
+    "status": "CONFIRMED",
+    "createdAt": "2026-04-25T13:31:03.472Z",
+    "updatedAt": "2026-04-25T13:31:03.472Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913654",
+    "invoiceId": "69ecc21799984dbe4291364c",
+    "assignments": [
+      {
+        "vehicleId": "69ecc21799984dbe42913615",
+        "driverIds": [
+          "69ecc21799984dbe4291360a"
+        ],
+        "staffIds": [
+          "69ecc21799984dbe42913650",
+          "69ecc21799984dbe42913651"
+        ],
+        "staffRole": [],
+        "routeValidation": {
+          "violations": [],
+          "warnings": [],
+          "restrictedSegments": []
+        },
+        "status": "PENDING",
+        "_id": "69ecc21799984dbe42913655",
+        "routeDeviations": []
+      }
+    ],
+    "status": "CONFIRMED",
+    "createdAt": "2026-04-25T13:31:03.472Z",
+    "updatedAt": "2026-04-25T13:31:03.472Z",
+    "__v": 0
+  }
+]

@@ -106,12 +106,8 @@ exports.toggleActive = async (id, isActive) => {
  * Xóa/Vô hiệu hóa bảng giá
  */
 exports.deletePriceList = async (id) => {
-    const priceList = await PriceList.findByIdAndUpdate(
-        id,
-        { isActive: false },
-        { new: true }
-    );
-
+    // Perform a hard delete so DELETE truly removes the resource.
+    const priceList = await PriceList.findByIdAndDelete(id);
     if (!priceList) throw new Error('PriceList not found');
     return priceList;
 };

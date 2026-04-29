@@ -4,11 +4,22 @@ const Route = require('../../models/Route');
  * Lấy danh sách các tuyến đường kèm bộ lọc
  */
 exports.getAllRoutes = async (query = {}) => {
-    const { search, isActive } = query;
+    const { search, isActive, district, area } = query;
     let filter = {};
 
-    if (isActive !== undefined) {
-        filter.isActive = isActive === 'true';
+    // Normalize isActive: support 'true'|'false', 'active'|'inactive', boolean
+    if (isActive !== undefined && String(isActive).toLowerCase() !== 'all') {
+        const v = String(isActive).toLowerCase();
+        if (v === 'true' || v === 'active') filter.isActive = true;
+        else if (v === 'false' || v === 'inactive') filter.isActive = false;
+    }
+
+    // District / area filters
+    if (district) {
+        filter.district = district;
+    }
+    if (area) {
+        filter.area = area;
     }
 
     if (search) {
@@ -139,4 +150,16 @@ exports.deleteRoute = async (id) => {
 
     if (!route) throw new Error('Route not found');
     return route;
+};
+
+/**
+ * Thống kê tóm tắt cho trang quản trị Route Management
+ */
+exports.getRouteStats = async () => {
+    const total = await Route.countDocuments();
+    const active = await Route.countDocuments({ isActive: true });
+    const inactive = total - active;
+    const withRules = await Route.countDocuments({ 'trafficRules.0': { $exists: true } });
+    const withRestrictions = await Route.countDocuments({ 'roadRestrictions.0': { $exists: true } });
+    return { total, active, inactive, withRules, withRestrictions };
 };

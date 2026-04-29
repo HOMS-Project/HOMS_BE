@@ -182,7 +182,12 @@ class DispatchService {
           if (taskStart < targetEnd && taskEnd > targetStart) {
             status = 'UNAVAILABLE';
             conflictDetails = { type: 'OVERLAP', taskStart, taskEnd };
-            break; // Severe overlap, stop checking
+
+            // Nếu là người, đính kèm thông tin xe đang đi để hiển thị map
+            if (!isVehicle && task.vehicleId) {
+              item.assignedVehicle = vehiclesList.find(v => v._id.toString() === task.vehicleId.toString());
+            }
+            break;
           }
           if (taskStart < targetEnd + TWO_HOURS_MS && taskEnd + TWO_HOURS_MS > targetStart) {
             status = 'TIGHT'; // Might be tight, but keep checking in case another task makes it UNAVAILABLE
@@ -453,7 +458,7 @@ class DispatchService {
     const ratio = loadWeight / capacity;
     if (ratio > 1.0) return 'OVERLOAD';
     if (ratio > 0.85) return 'FULL';
-    if (ratio > 0.5)  return 'OPTIMAL';
+    if (ratio > 0.5) return 'OPTIMAL';
     return 'UNDERUTILIZED';
   }
 
@@ -900,9 +905,9 @@ class DispatchService {
 
           // Detect Resource Substitution
           idealVehicles = await this.calculateVehicleNeeds(dispatchData.totalWeight, dispatchData.totalVolume);
-          isResourceSubstitution = dispatchData.isResourceSubstitution || 
-                                         (dispatchData.vehicles && dispatchData.vehicles.length > 0 && 
-                                          JSON.stringify(dispatchData.vehicles) !== JSON.stringify(idealVehicles));
+          isResourceSubstitution = dispatchData.isResourceSubstitution ||
+            (dispatchData.vehicles && dispatchData.vehicles.length > 0 &&
+              JSON.stringify(dispatchData.vehicles) !== JSON.stringify(idealVehicles));
 
           // Step 2: Allocate personnel (drivers and helpers)
           console.log(`[BE] createDispatchAssignment: Step 2 - Allocating Personnel...`);
@@ -1277,8 +1282,32 @@ class DispatchService {
   }
 
   /**
+   * Helper: Get number of orders assigned to a user today
+   */
+  async getDailyOrderCount(userId) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const count = await DispatchAssignment.countDocuments({
+      'assignments': {
+        $elemMatch: {
+          $or: [
+            { driverIds: userId },
+            { staffIds: userId }
+          ],
+          pickupTime: { $gte: today, $lt: tomorrow }
+        }
+      }
+    });
+    return count;
+  }
+
+  /**
    * Gợi ý Smart Squad (Xe + Leader + Driver + Helper)
    * Integrates the new constraint-aware LogisticsEngine for precise resource allocation
+   * Optimization: Smart Dispatch Score = 50% Distance + 50% Workload
    */
   async getOptimalSquad(totalWeight, totalVolume, pickupLocation, requiredSkills = [], options = {}) {
     let logisticsPlan = null;
@@ -1287,36 +1316,33 @@ class DispatchService {
     let ticket = null;
     let surveyData = null;
 
-    // 1. Run through LogisticsEngine if ticket ID provided
+    // =========================
+    // 1. Logistics Engine
+    // =========================
     if (options.requestTicketId) {
       try {
         ticket = await RequestTicket.findById(options.requestTicketId).populate('surveyDataId');
         if (ticket) {
           surveyData = ticket.surveyDataId ? ticket.surveyDataId : {};
 
-          // Use SurveyData items if available, else ticket items
           let rawItems = [];
           if (surveyData && Array.isArray(surveyData.items) && surveyData.items.length > 0) {
             rawItems = surveyData.items;
           } else if (ticket.items) {
             Object.values(ticket.items.toJSON ? ticket.items.toJSON() : ticket.items).forEach(catItems => {
               if (Array.isArray(catItems)) {
-                catItems.forEach(item => {
-                  rawItems.push(item);
-                });
+                catItems.forEach(item => rawItems.push(item));
               }
             });
           }
 
-          // Normalize items format for the engine
           let itemsToProcess = rawItems.map(item => ({
             name: item.name,
-            volume: item.actualVolume || (item.width && item.length && item.height ? (item.width * item.length * item.height / 1000000) : 0.1),
+            volume: item.actualVolume || 0.1,
             weight: item.actualWeight || item.weight || 10,
-            requiresPacking: item.requiresManualHandling || (Array.isArray(item.services) && item.services.includes('PACKING'))
+            requiresPacking: item.requiresManualHandling || false
           }));
 
-          // If no items are found but we have total volume/weight, generate a dummy item to proxy the workload
           if (itemsToProcess.length === 0 && (surveyData.totalActualWeight || surveyData.totalActualVolume)) {
             itemsToProcess.push({
               name: 'Bulk Cargo',
@@ -1328,105 +1354,138 @@ class DispatchService {
 
           logisticsPlan = LogisticsEngine.generateDispatchPlan({
             items: itemsToProcess,
-            surveyData: surveyData,
+            surveyData,
             constraints: { roadBanWeightLimit: 5000 }
           });
 
-          // Trust Survey Explicit overrides for specific suggestions rather than pure heuristics if they exist and are explicitly set
-          if (surveyData.suggestedVehicles && surveyData.suggestedVehicles.length > 0) {
-            logisticsPlan.vehicles = surveyData.suggestedVehicles.map(v => ({
-              type: v.vehicleType,
-              trips: v.count || 1
-            }));
-          } else if (surveyData.suggestedVehicle && logisticsPlan.vehicles && logisticsPlan.vehicles.length > 0) {
-            // You can choose whether to override entirely or just align types
-            logisticsPlan.vehicles[0].type = surveyData.suggestedVehicle;
-          }
           if (surveyData.suggestedStaffCount) {
             neededTotalStaff = surveyData.suggestedStaffCount;
-          } else if (logisticsPlan && logisticsPlan.staffTotal) {
+          } else if (logisticsPlan?.staffTotal) {
             neededTotalStaff = logisticsPlan.staffTotal;
           }
 
-          if (logisticsPlan && logisticsPlan.vehicles && logisticsPlan.vehicles.length > 0) {
+          if (logisticsPlan?.vehicles?.length > 0) {
             chosenVehicleType = logisticsPlan.vehicles[0].type;
           }
         }
       } catch (e) {
-        console.error('[DispatchService] LogisticsEngine error:', e.message, e.stack?.split('\n')[1]);
+        console.error('[DispatchService] LogisticsEngine error:', e.message);
       }
-      console.log('[BE] After engine: logisticsPlan?.staffTotal =', logisticsPlan?.staffTotal, '| neededTotalStaff =', neededTotalStaff, '| items count =', logisticsPlan === null ? 'ENGINE_SKIPPED' : 'ran');
     }
 
-    // 2. Legacy fallback
+    // =========================
+    // 2. Vehicle Selection
+    // =========================
     if (!chosenVehicleType) {
       const vehicleNeeds = await this.calculateVehicleNeeds(totalWeight, totalVolume);
       chosenVehicleType = vehicleNeeds[0].vehicleType;
     }
 
-    // 3. Find suitable vehicle
-    const vehicles = await this.findAvailableVehicles(chosenVehicleType, 1);
-    if (!vehicles || vehicles.length === 0) {
-      throw new AppError(`No vehicles available for the capacity: ${chosenVehicleType}`, 400);
-    }
-    const vehicle = vehicles[0];
+    const availableVehicles = await Vehicle.find({
+      vehicleType: chosenVehicleType,
+      status: 'Available',
+      isActive: true
+    }).lean();
 
-    let vehicleDistance = null;
-    if (pickupLocation && pickupLocation.coordinates && vehicle.currentLocation?.coordinates) {
+    if (!availableVehicles.length) {
+      throw new AppError(`No vehicles available for ${chosenVehicleType}`, 400);
+    }
+
+    let sortedVehicles = availableVehicles;
+
+    if (pickupLocation?.coordinates) {
       const p1 = turf.point(pickupLocation.coordinates);
-      const p2 = turf.point(vehicle.currentLocation.coordinates);
-      vehicleDistance = turf.distance(p1, p2, { units: 'kilometers' });
+
+      sortedVehicles = availableVehicles.map(v => {
+        const coords = v.currentLocation?.coordinates || [108.2022, 16.0544];
+        const p2 = turf.point(coords);
+        const distance = turf.distance(p1, p2, { units: 'kilometers' });
+
+        return { ...v, distance };
+      }).sort((a, b) => a.distance - b.distance);
     }
 
-    // 4. Find staff
-    // neededCapacity defines the true number of staff required. If not derived from the new engine, fallback to driver+1
-    const neededCapacity = neededTotalStaff !== null ? neededTotalStaff : (vehicle.maxStaff || 2);
-    console.log('[BE] neededTotalStaff:', neededTotalStaff, 'neededCapacity:', neededCapacity, 'surveyData.suggestedStaffCount:', surveyData?.suggestedStaffCount);
+    const vehicle = sortedVehicles[0];
 
-    let duration = 480;
-    if (surveyData && surveyData.estimatedHours) {
-      duration = surveyData.estimatedHours * 60;
-    } else if (logisticsPlan && logisticsPlan.estimatedMinutes) {
-      duration = logisticsPlan.estimatedMinutes;
-    }
-    const requestedTime = options.dispatchTime || (ticket ? ticket.scheduledTime : null) || new Date();
+    // =========================
+    // 3. Staff + Driver Scoring
+    // =========================
+    const potentialDrivers = await User.find({ role: 'driver', status: 'Active' }).lean();
+    const potentialStaff = await User.find({ role: 'staff', status: 'Active' }).lean();
 
-    let totalVehicles = 1;
-    if (logisticsPlan && logisticsPlan.vehicles) {
-      totalVehicles = logisticsPlan.vehicles.reduce((sum, v) => sum + (v.trips || 1), 0);
-    }
+    const scoreResources = async (list) => {
+      if (!pickupLocation?.coordinates) return list;
 
-    const requiredLeaders = 1;
-    const requiredDrivers = Math.max(0, totalVehicles - 1);
-    const requiredHelpers = Math.max(0, neededCapacity - requiredLeaders - requiredDrivers);
+      const p1 = turf.point(pickupLocation.coordinates);
+
+      const scored = await Promise.all(list.map(async (res) => {
+        const coords = res.currentLocation?.coordinates || [108.2022, 16.0544];
+        const p2 = turf.point(coords);
+        const distance = turf.distance(p1, p2, { units: 'kilometers' });
+
+        const dailyOrders = await this.getDailyOrderCount(res._id);
+
+        const distanceScore = Math.min(distance / 50, 1) * 100;
+        const workloadScore = Math.min(dailyOrders / 10, 1) * 100;
+
+        const totalScore = (distanceScore * 0.5) + (workloadScore * 0.5);
+
+        return { ...res, distance, dailyOrders, score: totalScore };
+      }));
+
+      return scored.sort((a, b) => a.score - b.score);
+    };
+
+    const scoredDrivers = await scoreResources(potentialDrivers);
+    const scoredStaff = await scoreResources(potentialStaff);
+
+    // =========================
+    // 4. Capacity + Smart Squad
+    // =========================
+    const neededCapacity = neededTotalStaff !== null
+      ? neededTotalStaff
+      : (vehicle.maxStaff || 2);
+
+    const duration = surveyData?.estimatedHours
+      ? surveyData.estimatedHours * 60
+      : (logisticsPlan?.estimatedMinutes || 480);
+
+    const requestedTime = options.dispatchTime || ticket?.scheduledTime || new Date();
 
     const rules = {
-      requiredLeaders,
-      requiredHelpers,
-      requiredDrivers,
+      requiredLeaders: 1,
+      requiredDrivers: 1,
+      requiredHelpers: Math.max(0, neededCapacity - 2),
       pickupLocation
     };
 
     const suggested = await this.suggestResources(requestedTime, duration, rules);
     const nextSlots = await this.suggestTimeSlots(requestedTime, duration, rules);
 
-    // Calculate feasibility for the suggested squad
     const squadDispatchData = {
       leaderId: suggested.rawTeam.leader?._id,
-      driverIds: (suggested.rawTeam.drivers || []).map(d => d._id),
-      staffIds: (suggested.rawTeam.helpers || []).map(h => h._id),
+      driverIds: suggested.rawTeam.drivers.map(d => d._id),
+      staffIds: suggested.rawTeam.helpers.map(h => h._id),
       vehicles: [{ vehicleId: vehicle._id }],
       dispatchTime: requestedTime
     };
-    const feasibility = await this.evaluateFeasibility(squadDispatchData, neededCapacity, duration / 60);
 
+    const feasibility = await this.evaluateFeasibility(
+      squadDispatchData,
+      neededCapacity,
+      duration / 60
+    );
+
+    // =========================
+    // 5. Final Result
+    // =========================
     return {
-      vehicle: { ...vehicle.toObject(), distance: vehicleDistance },
-      driver: suggested.rawTeam.drivers.length > 0 ? suggested.rawTeam.drivers[0] : null,
-      drivers: suggested.rawTeam.drivers || [],
-      leader: suggested.rawTeam.leader || null,
-      helpers: suggested.rawTeam.helpers || [],
-      logisticsPlan, // Includes equipment, transport details, staff counts natively
+      vehicle,
+      driver: suggested.rawTeam.drivers[0] || null,
+      drivers: suggested.rawTeam.drivers,
+      leader: suggested.rawTeam.leader,
+      helpers: suggested.rawTeam.helpers,
+      logisticsPlan,
       shortages: suggested.shortages,
       nextAvailableSlots: nextSlots,
       feasibility

@@ -1,0 +1,43 @@
+[
+  {
+    "_id": "69ecc21799984dbe4291365e",
+    "invoiceId": "69ecc21799984dbe4291364c",
+    "reporterId": "69ecc21799984dbe4291360a",
+    "type": "Delay",
+    "description": "Xe bị tắc đường tại Q1, gây trễ 30 phút",
+    "images": [
+      "https://example.com/incident1.jpg"
+    ],
+    "status": "Resolved",
+    "createdAt": "2026-04-25T13:31:03.480Z",
+    "updatedAt": "2026-04-25T13:31:03.480Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe4291365f",
+    "invoiceId": "69ecc21799984dbe4291364c",
+    "reporterId": "69ecc21799984dbe4291360a",
+    "type": "Damage",
+    "description": "Sofa bị cứa trong quá trình vận chuyển",
+    "images": [
+      "https://example.com/damage1.jpg",
+      "https://example.com/damage2.jpg"
+    ],
+    "status": "Open",
+    "createdAt": "2026-04-25T13:31:03.480Z",
+    "updatedAt": "2026-04-25T13:31:03.480Z",
+    "__v": 0
+  },
+  {
+    "_id": "69ecc21799984dbe42913660",
+    "invoiceId": "69ecc21799984dbe4291364c",
+    "reporterId": "69ecc21799984dbe4291360a",
+    "type": "Accident",
+    "description": "Xe gặp tai nạn nhẹ tại giao lộ, không có thiệt hại hàng hóa",
+    "images": [],
+    "status": "Resolved",
+    "createdAt": "2026-04-25T13:31:03.480Z",
+    "updatedAt": "2026-04-25T13:31:03.480Z",
+    "__v": 0
+  }
+]

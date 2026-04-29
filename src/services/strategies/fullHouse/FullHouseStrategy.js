@@ -32,6 +32,7 @@ class FullHouseStrategy extends BaseStrategy {
     const transitions = {
       CREATED: ['WAITING_SURVEY', 'CANCELLED'],
       WAITING_SURVEY: ['SURVEYED', 'QUOTED', 'CANCELLED'],
+      WAITING_REVIEW: ['QUOTED', 'CANCELLED'],
       SURVEYED: ['QUOTED', 'CANCELLED'],
       QUOTED: ['ACCEPTED', 'CANCELLED'],
       ACCEPTED: ['CONVERTED', 'CANCELLED'],
@@ -42,16 +43,20 @@ class FullHouseStrategy extends BaseStrategy {
   }
 
   async handleApproval(ticket, approverId, additionalData = {}, io) {
-    let assignedDispatcherId = additionalData.surveyorId;
+    let assignedDispatcherId = additionalData?.surveyorId;
+    let assignmentMethod = 'MANUAL';
 
     if (!assignedDispatcherId) {
       assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
+      assignmentMethod = 'AUTO';
     }
 
     if (assignedDispatcherId) {
       await TicketStateMachine.transition(ticket, 'WAITING_SURVEY', {
         payload: { dispatcherId: assignedDispatcherId }
       });
+
+      console.log(`[FullHouseStrategy] Assigned dispatcher ${assignedDispatcherId} via ${assignmentMethod}`);
 
       await NotificationService.createNotification(
         {

@@ -124,31 +124,41 @@ class PricingCalculationService {
   /* -----------------------------------------------------
      B. TÍNH GIÁ CHUYỂN ĐỒ LẺ (SPECIFIC ITEMS)
   ----------------------------------------------------- */
-  _calcSpecificItems(surveyData, priceList) {
-    const { distanceKm = 0, suggestedStaffCount = 2 } = surveyData;
-    
-    const vehicleFee = 500000 + distanceKm * 10000;
-    const laborFee = suggestedStaffCount * 300000;
-    const subtotal = vehicleFee + laborFee;
+ _calcSpecificItems(surveyData, priceList) {
 
-    const breakdown = {
-      baseTransportFee: 0,
-      vehicleFee,
-      laborFee,
-      itemServiceFee: 0,
-      carryFee: 0,
-      floorFee: 0,
-      distanceFee: 0,
-      assemblingFee: 0,
-      packingFee: 0,
-      insuranceFee: 0,
-      managementFee: 0,
-      estimatedHours: 1
-    };
+  const { distanceKm = 0, suggestedStaffCount = 2, estimatedHours = 2 } = surveyData;
 
-    const taxRate = priceList.taxRate !== undefined ? priceList.taxRate : 0.1;
-    return this._formatResponse(subtotal, breakdown, priceList, taxRate);
-  }
+  const vehicleConfig = priceList.vehiclePricing?.find(v => v.vehicleType === '500KG')
+    || priceList.vehiclePricing?.[0];
+  const vehicleFee = vehicleConfig
+    ? (vehicleConfig.basePriceForFirstXKm || 0)
+      + Math.max(0, distanceKm - (vehicleConfig.limitKm || 0)) * (vehicleConfig.pricePerNextKm || 0)
+    : 500000 + distanceKm * 10000;
+
+  const laborConfig = priceList.laborCost || {};
+  const laborFee = suggestedStaffCount
+    * ((laborConfig.basePricePerPerson || 0) + (laborConfig.pricePerHourPerPerson || 0) * estimatedHours);
+  const subtotal = vehicleFee + laborFee;
+
+  const breakdown = {
+    baseTransportFee: 0,
+    vehicleFee,
+    laborFee,
+    itemServiceFee: 0,
+    carryFee: 0,
+    floorFee: 0,
+    distanceFee: 0,
+    assemblingFee: 0,
+    packingFee: 0,
+    insuranceFee: 0,
+    managementFee: 0,
+    estimatedHours
+  };
+
+  const taxRate = priceList.taxRate !== undefined ? priceList.taxRate : 0.1;
+  return this._formatResponse(subtotal, breakdown, priceList, taxRate);
+}
+
 
   /* -----------------------------------------------------
      C. TÍNH GIÁ CHUYỂN NHÀ TRỌN GÓI (FULL HOUSE)

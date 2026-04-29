@@ -20,5 +20,6 @@ router.post('/verify-otp', authController.verifyOTP);
 router.post('/reset-password', authController.resetPassword);
 router.post('/refresh', authController.refreshToken);
 router.post('/logout',authController.logout);
-router.post('/magic',authController.setupMagicAccount);
+router.post('/magic',validate(schemas.magicSetup),authController.setupMagicAccount);
+router.post('/link-messenger', verifyToken, authController.linkMessengerAccount);
 module.exports = router;

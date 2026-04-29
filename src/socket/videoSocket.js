@@ -13,10 +13,14 @@ const registerVideoSocketEvents = (io, socket) => {
     try {
       const ticket = await RequestTicket.findOne({ code: roomId });
       if (ticket) {
-        const messages = await Message.find({ 'context.refId': ticket._id, 'context.type': 'RequestTicket' }).sort({ createdAt: 1 }).populate('senderId', 'fullName email');
+        const messages = await Message.find({ 'context.refId': ticket._id, 'context.type': 'RequestTicket' })
+          .sort({ createdAt: 1 })
+          .populate('senderId', 'fullName email');
         
         const history = messages.map(m => ({
           content: m.content,
+          type: m.type,
+          attachments: m.attachments,
           senderName: m.senderId?.fullName || m.senderId?.email || 'User',
           timestamp: m.createdAt
         }));
@@ -37,7 +41,7 @@ const registerVideoSocketEvents = (io, socket) => {
   // Handle chat messages
   socket.on('send_message', async (data) => {
     console.log('[VideoChat] Received send_message:', data);
-    // data should have { roomId, message, sender, time }
+    // data should have { roomId, message, type, attachments, sender, time }
     io.to(data.roomId).emit('receive_message', data);
 
     try {
@@ -45,7 +49,6 @@ const registerVideoSocketEvents = (io, socket) => {
       if (ticket) {
         console.log('[VideoChat] Found ticket:', ticket._id);
         const senderId = socket.user?.id || socket.user?._id || socket.user?.userId;
-        console.log('[VideoChat] SenderId:', senderId);
         
         let isCustomer = false;
         if (ticket.customerId && senderId) {
@@ -53,7 +56,6 @@ const registerVideoSocketEvents = (io, socket) => {
         }
         
         const recipientId = isCustomer ? (ticket.dispatcherId || ticket.customerId) : ticket.customerId;
-        console.log('[VideoChat] RecipientId:', recipientId);
         
         const newMessage = new Message({
           senderId,
@@ -62,8 +64,9 @@ const registerVideoSocketEvents = (io, socket) => {
             type: 'RequestTicket',
             refId: ticket._id
           },
-          content: data.message,
-          type: 'Text',
+          content: data.message || '',
+          type: data.type || 'Text',
+          attachments: data.attachments || []
         });
         await newMessage.save();
         console.log('[VideoChat] Message saved successfully:', newMessage._id);
@@ -98,10 +101,17 @@ const registerVideoSocketEvents = (io, socket) => {
     socket.to(data.roomId).emit('call_ended');
   });
 
+  socket.on('disconnecting', () => {
+    // Notify only the rooms this socket is currently in
+    socket.rooms.forEach(room => {
+      if (room !== socket.id) {
+        socket.to(room).emit('user_disconnected', { userId: socket.id });
+      }
+    });
+  });
+
   socket.on('disconnect', () => {
     console.log(`[VideoChat] User disconnected: ${socket.id}`);
-    // Optional: emit user disconnected to room, but socket.io doesn't easily tell which room they were in perfectly here.
-    socket.broadcast.emit('user_disconnected', { userId: socket.id });
   });
 };
 

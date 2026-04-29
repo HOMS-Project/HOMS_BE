@@ -90,7 +90,6 @@ const invoiceSchema = new mongoose.Schema(
 
     scheduledTime: {
       type: Date,
-      required: true,
     },
 
     // Scenario B: Dispatcher-proposed reschedule awaiting customer approval

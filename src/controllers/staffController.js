@@ -67,6 +67,7 @@ exports.getAssignedOrders = async (req, res, next) => {
         },
       })
       .populate("assignments.routeId")
+      .sort({ createdAt: -1 })
       .lean(); // Tối ưu: trả về plain JS object để tăng tốc độ và giảm RAM
 
     // Lọc ra các assignment cụ thể mà staffId tham gia và định dạng lại dữ liệu
@@ -310,6 +311,7 @@ exports.getOrderDetails = async (req, res, next) => {
               needsPacking: survey.needsPacking,
               needsAssembling: survey.needsAssembling,
               insuranceRequired: survey.insuranceRequired,
+              estimatedHours: survey.estimatedHours,
               suggestedVehicle: survey.suggestedVehicle,
               suggestedStaffCount: survey.suggestedStaffCount,
               items: survey.items || [],

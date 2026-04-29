@@ -108,6 +108,22 @@ const requestTicketSchema = new mongoose.Schema({
   rescheduleReason: {
     type: String
   },
+  // Dịch vụ cao cấp & Bảo hiểm
+  isHighValue: { type: Boolean, default: false },
+  highValueDetails: {
+    declaredValue: Number,         // Giá trị hàng hóa khai báo (VNĐ)
+    description: String,           // Mô tả hàng hóa đặc biệt
+    category: String               // 'ELECTRONICS', 'ART', 'ANTIQUES', 'FURNITURE_LUXURY'
+  },
+  insurance: {
+    isInsured: { type: Boolean, default: false },
+    insuranceProvider: { type: String, default: 'HOMS_PROTECT' }, // Mock provider
+    packageId: String,             // ID gói bảo hiểm (BASIC, STANDARD, PREMIUM)
+    premiumAmount: Number,         // Phí bảo hiểm (VNĐ)
+    coverageAmount: Number,        // Mức bồi thường tối đa
+    policyNumber: String           // Số hợp đồng bảo hiểm
+  },
+
   notes: String
 
 }, { timestamps: true });

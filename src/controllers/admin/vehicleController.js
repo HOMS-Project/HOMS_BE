@@ -2,6 +2,7 @@ const vehicleService = require('../../services/admin/vehicleService');
 
 async function listVehicles(req, res, next) {
   try {
+   
     const { status } = req.query;
     const list = await vehicleService.listVehicles({ status });
     res.json(list);

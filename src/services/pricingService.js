@@ -12,6 +12,7 @@ const PriceList = require('../models/PriceList');
 const Promotion = require('../models/Promotion');
 const Route = require('../models/Route');
 const AppError = require('../utils/appErrors');
+const insuranceService = require('./insuranceService');
 
 const TAX_RATE = 0.1; // 10% VAT
 
@@ -152,11 +153,19 @@ class PricingService {
       };
     }
 
-    if (services.insurance) {
+    if (services.insurance && services.insurance.isApplied) {
+      const insuranceData = insuranceService.calculatePremium(
+        services.insurance.declaredValue || 0,
+        services.insurance.packageId || 'BASIC'
+      );
       result.insurance = {
-        isAppliedAll: services.insurance.isAppliedAll,
-        itemIds: services.insurance.itemIds,
-        price: services.insurance.isAppliedAll ? totalWeight * 2000 : 0 // 2k/kg
+        isApplied: true,
+        declaredValue: services.insurance.declaredValue,
+        packageId: services.insurance.packageId,
+        packageName: insuranceData.packageName,
+        price: insuranceData.premiumAmount,
+        coverageAmount: insuranceData.coverageAmount,
+        policyNumber: insuranceData.policyNumber
       };
     }
 

@@ -188,9 +188,16 @@ exports.resetPassword = async (req, res, next) => {
 };
 exports.refreshToken = async (req, res, next) => {
   try {
-    const oldRefreshToken = req.cookies.refreshToken;
+    const isMobileDriver = (req.get("x-client") || "").toLowerCase() === "mobile-driver";
+    
+    // Support both cookie-based (web) and body-based (mobile) refresh tokens
+    const oldRefreshToken = isMobileDriver 
+      ? (req.body?.refreshToken || req.cookies.refreshToken) 
+      : req.cookies.refreshToken;
+
     const { accessToken, refreshToken, expiresInMs } =
       await authService.refreshAccessToken(oldRefreshToken);
+    
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
       sameSite: "none",
@@ -201,6 +208,7 @@ exports.refreshToken = async (req, res, next) => {
     res.json({
       success: true,
       accessToken,
+      ...(isMobileDriver ? { refreshToken } : {}),
       expiresInMs,
     });
   } catch (err) {
@@ -227,12 +235,14 @@ exports.logout = async (req, res, next) => {
 };
 exports.setupMagicAccount = async (req, res,next) => {
   try {
-   const { token, password } = req.body;
+   const { token, password,confirmPassword,phone } = req.body;
 
     const { user, accessToken, refreshToken, expiresInMs } = 
       await authService.setupMagicAccount({
         token,      
         password,
+        confirmPassword, 
+        phone
       });
 
     
@@ -251,6 +261,12 @@ exports.setupMagicAccount = async (req, res,next) => {
     });
 
   } catch (error) {
+     if (error.message === 'LINK_USED') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Link này đã được sử dụng trước đó. Vui lòng đăng nhập hoặc yêu cầu gửi lại link mới.' 
+      });
+    }
    next(error);
   }
 };
@@ -274,7 +290,7 @@ exports.facebookLogin = async (req, res, next) => {
       message: "Đăng nhập Facebook thành công",
       data: {
         user: {
-          _id: user._id,
+         _id: user._id || user.id,
           fullName: user.fullName,
           role: user.role, 
           email: user.email,
@@ -286,5 +302,25 @@ exports.facebookLogin = async (req, res, next) => {
     });
   } catch (err) {
     next(err);
+  }
+};
+exports.linkMessengerAccount = async (req, res, next) => {
+  try {
+    const userId = req.user._id;       
+    const userEmail = req.user.email;  
+    const { linkToken } = req.body;
+
+    const updatedUser = await authService.linkMessengerAccountService(
+      userId,
+      userEmail,
+      linkToken
+    );
+
+    return res.status(200).json({
+      message: "Liên kết Messenger thành công",
+      data: updatedUser,
+    });
+  } catch (error) {
+    next(error);
   }
 };

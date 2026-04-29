@@ -23,13 +23,13 @@ class ItemMovingStrategy extends BaseStrategy {
   getAllowedTransitions(currentStatus) {
     // SPECIFIC_ITEMS skips survey — goes to district dispatcher review after HD approval
     const transitions = {
-      CREATED:           ['WAITING_REVIEW', 'CANCELLED'],
-      WAITING_REVIEW:    ['QUOTED', 'CANCELLED'],
+      CREATED: ['WAITING_REVIEW', 'CANCELLED'],
+      WAITING_REVIEW: ['QUOTED', 'CANCELLED'],
       ASSIGNMENT_FAILED: ['WAITING_REVIEW', 'CANCELLED'], // Head dispatcher reassigns manually
-      QUOTED:            ['ACCEPTED', 'CANCELLED'],
-      ACCEPTED:          ['CONVERTED', 'CANCELLED'],
-      CONVERTED:         [],
-      CANCELLED:         []
+      QUOTED: ['ACCEPTED', 'CANCELLED'],
+      ACCEPTED: ['CONVERTED', 'CANCELLED'],
+      CONVERTED: [],
+      CANCELLED: []
     };
     return transitions[currentStatus] || [];
   }
@@ -42,8 +42,8 @@ class ItemMovingStrategy extends BaseStrategy {
 
       // 1. BE calculates resources based on the AI items array (ignoring AI's vehicle/staff suggestion)
       const estimate = await SurveyService.estimateResources({
-        items: data.items, 
-        distanceKm: data.distanceKm || 0, 
+        items: data.items,
+        distanceKm: data.distanceKm || 0,
         floors: 0, // floors typically unknown initially
         hasElevator: false // elevator unknown initially
       });
@@ -96,7 +96,7 @@ class ItemMovingStrategy extends BaseStrategy {
       }
 
       const surveyData = new SurveyData(surveyDataOptions);
-      
+
       await surveyData.save();
     }
   }
@@ -104,16 +104,20 @@ class ItemMovingStrategy extends BaseStrategy {
   async handleApproval(ticket, approverId, additionalData = {}, io) {
     await TicketStateMachine.transition(ticket, 'WAITING_REVIEW');
 
-    let assignedDispatcherId = additionalData.surveyorId;
+    let assignedDispatcherId = additionalData?.surveyorId;
+    let assignmentMethod = 'MANUAL';
 
     if (!assignedDispatcherId) {
       assignedDispatcherId = await AutoAssignmentService.assignDispatcher(ticket);
+      assignmentMethod = 'AUTO';
     }
 
     if (assignedDispatcherId) {
       // Auto-assignment successful — district dispatcher will review AI data and quote
       ticket.dispatcherId = assignedDispatcherId;
       await ticket.save();
+
+      console.log(`[ItemMovingStrategy] Assigned dispatcher ${assignedDispatcherId} via ${assignmentMethod}`);
 
       await NotificationService.createNotification(
         {

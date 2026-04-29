@@ -168,4 +168,61 @@ module.exports = {
   listIncidents,
   getIncidentById,
   resolveIncident,
+  // dashboard stats for admin UI
+  async getDashboard({ search, type, status } = {}) {
+    // Build aggregation pipeline similar to listIncidents so dashboard reflects filters
+    const pipeline = [];
+
+    // join invoice
+    pipeline.push({
+      $lookup: { from: 'invoices', localField: 'invoiceId', foreignField: '_id', as: 'invoice' }
+    });
+    pipeline.push({ $unwind: { path: '$invoice', preserveNullAndEmptyArrays: true } });
+
+    // join reporter
+    pipeline.push({
+      $lookup: { from: 'users', localField: 'reporterId', foreignField: '_id', as: 'reporter' }
+    });
+    pipeline.push({ $unwind: { path: '$reporter', preserveNullAndEmptyArrays: true } });
+
+    const match = {};
+    if (type && type !== 'all') match.type = type;
+    if (status && status !== 'all') match.status = status;
+    if (Object.keys(match).length > 0) pipeline.push({ $match: match });
+
+    if (search) {
+      const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      pipeline.push({
+        $match: {
+          $or: [
+            { _id: { $regex: regex } },
+            { 'invoice.code': { $regex: regex } },
+            { 'reporter.fullName': { $regex: regex } }
+          ]
+        }
+      });
+    }
+
+    // Facet to compute totals and specific counts efficiently
+    pipeline.push({
+      $facet: {
+        total: [ { $count: 'count' } ],
+        statusCounts: [ { $group: { _id: '$status', count: { $sum: 1 } } } ],
+        compensation: [ { $match: { $or: [ { 'resolution.compensationAmount': { $gt: 0 } }, { 'resolution.action': 'Compensation' } ] } }, { $count: 'count' } ]
+      }
+    });
+
+    const agg = await Incident.aggregate(pipeline).allowDiskUse(true);
+    const meta = agg && agg[0] ? agg[0] : { total: [], statusCounts: [], compensation: [] };
+
+    const total = (meta.total && meta.total[0] && meta.total[0].count) || 0;
+    const statusCountsArr = meta.statusCounts || [];
+    const statusMap = {};
+    statusCountsArr.forEach(s => { statusMap[s._id] = s.count; });
+    const open = statusMap['Open'] || 0;
+    const investigating = statusMap['Investigating'] || 0;
+    const compensation = (meta.compensation && meta.compensation[0] && meta.compensation[0].count) || 0;
+
+    return { total, open, investigating, compensation, statusCounts: statusMap };
+  }
 };
