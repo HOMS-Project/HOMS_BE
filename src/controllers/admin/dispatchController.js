@@ -80,7 +80,8 @@ exports.dispatchVehicles = async (req, res, next) => {
       routeId,
       estimatedDuration,
       dispatchTime,
-      forceProceed
+      forceProceed,
+      useExternalStaff
     } = req.body;
 
     // Truy xuất thông tin SurveyData để lấy khối lượng thực tế
@@ -113,7 +114,9 @@ exports.dispatchVehicles = async (req, res, next) => {
       routeId,
       estimatedDuration,
       dispatchTime,
-      forceProceed
+      forceProceed,
+      useExternalStaff,
+      dispatcherId: req.user?.userId || req.user?._id
     });
 
     // Move to ASSIGNED status immediately to lock resources
@@ -127,7 +130,7 @@ exports.dispatchVehicles = async (req, res, next) => {
       data: assignment
     });
   } catch (error) {
-    next(error); 
+    next(error);
     // we use next(error) instead of sending 400 to let errorMiddleware handle AppError properly
   }
 };
@@ -163,10 +166,10 @@ exports.checkAvailability = async (req, res, next) => {
     if (!dispatchTime) {
       throw new AppError('dispatchTime is required', 400);
     }
-    
+
     const duration = estimatedDuration || 480;
     const data = await DispatchService.checkResourceAvailability(dispatchTime, duration);
-    
+
     res.status(200).json({
       success: true,
       data

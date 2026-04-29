@@ -467,7 +467,7 @@ exports.confirmReschedule = async (req, res, next) => {
     const dayjs = require('dayjs');
 
     const invoice = await Invoice.findById(invoiceId)
-      .populate('requestTicketId', 'code customerId dispatcherId')
+      .populate('requestTicketId', 'code customerId dispatcherId scheduledTime')
       .populate('customerId', '_id');
 
     if (!invoice) throw new AppError('Invoice không tồn tại', 404);
@@ -479,8 +479,11 @@ exports.confirmReschedule = async (req, res, next) => {
       throw new AppError('Bạn không có quyền xác nhận lịch của hóa đơn này.', 403);
     }
 
-    if (invoice.rescheduleStatus !== 'PENDING_APPROVAL' || !invoice.proposedDispatchTime) {
-      throw new AppError('Không có đề xuất đổi lịch nào đang chờ xác nhận.', 400);
+    const isReschedulePending = invoice.rescheduleStatus === 'PENDING_APPROVAL' && invoice.proposedDispatchTime;
+    const isProposalPending = invoice.dispatchProposal?.status === 'PENDING_APPROVAL';
+
+    if (!isReschedulePending && !isProposalPending) {
+      throw new AppError('Không có đề xuất nào đang chờ xác nhận.', 400);
     }
 
     const ticket = invoice.requestTicketId;
@@ -489,10 +492,37 @@ exports.confirmReschedule = async (req, res, next) => {
 
     if (action === 'ACCEPT') {
       const confirmedTime = dayjs(invoice.proposedDispatchTime).format('HH:mm DD/MM/YYYY');
-      invoice.scheduledTime = invoice.proposedDispatchTime;
-      invoice.proposedDispatchTime = null;
-      invoice.rescheduleStatus = 'ACCEPTED';
+      const newScheduledTime = invoice.proposedDispatchTime;
+
+      if (isReschedulePending) {
+        invoice.scheduledTime = newScheduledTime;
+        invoice.proposedDispatchTime = null;
+        invoice.rescheduleStatus = 'ACCEPTED';
+      }
+
+      if (isProposalPending) {
+        invoice.dispatchProposal.status = 'ACCEPTED';
+      }
+
+      invoice.status = 'ASSIGNED';  // the customer confirmed, promote invoice to ASSIGNED
+
+      // Promote the associated DispatchAssignment from DRAFT to ASSIGNED
+      if (invoice.dispatchAssignmentId) {
+        const DispatchAssignment = require('../models/DispatchAssignment');
+        await DispatchAssignment.findByIdAndUpdate(
+          invoice.dispatchAssignmentId,
+          { $set: { status: 'ASSIGNED' } }
+        );
+      }
+
       await invoice.save();
+
+      // Sync the new scheduled time back to the RequestTicket so the customer
+      // order page (ViewMovingOrder) reflects the correct date and time.
+      if (ticket?._id) {
+        const RequestTicket = require('../models/RequestTicket');
+        await RequestTicket.findByIdAndUpdate(ticket._id, { scheduledTime: newScheduledTime });
+      }
 
       // Notify customer: schedule confirmed
       await NotificationService.createNotification({
@@ -514,10 +544,28 @@ exports.confirmReschedule = async (req, res, next) => {
     }
 
     // REJECT — revert invoice back to CONFIRMED so dispatcher can reassign
-    invoice.proposedDispatchTime = null;
-    invoice.rescheduleStatus = 'REJECTED';
+    if (isReschedulePending) {
+      invoice.proposedDispatchTime = null;
+      invoice.rescheduleStatus = 'REJECTED';
+    }
+
+    if (isProposalPending) {
+      invoice.dispatchProposal.status = 'REJECTED';
+    }
+
     invoice.status = 'CONFIRMED';          // ← revert so it reappears in the dispatcher queue
-    invoice.dispatchAssignmentId = null;   // ← clear the previous (now-invalid) assignment
+
+    // Reset the existing DispatchAssignment to DRAFT (don't just null the reference).
+    // This prevents the stale ASSIGNED document from remaining in the collection while we reassign.
+    if (invoice.dispatchAssignmentId) {
+      const DispatchAssignment = require('../models/DispatchAssignment');
+      await DispatchAssignment.findByIdAndUpdate(
+        invoice.dispatchAssignmentId,
+        { $set: { status: 'DRAFT' } }
+      );
+    }
+
+    invoice.dispatchAssignmentId = null;   // ← clear the reference so dispatcher starts fresh
     await invoice.save();
 
     // Notify dispatcher (if assigned) that customer rejected
