@@ -1241,8 +1241,7 @@ class DispatchService {
     }
   }
 
-  // =========================  // EXISTING LOGIC (GIỮ NGUYÊN)
-  // =========================
+  // Calculate the number of vehicles needed
   async calculateVehicleNeeds(totalWeight, totalVolume) {
     const VEHICLE_SPECS = {
       '500KG': { maxWeight: 500, maxVolume: 5 },
@@ -1380,6 +1379,16 @@ class DispatchService {
       const vehicleNeeds = await this.calculateVehicleNeeds(totalWeight, totalVolume);
       chosenVehicleType = vehicleNeeds[0].vehicleType;
     }
+
+    // Normalize LogisticsEngine types → Vehicle model enum
+    const vehicleTypeMap = {
+      '500KG': '500KG',
+      '1000KG': '1TON',
+      '1500KG': '1.5TON',
+      '2000KG': '2TON',
+      '5000KG': '2TON', // fallback to largest available
+    };
+    chosenVehicleType = vehicleTypeMap[chosenVehicleType] || chosenVehicleType;
 
     const availableVehicles = await Vehicle.find({
       vehicleType: chosenVehicleType,
