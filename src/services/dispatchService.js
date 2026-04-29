@@ -1,11 +1,3 @@
-/**
- * Vehicle & Staff Dispatch Service
- * - Select suitable vehicles based on payload capacity
- * - Assign drivers & helpers
- * - Check availability to prevent overlap
- * - Support dispatching single or multiple vehicles
- */
-
 const mongoose = require('mongoose');
 const DispatchAssignment = require('../models/DispatchAssignment');
 const DispatchDecisionLog = require('../models/DispatchDecisionLog');
@@ -13,64 +5,23 @@ const ResourceScheduleView = require('../models/ResourceScheduleView');
 const Invoice = require('../models/Invoice');
 const Vehicle = require('../models/Vehicle');
 const User = require('../models/User');
+
 const RouteValidationService = require('./routeValidationService');
-const AppError = require('../utils/appErrors');
 const NotificationService = require('./notificationService');
 const T = require('../utils/notificationTemplates');
 const LogisticsEngine = require('./logisticsEngine');
 const RequestTicket = require('../models/RequestTicket');
 const turf = require('@turf/turf');
+const ResourceValidator = require('./dispatch/resourceValidator');
+const FeasibilityEngine = require('./dispatch/feasibilityEngine');
+const AppError = require('../utils/appErrors');
 
 class DispatchService {
-  /**
-   * Determine delivery time based on pickup time, estimated duration and an optional buffer
-   */
+
   calculateDeliveryTime({ pickupTime, estimatedDuration, buffer = 0 }) {
     if (!pickupTime) return null;
     const durationInMs = (estimatedDuration + buffer) * 60000;
     return new Date(new Date(pickupTime).getTime() + durationInMs);
-  }
-
-  /**
-   * Detect conflicts with jobs starting after this one for the same resources
-   */
-  async detectDownstreamConflicts(resourceIds, startTime, durationInMinutes) {
-    const targetEnd = new Date(startTime).getTime() + (durationInMinutes * 60000);
-    
-    // Find all active assignments for these resources that start after our startTime
-    const futureAssignments = await DispatchAssignment.find({
-      status: { $in: ['ASSIGNED', 'CONFIRMED', 'IN_PROGRESS'] },
-      "assignments.pickupTime": { $gt: new Date(startTime) }
-    }).lean();
-
-    let hasConflict = false;
-    let maxDelayMinutes = 0;
-
-    for (const da of futureAssignments) {
-      for (const task of da.assignments) {
-        // Check if any of our resources are in this future task
-        const isResourceShared = resourceIds.some(id => 
-          task.vehicleId?.toString() === id.toString() ||
-          task.driverIds?.some(did => did.toString() === id.toString()) ||
-          task.staffIds?.some(sid => sid.toString() === id.toString())
-        );
-
-        if (isResourceShared) {
-          const nextTaskStart = new Date(task.pickupTime).getTime();
-          if (targetEnd > nextTaskStart) {
-            hasConflict = true;
-            const delay = (targetEnd - nextTaskStart) / 60000;
-            if (delay > maxDelayMinutes) maxDelayMinutes = delay;
-          }
-        }
-      }
-    }
-
-    return {
-      hasConflict,
-      impactLevel: maxDelayMinutes > 60 ? 'HIGH' : 'LOW',
-      maxDelayMinutes
-    };
   }
 
   /**
@@ -81,25 +32,11 @@ class DispatchService {
       (dispatchData.driverIds?.length || 0) +
       (dispatchData.staffIds?.length || 0);
 
-    // 1. Estimate real duration
-    const missingStaffCount = Math.max(0, idealStaffCount - inputStaffCount);
-    const adjustedHours = baseHours + (1.3 * missingStaffCount);
-    const adjustedMinutes = Math.round(adjustedHours * 60);
+    const adjustedMinutes = FeasibilityEngine.estimateDuration(baseHours, idealStaffCount, inputStaffCount);
 
-    // 2. Safety check: minimum 2 people for any job OR matches survey if survey is 1
-    const isSafetyBlock = (inputStaffCount < 2 && idealStaffCount > 1);
-    const durationExceeded = adjustedMinutes > 720; // 12 hours
+    const safety = FeasibilityEngine.checkSafety(inputStaffCount, idealStaffCount, adjustedMinutes);
+    const staffing = FeasibilityEngine.evaluateStaffing(inputStaffCount, idealStaffCount);
 
-    // 3. Evaluate staffing level
-    const staffingRatio = inputStaffCount / idealStaffCount;
-    let staffingLevel = 'SAFE';
-    if (staffingRatio < 0.5) {
-      staffingLevel = 'CRITICAL';
-    } else if (staffingRatio < 1.0) { // Any shortage is a warning
-      staffingLevel = 'WARNING';
-    }
-
-    // 4. Detect downstream conflicts
     const resourceIds = [
       ...(dispatchData.vehicles || []).map(v => v.vehicleId),
       dispatchData.leaderId,
@@ -107,30 +44,24 @@ class DispatchService {
       ...(dispatchData.staffIds || [])
     ].filter(id => id);
 
-    const conflictInfo = await this.detectDownstreamConflicts(
-      resourceIds, 
-      dispatchData.dispatchTime || new Date(), 
-      adjustedMinutes
-    );
+    const conflictInfo = await FeasibilityEngine.detectConflicts(this, resourceIds, dispatchData.dispatchTime || new Date(), adjustedMinutes);
 
-    // 5. Final decision matrix
     let decision = 'ALLOW';
-    if (durationExceeded || isSafetyBlock) {
+    if (safety.durationExceeded || safety.isSafetyBlock) {
       decision = 'BLOCK';
-    } else if (staffingLevel === 'CRITICAL') {
+    } else if (staffing.level === 'CRITICAL') {
       decision = 'REQUIRE_CUSTOMER';
-    } else if (staffingLevel === 'WARNING' || conflictInfo.hasConflict) {
-      // Any shortage (WARNING) or schedule conflict requires dispatcher confirmation
+    } else if (staffing.level === 'WARNING' || conflictInfo.hasConflict) {
       decision = 'CONFIRM';
     } else {
       decision = 'ALLOW';
     }
 
     return {
-      staffingRatio,
-      staffingLevel,
+      staffingRatio: staffing.ratio,
+      staffingLevel: staffing.level,
       estimatedDuration: adjustedMinutes,
-      durationExceeded,
+      durationExceeded: safety.durationExceeded,
       hasConflict: conflictInfo.hasConflict,
       impactLevel: conflictInfo.impactLevel,
       maxDelayMinutes: conflictInfo.maxDelayMinutes,
@@ -145,7 +76,7 @@ class DispatchService {
   async detectDownstreamConflicts(resourceIds, startTime, durationMinutes) {
     const startMs = new Date(startTime).getTime();
     const endMs = startMs + (durationMinutes * 60000);
-    
+
     // Find all future tasks for these resources
     const nextTasks = await DispatchAssignment.find({
       status: { $in: ['PENDING', 'ASSIGNED', 'CONFIRMED', 'IN_PROGRESS'] },
@@ -157,7 +88,7 @@ class DispatchService {
 
     for (const da of nextTasks) {
       for (const task of da.assignments) {
-        const isResourceInvolved = resourceIds.some(id => 
+        const isResourceInvolved = resourceIds.some(id =>
           task.vehicleId?.toString() === id?.toString() ||
           task.driverIds?.some(dId => dId.toString() === id?.toString()) ||
           task.staffIds?.some(sId => sId.toString() === id?.toString())
@@ -389,19 +320,19 @@ class DispatchService {
     const slots = [];
     const baseDate = new Date(pickupTime);
     const popularHours = [7, 9, 14, 16]; // Popular hours: 7:00, 9:00, 14:00, 16:00
-    
+
     // Generate candidate slots for today and tomorrow
     const candidates = [];
-    
+
     // For today (starting from baseDate) and tomorrow
     for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
       const targetDate = new Date(baseDate);
       targetDate.setDate(targetDate.getDate() + dayOffset);
-      
+
       for (const hour of popularHours) {
         const candidate = new Date(targetDate);
         candidate.setHours(hour, 0, 0, 0);
-        
+
         // Only consider future slots compared to the current pickupTime
         if (candidate.getTime() > baseDate.getTime()) {
           candidates.push(candidate);
@@ -868,12 +799,13 @@ class DispatchService {
     console.log(`[BE] createDispatchAssignment initiated for invoice: ${invoiceId}`, dispatchData);
     const startTime = Date.now();
 
+
     const session = await mongoose.startSession();
     let resultAssignment;
-    let driverNotificationContext = null;
 
     try {
       await session.withTransaction(async () => {
+
         const invoice = await Invoice.findById(invoiceId)
           .populate({
             path: 'requestTicketId',
@@ -885,13 +817,14 @@ class DispatchService {
         if (!invoice) {
           throw new AppError('Invoice not found', 404);
         }
+        // ================================
+        // STEP 3: Save Assignment
+        // ================================
 
         let assignment = await DispatchAssignment.findOne({ invoiceId }).session(session);
+
         if (!assignment) {
           assignment = new DispatchAssignment({ invoiceId });
-          console.log(`[BE] createDispatchAssignment: Creating new DispatchAssignment document for invoice ${invoiceId}`);
-        } else {
-          console.log(`[BE] createDispatchAssignment: Reusing existing DispatchAssignment document for invoice ${invoiceId} (ID: ${assignment._id})`);
         }
 
         const surveyData = invoice.requestTicketId?.surveyDataId || {};
@@ -929,7 +862,7 @@ class DispatchService {
           if (totalStaff < idealStaffCount || feasibility.hasConflict) {
             // Even if staff count matches, if there's a conflict and we haven't forced it, we need resolution
             if (isResolutionNeeded && !dispatchData.forceProceed) {
-               throw new AppError('INSUFFICIENT_RESOURCES', 400);
+              throw new AppError('INSUFFICIENT_RESOURCES', 400);
             }
           }
         } catch (error) {
@@ -1026,7 +959,10 @@ class DispatchService {
 
         await assignment.save({ session });
 
-        // Step 4: Update invoice details
+        // ================================
+        // STEP 4: Update Invoice
+        // ================================
+
         invoice.dispatchAssignmentId = assignment._id;
         if (dispatchData.routeId) {
           invoice.routeId = dispatchData.routeId;
@@ -1138,14 +1074,8 @@ class DispatchService {
         resultAssignment = assignment;
       });
 
-      try {
-        await this.notifyDriversOnAssignment(driverNotificationContext);
-      } catch (notificationErr) {
-        // Driver notification is best-effort and must not block dispatch flow.
-        console.error('[BE] createDispatchAssignment: Driver notification failed', notificationErr);
-      }
-
       return resultAssignment;
+
     } catch (error) {
       throw error;
     } finally {
@@ -1153,115 +1083,32 @@ class DispatchService {
     }
   }
 
-  /**
-   * Confirm the dispatch assignment
-   */
-  async confirmDispatchAssignment(assignmentId) {
-    try {
-      const assignment = await DispatchAssignment.findById(assignmentId);
-      if (!assignment) {
-        throw new AppError('Assignment not found', 404);
-      }
+  // ================================
+  // EXISTING LOGIC (GIỮ NGUYÊN)
+  // ================================
 
-      // Mark all assignment records as CONFIRMED
-      assignment.assignments.forEach(a => {
-        a.status = 'CONFIRMED';
-        a.confirmedAt = new Date();
-      });
-
-      assignment.status = 'CONFIRMED';
-      await assignment.save();
-
-      return assignment;
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  /**
-   * Determine capacity status (Underutilized/Optimal/Full/Overload)
-   */
-  determineCapacityStatus(vehicleType, weight) {
+  async calculateVehicleNeeds(totalWeight, totalVolume) {
     const VEHICLE_SPECS = {
-      '500KG': { maxWeight: 500 },
-      '1TON': { maxWeight: 1000 },
-      '1.5TON': { maxWeight: 1500 },
-      '2TON': { maxWeight: 2000 }
+      '500KG': { maxWeight: 500, maxVolume: 5 },
+      '1TON': { maxWeight: 1000, maxVolume: 10 },
+      '1.5TON': { maxWeight: 1500, maxVolume: 15 },
+      '2TON': { maxWeight: 2000, maxVolume: 20 }
     };
 
-    const maxWeight = VEHICLE_SPECS[vehicleType]?.maxWeight || 1000;
-    const utilization = (weight / maxWeight) * 100;
+    const vehicleTypes = ['500KG', '1TON', '1.5TON', '2TON'];
 
-    if (utilization < 30) return 'UNDERUTILIZED';
-    if (utilization <= 85) return 'OPTIMAL';
-    if (utilization <= 100) return 'FULL';
-    return 'OVERLOAD';
-  }
-
-  /**
-   * Get maximum load capacity of a specific vehicle type
-   */
-  getVehicleCapacity(vehicleType) {
-    const VEHICLE_SPECS = {
-      '500KG': 500,
-      '1TON': 1000,
-      '1.5TON': 1500,
-      '2TON': 2000
-    };
-    return VEHICLE_SPECS[vehicleType] || 0;
-  }
-
-  /**
-   * Update or modify existing dispatch assignment
-   */
-  async updateDispatchAssignment(assignmentId, updateData) {
-    try {
-      const assignment = await DispatchAssignment.findById(assignmentId);
-      if (!assignment) {
-        throw new AppError('Assignment not found', 404);
-      }
-
-      // Allow changes only if the assignment is still in DRAFT
-      if (assignment.status !== 'DRAFT') {
-        throw new AppError('Cannot modify confirmed assignment', 400);
-      }
-
-      // Update data payload
-      if (updateData.assignments) {
-        assignment.assignments = updateData.assignments;
-      }
-
-      await assignment.save();
-      return assignment;
-    } catch (error) {
-      throw error;
-    }
-  }
-
-  /**
-   * Retrieve dispatch assignment by invoice ID
-   */
-  async getAssignmentByInvoice(invoiceId) {
-    return DispatchAssignment.findOne({ invoiceId })
-      .populate('assignments.vehicleId')
-      .populate('assignments.driverIds')
-      .populate('assignments.staffIds');
-  }
-
-  /**
-   * Find available, physically nearest staff members
-   */
-  async findNearestAvailableStaff(location, role, limit = 5, requiredSkills = []) {
-    let query = { role: role, status: 'Active' };
-    if (role === 'driver') {
-      query['driverProfile.isAvailable'] = true;
-      if (requiredSkills && requiredSkills.length > 0) {
-        query['driverProfile.skills'] = { $all: requiredSkills };
+    for (const type of vehicleTypes) {
+      const spec = VEHICLE_SPECS[type];
+      if (totalWeight <= spec.maxWeight && totalVolume <= spec.maxVolume) {
+        return [{ vehicleType: type, count: 1 }];
       }
     }
 
-    const staffList = await User.find(query);
-    if (!location || !location.coordinates || staffList.length === 0) return staffList.slice(0, limit);
+    const largest = VEHICLE_SPECS['2TON'];
+    const count = Math.ceil(Math.max(
+      totalWeight / largest.maxWeight,
+      totalVolume / largest.maxVolume
+    ));
 
     const point = turf.point(location.coordinates);
 
@@ -1411,11 +1258,11 @@ class DispatchService {
 
     // Calculate feasibility for the suggested squad
     const squadDispatchData = {
-        leaderId: suggested.rawTeam.leader?._id,
-        driverIds: (suggested.rawTeam.drivers || []).map(d => d._id),
-        staffIds: (suggested.rawTeam.helpers || []).map(h => h._id),
-        vehicles: [{ vehicleId: vehicle._id }],
-        dispatchTime: requestedTime
+      leaderId: suggested.rawTeam.leader?._id,
+      driverIds: (suggested.rawTeam.drivers || []).map(d => d._id),
+      staffIds: (suggested.rawTeam.helpers || []).map(h => h._id),
+      vehicles: [{ vehicleId: vehicle._id }],
+      dispatchTime: requestedTime
     };
     const feasibility = await this.evaluateFeasibility(squadDispatchData, neededCapacity, duration / 60);
 
