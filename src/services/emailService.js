@@ -16,6 +16,9 @@ const createTransporter = () =>
       pass: EMAIL_PASS,
     },
     tls: { rejectUnauthorized: false },
+     connectionTimeout: 10000, 
+    greetingTimeout: 5000,   
+    socketTimeout: 10000      
   });
 
 const ensureEmailConfig = () => {
