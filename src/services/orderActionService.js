@@ -7,7 +7,6 @@ const User = require('../models/User');
 const GeocodeService = require('./geocodeService');
 const PricingCalculationService = require('./pricingCalculationService');
 const RouteValidationService = require('./routeValidationService');
-const SurveyService = require('./surveyService');
 const SurveyData = require('../models/SurveyData');
 const PricingData = require('../models/PricingData');
 const Promotion = require('../models/Promotion');
