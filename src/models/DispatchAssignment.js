@@ -97,7 +97,7 @@ const dispatchAssignmentSchema = new mongoose.Schema({
   },
 
   notes: String,
-  
+
   feasibility: {
     staffingRatio: Number,
     staffingLevel: { type: String, enum: ['SAFE', 'WARNING', 'CRITICAL'] },
@@ -108,11 +108,7 @@ const dispatchAssignmentSchema = new mongoose.Schema({
     decision: { type: String, enum: ['BLOCK', 'ALLOW', 'CONFIRM', 'REQUIRE_CUSTOMER'] }
   },
 
-  understaffed: {
-    type: Boolean,
-    default: false
-  }
-
+  externalStaffUsed: { type: Boolean, default: false },
 }, { timestamps: true });
 
 // Query-Shaped Indexes for Atomic Overlap Checking

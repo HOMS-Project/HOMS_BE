@@ -103,11 +103,8 @@ const invoiceSchema = new mongoose.Schema(
       enum: ['NONE', 'PENDING_APPROVAL', 'ACCEPTED', 'REJECTED'],
       default: 'NONE',
     },
-    understaffedApproval: {
-      type: String,
-      enum: ['NONE', 'ACCEPT', 'REJECT'],
-      default: 'NONE',
-    },
+
+
 
     paidAmount: {
       type: Number,
