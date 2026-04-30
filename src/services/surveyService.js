@@ -77,7 +77,6 @@ class SurveyService {
    * Hoàn tất khảo sát & tính giá
    */
   async completeSurvey(requestTicketId, surveyData, userId) {
-
     // 1️⃣ Validate ticket
     const ticket = await RequestTicket.findById(requestTicketId);
     if (!ticket) {
@@ -277,8 +276,6 @@ class SurveyService {
 
   /**
    * Lấy khảo sát theo request ticket.
-   * For WAITING_REVIEW tickets (SPECIFIC_ITEMS / TRUCK_RENTAL): if no SurveyData exists yet,
-   * return a synthetic object built from ticket.items so the dispatcher form can pre-populate.
    */
   async getSurveyByTicket(requestTicketId) {
     const survey = await SurveyData.findOne({ requestTicketId })
@@ -288,20 +285,16 @@ class SurveyService {
       return survey;
     }
 
-    // If no survey is found, it's an error because one should have been created with the ticket
-    // for SPECIFIC_ITEMS/TRUCK_RENTAL, or scheduled for FULL_HOUSE.
     const ticket = await RequestTicket.findById(requestTicketId);
     if (!ticket) {
       throw new AppError('Không tìm thấy ticket', 404);
     }
 
-    // Fallback: If ticket is in WAITING_SURVEY status but somehow missing SurveyData record,
-    // we create a "baseline" record here (Self-healing logic).
     if (ticket.status === 'WAITING_SURVEY') {
       console.warn(`[getSurveyByTicket] Healing: Creating missing SurveyData for ticket ${requestTicketId}`);
       const newSurvey = new SurveyData({
         requestTicketId: ticket._id,
-        surveyType: 'ONLINE', // Default to online for safety
+        surveyType: 'ONLINE',
         status: 'SCHEDULED',
         surveyorId: ticket.dispatcherId || null,
         scheduledDate: ticket.scheduledTime || new Date()
@@ -356,7 +349,6 @@ class SurveyService {
         let source = item.source || 'USER';
 
         if (!volume || !weight) {
-          // Normalize type/name to match keys
           const key = (item.type || item.name || 'default').toLowerCase().replace(/\s+/g, '_');
           const base = ITEM_BASELINES[key] || ITEM_BASELINES.default;
           volume = volume || base.volume;
@@ -368,8 +360,9 @@ class SurveyService {
       });
     }
 
-    // 2. Workload Calculation
-    let workload = 0;
+    // 2. Workload Calculation TÁCH BIỆT TRỊ SỐ BÊ VÁC VÀ DỊCH VỤ
+    let transportWorkload = 0;
+    let serviceWorkload = 0;   
     let totalVolume = 0;
     let totalWeight = 0;
 
@@ -377,32 +370,33 @@ class SurveyService {
       totalVolume += item.actualVolume;
       totalWeight += item.actualWeight;
 
-      let baseCost = (BASE_HANDLING[item.category] || BASE_HANDLING.default) + item.actualVolume;
+      let baseHandling = (BASE_HANDLING[item.category] || BASE_HANDLING.default) + item.actualVolume;
       
-      if (item.actualWeight > 100) baseCost *= 2;
-      if (item.actualWeight > 200) baseCost *= 3;
-      if (item.isSpecialItem || item.condition === 'FRAGILE') baseCost *= 1.5;
-      if (item.requiresManualHandling) baseCost *= 1.2;
+      if (item.actualWeight > 100) baseHandling *= 2;
+      if (item.actualWeight > 200) baseHandling *= 3;
+      if (item.isSpecialItem || item.condition === 'FRAGILE') baseHandling *= 1.5;
+      if (item.requiresManualHandling) baseHandling *= 1.2;
 
-      workload += baseCost;
+      transportWorkload += baseHandling;
     });
 
+    // Tính điểm dịch vụ (Cộng thẳng, không bị nhân hệ số tầng sau này)
     if (needsPacking) {
-      workload += normalizedItems.length * 0.5;
+      serviceWorkload += normalizedItems.length * 0.5;
       reasons.push({ type: 'SERVICE', message: 'Packing service increases handling time', impact: 'MEDIUM' });
     }
 
     if (needsAssembling) {
-      workload += normalizedItems.length * 0.7;
+      serviceWorkload += normalizedItems.length * 0.7;
       reasons.push({ type: 'SERVICE', message: 'Assembly/disassembly required', impact: 'HIGH' });
     }
 
-    // Interaction penalty
+    // Interaction penalty chỉ áp dụng cho lúc khuân vác
     let interactionPenalty = 1;
     if (normalizedItems.length > 5 && normalizedItems.some(i => i.category === 'heavy')) {
       interactionPenalty = 1.1;
     }
-    workload *= interactionPenalty;
+    transportWorkload *= interactionPenalty;
 
     // Multipliers Stack
     let riskBuffer = 1;
@@ -412,7 +406,7 @@ class SurveyService {
       
       const aiCount = normalizedItems.filter(i => i.source === 'AI').length;
       if (aiCount === normalizedItems.length) {
-        riskBuffer += 0.1;
+        riskBuffer += 0.05;
       } else if (aiCount > 0) {
         riskBuffer += 0.05;
       }
@@ -429,24 +423,15 @@ class SurveyService {
     }
 
     const MAX_TOTAL_MULTIPLIER = 4.0;
+
     let totalMultiplier = Math.min(floorFactor * carryFactor * riskBuffer, MAX_TOTAL_MULTIPLIER);
+    transportWorkload = transportWorkload * totalMultiplier;
 
-    workload = Math.round(workload * totalMultiplier * 100) / 100;
 
-    // 3. Time Conversion & Staff Estimation
-    const WORKLOAD_TO_MINUTES = process.env.WORKLOAD_TO_MINUTES || 12;
-    const estimatedMinutes = Math.round(workload * WORKLOAD_TO_MINUTES);
-    
-    let suggestedStaffCount = 2; // Min staff
-    if (workload >= 18) suggestedStaffCount = 5;
-    else if (workload >= 10) suggestedStaffCount = 4;
-    else if (workload >= 5) suggestedStaffCount = 3;
+    serviceWorkload = serviceWorkload * riskBuffer; 
+    let workload = Math.round((transportWorkload + serviceWorkload) * 100) / 100;
 
-    if (normalizedItems.some(i => i.actualWeight > 200)) suggestedStaffCount = Math.max(suggestedStaffCount, 3);
-    const MAX_STAFF = 5;
-    suggestedStaffCount = Math.min(suggestedStaffCount, MAX_STAFF);
-
-    // 4. Vehicle Suggestion
+    // 3. Vehicle Suggestion 
     let suggestedVehicle = '500KG';
     let vehicleCapacity = 3; // base volume capacity
 
@@ -467,6 +452,28 @@ class SurveyService {
       routeWarnings.push(`Lưu ý: Xe ${suggestedVehicle} có thể bị cấm tải trong giờ cao điểm nội thành.`);
     }
 
+    // 4. Time Conversion & Staff Estimation
+    const WORKLOAD_TO_MINUTES = process.env.WORKLOAD_TO_MINUTES || 12;
+    const estimatedMinutes = Math.round(workload * WORKLOAD_TO_MINUTES);
+    
+    let suggestedStaffCount = 2; // Min staff
+    if (workload >= 18) suggestedStaffCount = 5;
+    else if (workload >= 10) suggestedStaffCount = 4;
+    else if (workload >= 5) suggestedStaffCount = 3;
+
+    if (normalizedItems.some(i => i.actualWeight > 200)) suggestedStaffCount = Math.max(suggestedStaffCount, 3);
+      const MAX_STAFF_OVERALL = 6; 
+    suggestedStaffCount = Math.min(suggestedStaffCount, MAX_STAFF_OVERALL);
+
+
+    if (suggestedStaffCount > 3 && (suggestedVehicle === '500KG' || suggestedVehicle === '1TON')) {
+      reasons.push({ 
+        type: 'LOGISTICS', 
+        message: `Đơn hàng cần ${suggestedStaffCount} nhân công nhưng xe ${suggestedVehicle} chỉ ngồi được 2-3 người. Thợ phụ cần chủ động đi xe máy riêng.`, 
+        impact: 'LOW' 
+      });
+    }
+
     // 5. Confidence Level
     let confidenceLevel = 'HIGH';
     if (normalizedItems.length > 0) {
@@ -477,6 +484,8 @@ class SurveyService {
 
     console.log('[estimateResources Debug]', JSON.stringify({
       workload,
+      transportWorkload,
+      serviceWorkload,
       multipliers: { riskBuffer, carryFactor, floorFactor, interactionPenalty, totalMultiplier },
       estimatedMinutes,
       staff: suggestedStaffCount,
@@ -498,9 +507,10 @@ class SurveyService {
       reasons,
       debug: {
         normalizedItems,
-        workloadBreakdown: { interactionPenalty, riskBuffer, carryFactor, floorFactor, totalMultiplier }
+        workloadBreakdown: { transportWorkload, serviceWorkload, interactionPenalty, riskBuffer, carryFactor, floorFactor, totalMultiplier }
       }
     };
   }
 }
+
 module.exports = new SurveyService();

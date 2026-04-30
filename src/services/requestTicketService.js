@@ -316,8 +316,12 @@ class RequestTicketService {
     if (!ticket) {
       throw new AppError('Request ticket không tồn tại', 404);
     }
+  const survey = await SurveyData.findOne({ requestTicketId: ticketId }).lean();
+  
+  const plain = mapDistrict(ticket);
 
-  return mapDistrict(ticket);
+  plain.surveyDetails = survey; 
+    return plain;
   }
 async _attachContractStatus(tickets) {
   const relevantIds = tickets
@@ -409,7 +413,17 @@ if (relevantIds.length === 0) {
       })
       .sort({ createdAt: -1 })
       .limit(filters.limit || 20)
-      .skip(filters.skip || 0);
+      .skip(filters.skip || 0)
+      .lean();
+          const ticketIds = tickets.map(t => t._id);
+    const surveys = await SurveyData.find({ requestTicketId: { $in: ticketIds } }).lean();
+      const surveyMap = {};
+    surveys.forEach(s => {
+      surveyMap[s.requestTicketId.toString()] = s;
+    });
+    tickets.forEach(t => {
+      t.surveyDetails = surveyMap[t._id.toString()] || null;
+    });
  const withContract = await this._attachContractStatus(tickets);
 
 return withContract.map(mapDistrict);

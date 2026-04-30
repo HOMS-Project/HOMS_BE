@@ -91,7 +91,13 @@ Text phản hồi khách: "Dạ để em tính giá cho mình nhé ạ!" (TUYỆ
   "movingType": "TRUCK_RENTAL | SPECIFIC_ITEMS | FULL_HOUSE",
   "data": { 
     "from": "Địa chỉ đi", "to": "Địa chỉ đến", "movingTime": "YYYY-MM-DDTHH:mm:00+07:00",
-    "items": [], "floors": 0, "hasElevator": false, "carryMeter": 0, 
+    "items": [
+      { 
+        "name": "Tên đồ đạc + tính từ/kích thước (VD: giường 1m8, tủ quần áo 3 cánh, sofa to, thùng carton nhỏ... BẮT BUỘC giữ nguyên tính từ miêu tả của khách)", 
+        "quantity": 1 
+      }
+    ], 
+    "floors": 0, "hasElevator": false, "carryMeter": 0, 
     "needsPacking": false, "needsAssembling": false, 
     "suggestedVehicle": "1TON", "rentalDurationHours": 2
   }
@@ -154,6 +160,7 @@ async function sendMessageBackToUser(facebookId, text) {
     return;
   }
   try {
+    await sendTypingIndicator(facebookId, false); 
     await axios.post(
       `https://graph.facebook.com/v25.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`,
       { recipient: { id: facebookId }, message: { text } }
@@ -245,8 +252,9 @@ let aiAction;
     const missing = requiredFields.filter(f => !aiAction.data[f]);
 
     if (missing.length > 0) {
-        await chat.sendMessage(`Hệ thống thiếu thông tin: ${missing.join(', ')}. Hãy hỏi khách hàng các thông tin này.`);
-        await sendMessageBackToUser(facebookId, "Dạ mình còn thiếu một vài thông tin quan trọng (Địa chỉ/Thời gian), anh/chị cho em xin lại nhé ạ!");
+         const followUp = await chat.sendMessage(`[HỆ THỐNG BÁO LỖI]: Không thể tính giá vì thiếu thông tin: ${missing.join(', ')}. Đóng vai CSKH, hãy khéo léo hỏi khách hàng cung cấp phần thông tin bị thiếu này.`);
+        session.history = await chat.getHistory();
+        await sendMessageBackToUser(facebookId, followUp.response.text().replace(/[*_#]/g, ''));
         return true;
     }
 
@@ -455,6 +463,12 @@ async function _processSingleUserMessage(facebookId, messageText, imageUrls) {
           if (newUploadedUrls.length > 0) {
             console.log(`[DEBUG] Tiến hành AI Vision cho ${newUploadedUrls.length} ảnh...`);
             const visionResult = await processIncomingImages(newUploadedUrls);
+             if (visionResult.isRelevant === false) {           
+                session.surveyDataCache.images.splice(-newUploadedUrls.length);
+                await sendTypingIndicator(facebookId, false);
+                return await sendMessageBackToUser(facebookId, "Dạ em thấy ảnh này có vẻ không phải là đồ đạc chuyển nhà 😅. Anh/chị gửi đúng ảnh phòng hoặc món đồ cần vận chuyển để em báo giá chính xác cho mình nhé!");
+            }
+
             session.visionItems = [...(session.visionItems || []), ...visionResult.items];
             session.visionWeight = (session.visionWeight || 0) + (visionResult.totalWeight || 0);
             finalMessage += `\n[HỆ THỐNG]: Đã quét ảnh mới, danh sách đồ: ${visionResult.systemMessage}`;
