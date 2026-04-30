@@ -34,44 +34,52 @@ async function analyzeImagesWithVision(imageParts, imageCount) {
     model: 'gemini-2.5-flash',
     generationConfig: {
       responseMimeType: 'application/json',
-      temperature: 0.1
+      temperature: 0.1 
     }
   });
 
+  
   const visionPrompt = `You are an expert moving logistics coordinator in Vietnam.
-Analyze the provided media (${imageCount} images) and identify ALL visible items across ALL images.
-IMPORTANT: Combine duplicates! If you see the same item (like a fridge) from different angles in different images, only list it ONCE.
-All text fields (name, notes) MUST be in Vietnamese.
-Return ONLY a valid JSON object. Use realistic estimated numbers for each item.
+Analyze the provided media (${imageCount} images).
 
-Example of a valid response format:
+STEP 1: CLASSIFICATION
+Determine if these images are RELEVANT to moving house, furniture, appliances, or packed boxes.
+If the images are Memes, Selfies, random internet pictures, documents, or clearly NOT related to moving logistics -> Set "isRelevant" to false.
+
+STEP 2: EXTRACTION (Only if isRelevant is true)
+Identify ALL visible items across ALL images. Combine duplicates!
+All text fields MUST be in Vietnamese.
+Return ONLY a valid JSON object.
+
+Example of IRRELEVANT response (Meme, selfie, etc.):
 {
+  "isRelevant": false,
+  "items": [],
+  "totalActualWeight": 0,
+  "totalActualVolume": 0,
+  "notes": "Ảnh không liên quan đến đồ đạc chuyển nhà"
+}
+
+Example of RELEVANT response:
+{
+  "isRelevant": true,
   "items": [
     {
       "name": "Đàn Piano",
-      "category": "primary",
       "actualWeight": 200,
-      "actualDimensions": { "length": 150, "width": 60, "height": 130 },
-      "actualVolume": 1.17,
-      "condition": "GOOD",
-      "notes": "Đàn piano đứng, cần cẩn thận"
+      "actualVolume": 1.17
     }
   ],
   "totalActualWeight": 200,
   "totalActualVolume": 1.17,
-  "totalActualItems": 1,
   "notes": "Tổng hợp đồ đạc từ tất cả ảnh"
 }
 
 Rules:
-- category: use 'primary' for large/heavy furniture; use 'secondary' for small items.
-- Estimate realistic weight (kg), dimensions (cm), and volume (m³) for EVERY item — do NOT use 0.
-- All numeric fields must be plain numbers.
-- Do not output Bounding Boxes to avoid parsing errors.
-- Do not add any extra fields, comments, or markdown. Return pure JSON only.`;
+- Estimate realistic weight (kg) and volume (m³) for EVERY item.
+- Return pure JSON only.`;
 
   try {
-    // Truyền vào Prompt và một mảng chứa TẤT CẢ các ảnh
     const result = await visionModel.generateContent([visionPrompt, ...imageParts]);
     return result.response.text();
   } catch (err) {
@@ -85,20 +93,29 @@ Rules:
 // ─────────────────────────────────────────────────────────────
 async function processIncomingImages(imageUrls) {
   try {
-    // 1. Tải và nén tất cả ảnh cùng lúc (chạy song song cho nhanh)
     const fetchPromises = imageUrls.map(url => fetchImageForGemini(url));
     const imageParts = (await Promise.all(fetchPromises)).filter(part => part !== null);
 
-    if (imageParts.length === 0) return { items: [], totalWeight: 0, totalVolume: 0, systemMessage: "" };
+    if (imageParts.length === 0) return { isRelevant: false, items: [], totalWeight: 0, totalVolume: 0, systemMessage: "" };
 
-    // 2. Gửi TẤT CẢ ảnh cho Gemini quét trong 1 lần duy nhất
     const visionJsonRaw = await analyzeImagesWithVision(imageParts, imageParts.length);
     if (!visionJsonRaw) throw new Error("Gemini không trả về kết quả.");
 
-    // 3. Parse JSON
     const cleanedJson = visionJsonRaw.replace(/```json/g, '').replace(/```/g, '').trim();
     const visionData = JSON.parse(cleanedJson);
 
+   
+    if (visionData.isRelevant === false) {
+       return { 
+         isRelevant: false, 
+         items: [], 
+         totalWeight: 0, 
+         totalVolume: 0, 
+         systemMessage: "Hệ thống phát hiện ảnh không phải đồ đạc chuyển nhà." 
+       };
+    }
+
+   
     const items = visionData.items || [];
     const totalWeight = visionData.totalActualWeight || 0;
     const totalVolume = visionData.totalActualVolume || 0;
@@ -106,11 +123,11 @@ async function processIncomingImages(imageUrls) {
     const itemNames = items.map(item => item.name).join(', ');
     const systemMessage = `Đã quét ${imageUrls.length} ảnh. Các món đồ nhận diện: [${itemNames}]. Tổng khối lượng: ~${totalWeight}kg.`;
 
-    return { items, totalWeight, totalVolume, systemMessage };
+    return { isRelevant: true, items, totalWeight, totalVolume, systemMessage };
   } catch (e) {
     console.error(`[Vision] Lỗi processIncomingImages:`, e.message);
-    return { items: [], totalWeight: 0, totalVolume: 0, systemMessage: "Gặp lỗi khi phân tích ảnh." };
+    return { isRelevant: false, items: [], totalWeight: 0, totalVolume: 0, systemMessage: "Gặp lỗi khi phân tích ảnh." };
   }
 }
 
-module.exports = { fetchImageForGemini, analyzeImagesWithVision, processIncomingImages };
+module.exports = { processIncomingImages };
