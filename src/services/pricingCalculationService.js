@@ -24,6 +24,12 @@ class PricingCalculationService {
      2️⃣ MAIN CALCULATION (NO DB SAVE HERE)
   ===================================================== */
   async calculatePricing(surveyData, priceList, moveType) {
+    // console.log('\n--- DEBUG [calculatePricing] ---');
+    // console.log('moveType:', moveType);
+    // console.log('surveyData.suggestedStaffCount:', surveyData?.suggestedStaffCount, 'type:', typeof surveyData?.suggestedStaffCount);
+    // console.log('surveyData:', JSON.stringify(surveyData, null, 2));
+    // console.log('--------------------------------\n');
+
     if (!surveyData) {
       throw new AppError('Thiếu dữ liệu khảo sát', 400);
     }
@@ -82,9 +88,7 @@ class PricingCalculationService {
 
     let driverFee = 0;
     const laborConfig = priceList.laborCost || {};
-    driverFee =
-      ((laborConfig.pricePerHourPerPerson || 0) * duration +
-      (laborConfig.basePricePerPerson || 0)) * totalStaff;
+    driverFee = totalStaff * (laborConfig.pricePerHourPerPerson || 0) * duration;
 
     // For TRUCK_RENTAL, we only charge for duration and extra labor, ignore distance fee.
     const kmFee = 0;
@@ -108,7 +112,7 @@ class PricingCalculationService {
       insuranceFee: 0,
       managementFee: 0,
       estimatedHours: duration,
-      suggestedVehicle: suggestedVehicle,
+      suggestedVehicles: vehiclesToCalc,
       suggestedStaffCount: Number(suggestedStaffCount) || 1
     };
 
@@ -126,18 +130,39 @@ class PricingCalculationService {
   ----------------------------------------------------- */
  _calcSpecificItems(surveyData, priceList) {
 
-  const { distanceKm = 0, suggestedStaffCount = 2, estimatedHours = 2 } = surveyData;
+  const { distanceKm = 0, suggestedStaffCount = 2, estimatedHours = 2, suggestedVehicles = [], suggestedVehicle } = surveyData;
 
-  const vehicleConfig = priceList.vehiclePricing?.find(v => v.vehicleType === '500KG')
-    || priceList.vehiclePricing?.[0];
-  const vehicleFee = vehicleConfig
-    ? (vehicleConfig.basePriceForFirstXKm || 0)
-      + Math.max(0, distanceKm - (vehicleConfig.limitKm || 0)) * (vehicleConfig.pricePerNextKm || 0)
-    : 500000 + distanceKm * 10000;
+  let vehiclesToCalc = [...suggestedVehicles];
+  if (vehiclesToCalc.length === 0 && suggestedVehicle) {
+    vehiclesToCalc = [{ vehicleType: suggestedVehicle, count: 1 }];
+  }
+  if (vehiclesToCalc.length === 0) {
+    vehiclesToCalc = [{ vehicleType: '500KG', count: 1 }]; // Default if none selected
+  }
+
+  let vehicleFee = 0;
+  vehiclesToCalc.forEach(v => {
+    const vehicleConfig = priceList.vehiclePricing?.find(vp => vp.vehicleType === v.vehicleType)
+      || priceList.vehiclePricing?.[0];
+    
+    if (vehicleConfig) {
+      vehicleFee += (vehicleConfig.basePriceForFirstXKm || 0)
+        + Math.max(0, distanceKm - (vehicleConfig.limitKm || 0)) * (vehicleConfig.pricePerNextKm || 0) * (v.count || 1);
+    } else {
+      vehicleFee += (500000 + distanceKm * 10000) * (v.count || 1); // Extra fallback
+    }
+  });
 
   const laborConfig = priceList.laborCost || {};
-  const laborFee = suggestedStaffCount
-    * ((laborConfig.basePricePerPerson || 0) + (laborConfig.pricePerHourPerPerson || 0) * estimatedHours);
+  const laborFee = (Number(suggestedStaffCount) || 2) * (laborConfig.pricePerHourPerPerson || 0) * estimatedHours;
+    
+  // console.log('\n--- DEBUG [laborFee] ---');
+  // console.log('suggestedStaffCount:', suggestedStaffCount, 'parsed:', (Number(suggestedStaffCount) || 2));
+  // console.log('estimatedHours:', estimatedHours);
+  // console.log('laborConfig:', JSON.stringify(laborConfig));
+  // console.log('laborFee calculated:', laborFee);
+  // console.log('------------------------\n');
+
   const subtotal = vehicleFee + laborFee;
 
   const breakdown = {
@@ -152,13 +177,14 @@ class PricingCalculationService {
     packingFee: 0,
     insuranceFee: 0,
     managementFee: 0,
-    estimatedHours
+    estimatedHours,
+    suggestedVehicles: vehiclesToCalc,
+    suggestedStaffCount: Number(suggestedStaffCount) || 2
   };
 
   const taxRate = priceList.taxRate !== undefined ? priceList.taxRate : 0.1;
   return this._formatResponse(subtotal, breakdown, priceList, taxRate);
 }
-
 
   /* -----------------------------------------------------
      C. TÍNH GIÁ CHUYỂN NHÀ TRỌN GÓI (FULL HOUSE)
@@ -235,10 +261,8 @@ class PricingCalculationService {
 
     // 3️⃣ Phí Nhân Công
     const laborConfig = priceList.laborCost || {};
-    const laborFee =
-      suggestedStaffCount *
-      ((laborConfig.basePricePerPerson || 0) +
-        (laborConfig.pricePerHourPerPerson || 0) * estimatedHours);
+    const parsedStaffCount = Number(suggestedStaffCount) || 0;
+    const laborFee = parsedStaffCount * (laborConfig.pricePerHourPerPerson || 0) * estimatedHours;
 
     // 4️⃣ Phụ phí di chuyển
     const movingSurcharge = priceList.movingSurcharge || {};
@@ -308,7 +332,9 @@ class PricingCalculationService {
       packingFee,
       insuranceFee,
       managementFee,
-      estimatedHours
+      estimatedHours,
+      suggestedVehicles: vehiclesToCalc,
+      suggestedStaffCount: Number(suggestedStaffCount) || 0
     };
 
     const taxRate = priceList.taxRate !== undefined ? priceList.taxRate : 0.1;
@@ -323,9 +349,18 @@ class PricingCalculationService {
     const minimumCharge = priceList?.basePrice?.minimumCharge || 0;
     let minApplied = false;
 
+    // console.log('\n--- DEBUG [formatResponse] ---');
+    // console.log('original subtotal:', subtotal);
+    // console.log('minimumCharge:', minimumCharge);
+    // console.log('breakdown:', breakdown);
+
     if (finalSubtotal < minimumCharge) {
       finalSubtotal = minimumCharge;
       minApplied = true;
+      // You should probably distribute the difference or put it in a specific field
+      // so the Frontend doesn't have a mismatch between breakdown sum and subtotal.
+      // breakdown.minimumChargeSurcharge = minimumCharge - subtotal;
+      console.log('Minimum charge applied. Changing subtotal to', finalSubtotal);
     }
 
     const tax = Math.round(finalSubtotal * taxRate);
