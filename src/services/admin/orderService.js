@@ -67,7 +67,35 @@ async function listOrders({ page = 1, limit = 20, status, from, to, search }) {
     };
   });
 
-  return { items: normalized, total, page: Number(page), limit: Number(limit) };
+  // Compute metrics across the full matched set (not limited by pagination)
+  const agg = await RequestTicket.aggregate([
+    { $match: q },
+    {
+      $group: {
+        _id: null,
+        totalOrders: { $sum: 1 },
+        totalValue: { $sum: { $ifNull: [ '$pricing.totalPrice', 0 ] } },
+        converted: { $sum: { $cond: [ { $eq: [ '$status', 'CONVERTED' ] }, 1, 0 ] } }
+      }
+    }
+  ]).exec();
+
+  const metricsRaw = (agg && agg[0]) ? agg[0] : { totalOrders: 0, totalValue: 0, converted: 0 };
+  const totalOrdersMetric = metricsRaw.totalOrders || 0;
+  const totalValueMetric = metricsRaw.totalValue || 0;
+  const convertedMetric = metricsRaw.converted || 0;
+  const avgMetric = totalOrdersMetric ? Math.round(totalValueMetric / totalOrdersMetric) : 0;
+  const conversionRateMetric = totalOrdersMetric ? Math.round((convertedMetric / totalOrdersMetric) * 100) : 0;
+
+  const metrics = {
+    totalOrders: totalOrdersMetric,
+    totalValue: totalValueMetric,
+    avg: avgMetric,
+    converted: convertedMetric,
+    conversionRate: conversionRateMetric
+  };
+
+  return { items: normalized, total, page: Number(page), limit: Number(limit), metrics };
 }
 
 module.exports = {
