@@ -151,10 +151,6 @@ async function listOrders({ page = 1, limit = 20, status, from, to, search, sour
   return { items: normalized, total, page: Number(page), limit: Number(limit), metrics, charts };
 }
 
-module.exports = {
-  listOrders
-};
-
 /**
  * Get single request ticket with pricing snapshot and service type details
  */
