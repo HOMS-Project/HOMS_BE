@@ -112,10 +112,17 @@ async function listOrders({ page = 1, limit = 20, status, from, to, search }) {
 
   const statusAgg = await RequestTicket.aggregate([
     { $match: q },
-    { $group: { _id: '$status', value: { $sum: 1 } } }
+    { $group: { _id: '$status', value: { $sum: 1 }, notes: { $push: '$notes' } } },
+    { $project: {
+        _id: 0,
+        name: '$_id',
+        value: 1,
+        // filter out null/empty notes and take up to 5 samples
+        notes: { $slice: [ { $filter: { input: '$notes', as: 'n', cond: { $and: [ { $ne: ['$$n', null] }, { $ne: ['$$n', ''] } ] } } }, 5 ] }
+    } }
   ]).exec();
 
-  const statusDistribution = statusAgg.map(s => ({ name: s._id, value: s.value }));
+  const statusDistribution = statusAgg.map(s => ({ name: s.name, value: s.value, notes: s.notes || [] }));
 
   const charts = { timeseries, statusDistribution };
 
