@@ -95,7 +95,31 @@ async function listOrders({ page = 1, limit = 20, status, from, to, search }) {
     conversionRate: conversionRateMetric
   };
 
-  return { items: normalized, total, page: Number(page), limit: Number(limit), metrics };
+  // Timeseries aggregation (group by day) and status distribution for charts
+  const timeseriesAgg = await RequestTicket.aggregate([
+    { $match: q },
+    {
+      $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+        count: { $sum: 1 },
+        value: { $sum: { $ifNull: [ '$pricing.totalPrice', 0 ] } }
+      }
+    },
+    { $sort: { '_id': 1 } }
+  ]).exec();
+
+  const timeseries = timeseriesAgg.map(t => ({ date: t._id, count: t.count, value: t.value }));
+
+  const statusAgg = await RequestTicket.aggregate([
+    { $match: q },
+    { $group: { _id: '$status', value: { $sum: 1 } } }
+  ]).exec();
+
+  const statusDistribution = statusAgg.map(s => ({ name: s._id, value: s.value }));
+
+  const charts = { timeseries, statusDistribution };
+
+  return { items: normalized, total, page: Number(page), limit: Number(limit), metrics, charts };
 }
 
 module.exports = {
