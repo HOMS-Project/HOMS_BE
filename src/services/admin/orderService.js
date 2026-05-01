@@ -189,3 +189,5 @@ module.exports = {
   listOrders,
   getOrderById
 };
+// Backwards compatibility: some callers may expect orderService.getOrder
+module.exports.getOrder = module.exports.getOrderById;
