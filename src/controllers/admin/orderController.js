@@ -21,6 +21,17 @@ const listOrders = async (req, res) => {
   }
 };
 
+const getOrder = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const payload = await orderService.getOrderById(id);
+    return res.status(200).json({ success: true, data: payload });
+  } catch (err) {
+    return sendError(res, err);
+  }
+};
+
 module.exports = {
-  listOrders
+  listOrders,
+  getOrder
 };

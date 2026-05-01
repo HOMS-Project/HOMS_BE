@@ -132,3 +132,42 @@ async function listOrders({ page = 1, limit = 20, status, from, to, search }) {
 module.exports = {
   listOrders
 };
+
+/**
+ * Get single request ticket with pricing snapshot and service type details
+ */
+async function getOrderById(id) {
+  if (!id) throw new Error('Missing id');
+  const rt = await RequestTicket.findById(id).lean().exec();
+  if (!rt) throw new Error('Not found');
+
+  // attach pricing snapshot if present
+  let pricingSnap = null;
+  if (rt.pricing && rt.pricing.pricingDataId) {
+    pricingSnap = await PricingData.findById(rt.pricing.pricingDataId).lean().exec();
+  }
+
+  // determine service type from moveType or rentalDetails
+  let serviceType = 'Chuyển đồ lẻ';
+  if (rt.moveType === 'FULL_HOUSE') serviceType = 'Chuyển nhà trọn gói';
+  else if (rt.moveType === 'TRUCK_RENTAL' || (rt.rentalDetails && rt.rentalDetails.truckType)) serviceType = 'Thuê xe';
+
+  // attach customer basic info
+  let customer = null;
+  if (rt.customerId) {
+    const u = await User.findById(rt.customerId).lean().exec();
+    if (u) customer = { fullName: u.fullName, phone: u.phone, email: u.email };
+  }
+
+  return {
+    ...rt,
+    pricingSnapshot: pricingSnap,
+    serviceType,
+    customer
+  };
+}
+
+module.exports = {
+  listOrders,
+  getOrderById
+};
