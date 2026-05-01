@@ -15,7 +15,8 @@ const listOrders = async (req, res) => {
     const search = req.query.search || '';
       const source = req.query.source || undefined;
 
-      const payload = await orderService.listOrders({ page, limit, status, from, to, search, source });
+    const summary = req.query.summary === 'true';
+    const payload = await orderService.listOrders({ page, limit, status, from, to, search, source, summary });
     return res.status(200).json({ success: true, data: payload });
   } catch (err) {
     return sendError(res, err);

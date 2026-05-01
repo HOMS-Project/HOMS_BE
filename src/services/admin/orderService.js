@@ -37,15 +37,25 @@ async function listOrders({ page = 1, limit = 20, status, from, to, search, sour
 
   const skip = (Number(page) - 1) * Number(limit);
 
-  const [items, total] = await Promise.all([
-    RequestTicket.find(q)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit))
-      .lean()
-      .exec(),
-    RequestTicket.countDocuments(q)
-  ]);
+  // if summary requested, return empty items (frontend should use metrics/charts)
+  let items = [];
+  let total = 0;
+  if (!summary) {
+    const results = await Promise.all([
+      RequestTicket.find(q)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .lean()
+        .exec(),
+      RequestTicket.countDocuments(q)
+    ]);
+    items = results[0];
+    total = results[1];
+  } else {
+    // only compute total for metrics/charts
+    total = await RequestTicket.countDocuments(q);
+  }
 
   // Attach pricing snapshot if available
   const pricingIds = items.map(i => i.pricing && i.pricing.pricingDataId).filter(Boolean);
