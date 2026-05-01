@@ -6,18 +6,20 @@ const User = require('../../models/User');
  * Get paginated request tickets for admin panel.
  * Supports filters: status, from,to (dates), search (code/customer phone/name)
  */
-async function listOrders({ page = 1, limit = 20, status, from, to, search, source } = {}) {
+async function listOrders({ page = 1, limit = 20, status, from, to, search, source, summary = false } = {}) {
   const q = {};
   if (status) q.status = status;
 
   // source filter: fanpage orders are those created from AI BOT notes marker
-  const aiTag = '[TẠO TỪ AI BOT - GỬI QUOTED CHO KHÁCH]';
+  // use a RegExp object and match substring to be more robust
+  const aiSubstr = 'TẠO TỪ AI BOT';
+  const aiRegex = new RegExp(aiSubstr, 'i');
   if (source === 'FACEBOOK') {
-    // ensure notes contain the aiTag (case-insensitive)
-    q.notes = { $regex: aiTag.replace(/[\[\]]/g, '\\$&'), $options: 'i' };
+    // ensure notes contain the ai substring (case-insensitive)
+    q.notes = aiRegex;
   } else if (source === 'WEB') {
     // web: exclude AI-tagged notes
-    q.notes = { $not: { $regex: aiTag.replace(/[\[\]]/g, '\\$&'), $options: 'i' } };
+    q.notes = { $not: aiRegex };
   }
 
   if (from || to) {
