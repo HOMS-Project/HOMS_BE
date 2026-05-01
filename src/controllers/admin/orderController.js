@@ -13,8 +13,9 @@ const listOrders = async (req, res) => {
     const from = req.query.from || undefined;
     const to = req.query.to || undefined;
     const search = req.query.search || '';
+      const source = req.query.source || undefined;
 
-    const payload = await orderService.listOrders({ page, limit, status, from, to, search });
+      const payload = await orderService.listOrders({ page, limit, status, from, to, search, source });
     return res.status(200).json({ success: true, data: payload });
   } catch (err) {
     return sendError(res, err);
