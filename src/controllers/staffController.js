@@ -247,6 +247,8 @@ exports.getOrderDetails = async (req, res, next) => {
         assignmentId: personalAssignment?._id || null,
         assignmentStatus: personalAssignment?.status || null,
         orderCode: ticket.code,
+        moveType: ticket.moveType,
+        rentalDetails: ticket.rentalDetails,
         status: invoice.status,
         pickup: {
           ...ticket.pickup,
