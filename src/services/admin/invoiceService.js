@@ -10,7 +10,8 @@ const getInvoiceById = async (id) => {
 
     const invoice = await Invoice.findById(id)
       .populate('customerId', 'fullName phone email')
-  .populate({ path: 'requestTicketId', select: 'pickup delivery code' })
+  // include moveType so callers can know which service (truck rental / full house / specific items)
+  .populate({ path: 'requestTicketId', select: 'pickup delivery code moveType rentalDetails' })
       .populate({
         path: 'dispatchAssignmentId',
         populate: [
@@ -128,7 +129,7 @@ const getInvoices = async ({ page = 1, limit = 20, search = '', status } = {}) =
         .skip(skip)
         .limit(Number(limit))
         .populate('customerId', 'fullName phone email')
-  .populate({ path: 'requestTicketId', select: 'pickup delivery code' })
+  .populate({ path: 'requestTicketId', select: 'pickup delivery code moveType rentalDetails' })
         .populate({
           path: 'dispatchAssignmentId',
           populate: [
@@ -304,6 +305,24 @@ const getEinvoiceData = async (id) => {
 
   const customer = inv.customer || { fullName: inv.customerId?.fullName || '', phone: inv.customerId?.phone || '', email: inv.customerId?.email || '' };
 
+  // derive a human-friendly service name from moveType/rentalDetails
+  const deriveServiceName = (inv) => {
+    const mt = inv.requestTicketId?.moveType || inv.moveType || '';
+    if (!mt) return 'Dịch vụ vận chuyển';
+    switch (String(mt).toUpperCase()) {
+      case 'TRUCK_RENTAL':
+        return 'Thuê xe tải';
+      case 'FULL_HOUSE':
+      case 'FULLSERVICE':
+        return 'Chuyển nhà trọn gói';
+      case 'SPECIFIC_ITEMS':
+      default:
+        return 'Chuyển đồ lẻ';
+    }
+  };
+
+  const serviceName = deriveServiceName(inv);
+
   return {
     company,
     invoice: {
@@ -315,6 +334,7 @@ const getEinvoiceData = async (id) => {
     customer,
     pickup: inv.pickup || null,
     delivery: inv.delivery || null,
+    serviceName,
     items,
     totals: {
       subtotal,
