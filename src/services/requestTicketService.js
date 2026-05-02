@@ -17,6 +17,9 @@ const AutoAssignmentService = require('./AutoAssignmentService');
 const TicketStateMachine = require('./TicketStateMachine');
 const Contract = require('../models/Contract');
 const { formatDistrict } = require('../utils/districtMap');
+const mongoose = require('mongoose');
+const Message = require('../models/Message');
+
 // Using strategies for transition logic now. 
 // Old STATE_TRANSITIONS moved/delegated to individual strategies.
 
@@ -42,12 +45,71 @@ class RequestTicketService {
     const io = getIo();
     const strategy = StrategyFactory.getStrategy(ticket.moveType);
 
-    return await strategy.handleApproval(ticket, approverId, { surveyorId }, io);
+  const updatedTicket = await strategy.handleApproval(ticket, approverId, { surveyorId }, io);
+
+  // Send auto-greeting message transactionally
+  if (ticket.dispatcherId && !ticket.hasSentGreeting) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      // 1. Greeting Message from Dispatcher
+      const greetingMsg = new Message({
+        senderId: ticket.dispatcherId, // Set to actual dispatcher ID
+        recipientId: ticket.customerId,
+        context: { type: 'RequestTicket', refId: ticket._id },
+        content: `Xin chào! Tôi là điều phối viên sẽ hỗ trợ bạn trong suốt quá trình chuyển dọn.`,
+        type: 'Text' // Use Text type for normal bubble rendering
+      });
+
+      // 2. Media Prompt Message from Dispatcher
+      const promptMsg = new Message({
+        senderId: ticket.dispatcherId,
+        recipientId: ticket.customerId,
+        context: { type: 'RequestTicket', refId: ticket._id },
+        content: `Để chúng tôi báo giá chính xác nhất, bạn vui lòng gửi thêm hình ảnh hoặc video quay lại khu vực và đồ đạc cần vận chuyển nhé.`,
+        type: 'Text'
+      });
+
+      await Message.insertMany([greetingMsg, promptMsg], { session });
+
+      ticket.hasSentGreeting = true;
+      await ticket.save({ session });
+
+      await session.commitTransaction();
+
+      // 3. Emit real-time messages to the room
+      const io = getIo();
+      [greetingMsg, promptMsg].forEach(msg => {
+        io.to(ticket.code).emit('receive_message', {
+          _id: msg._id,
+          roomId: ticket.code,
+          message: msg.content,
+          type: msg.type,
+          senderId: ticket.dispatcherId,
+          time: new Date().toISOString()
+        });
+      });
+
+      // 4. Notify customer (since they are receiving automated messages)
+      await NotificationService.createNotification({
+        userId: ticket.customerId,
+        title: "Tin nhắn mới từ Điều phối viên",
+        message: "Vui lòng cung cấp hình ảnh/video khảo sát.",
+        type: "System",
+        ticketId: ticket._id
+      }, io);
+
+    } catch (err) {
+      await session.abortTransaction();
+      console.error('[RequestTicketService] Auto-greeting failed:', err);
+    } finally {
+      session.endSession();
+    }
   }
 
-  /**
-   * Tạo request ticket mới
-   */
+  return updatedTicket || ticket;
+}
+
   async createTicket(data, customerId) {
     // Evaluate strategy based on moveType
     const strategy = StrategyFactory.getStrategy(data.moveType);
