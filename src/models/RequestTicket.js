@@ -124,6 +124,8 @@ const requestTicketSchema = new mongoose.Schema({
     policyNumber: String           // Số hợp đồng bảo hiểm
   },
 
+  hasSentGreeting: { type: Boolean, default: false },
+
   notes: String
 
 }, { timestamps: true });

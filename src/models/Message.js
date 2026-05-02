@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const messageSchema = new mongoose.Schema({
-  senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
   recipientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 
   context: {
@@ -16,7 +16,7 @@ const messageSchema = new mongoose.Schema({
 
   type: {
     type: String,
-    enum: ['Text', 'Media', 'Location', 'Call'],
+    enum: ['Text', 'Media', 'Location', 'Call', 'System'],
     default: 'Text'
   },
 
@@ -43,6 +43,9 @@ const messageSchema = new mongoose.Schema({
       readAt: Date
     }
   ],
+
+  isEdited: { type: Boolean, default: false },
+  editedAt: Date,
 
   isDeleted: { type: Boolean, default: false },
   deletedAt: Date

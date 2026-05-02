@@ -35,6 +35,38 @@ class NotificationService {
     );
   }
 
+  static async createDebouncedMessageNotification({ userId, ticketId, senderName, messageContent }) {
+    // 5-minute debounce window
+    const debounceMs = 5 * 60 * 1000;
+    const sinceDate = new Date(Date.now() - debounceMs);
+
+    // Check if we already sent a NEW_MESSAGE notification for this ticket recently
+    const recentNotification = await Notification.findOne({
+      userId,
+      ticketId,
+      type: 'System', // Using 'System' as generic for now, could be 'New_Message'
+      title: new RegExp(`Tin nhắn mới từ ${senderName}`),
+      createdAt: { $gte: sinceDate }
+    });
+
+    if (recentNotification) {
+      // Skip pushing a new one to prevent spam
+      return null;
+    }
+
+    // Snippet for safe body text
+    const displayMsg = messageContent && messageContent.length > 50 
+        ? messageContent.substring(0, 47) + '...' 
+        : messageContent;
+
+    return await this.createNotification(
+       userId,
+       ticketId,
+       `Tin nhắn mới từ ${senderName}`,
+       displayMsg || 'Bạn có tin nhắn mới hình ảnh/video',
+       'System'
+    );
+  }
 }
 
 module.exports = NotificationService;

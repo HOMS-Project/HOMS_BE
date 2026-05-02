@@ -176,6 +176,7 @@ const aiRoutes = require("./routes/aiRoutes");
 const promotionRoutes = require('./routes/promotionRoutes');
 const facebookRoutes = require('./routes/facebookRoutes');
 const insuranceRoutes = require('./routes/insuranceRoutes');
+const messageRoutes = require('./routes/messages');
 
 app.use("/api/auth", authRoutes);
 app.use("/api/staff", staffRoutes);
@@ -194,6 +195,7 @@ app.use("/api/ai", aiRoutes);
 app.use('/api/promotions', promotionRoutes);
 app.use('/api/facebook',facebookRoutes);
 app.use('/api/insurance', insuranceRoutes);
+app.use('/api/messages', messageRoutes);
 
 app.use("/api/admin/users", adminUserRoutes);
 app.use("/api/admin/statistics", adminStatisticRoutes);
