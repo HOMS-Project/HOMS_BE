@@ -14,7 +14,7 @@ ticketId: {
 
   type: {
     type: String,
-    enum: ['Payment', 'System', 'Assignment']
+    enum: ['Payment', 'System', 'Assignment', 'WARNING', 'account']
   },
 
   isRead: { type: Boolean, default: false }
