@@ -63,7 +63,7 @@ exports.getAssignedOrders = async (req, res, next) => {
         path: "invoiceId",
         populate: {
           path: "requestTicketId",
-          select: "code pickup delivery items customerId",
+          select: "code pickup delivery items customerId moveType",
         },
       })
       .populate("assignments.routeId")
@@ -95,6 +95,7 @@ exports.getAssignedOrders = async (req, res, next) => {
           pickup: ticket.pickup,
           delivery: ticket.delivery,
           scheduledTime: invoice.scheduledTime,
+          moveType: ticket.moveType,
           items: ticket.items,
         };
       })
