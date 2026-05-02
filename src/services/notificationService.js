@@ -34,7 +34,11 @@ class NotificationService {
       { new: true }
     );
   }
-
+static async notifyCustomer(userId, eventName, payload, io) {
+  if (io) {
+    io.to(userId.toString()).emit(eventName, payload);
+  }
+}
   static async createDebouncedMessageNotification({ userId, ticketId, senderName, messageContent }) {
     // 5-minute debounce window
     const debounceMs = 5 * 60 * 1000;
