@@ -323,6 +323,12 @@ const getEinvoiceData = async (id) => {
 
   const serviceName = deriveServiceName(inv);
 
+  // If the service is truck rental, e-invoice should only show the delivery/receive address
+  // (labeled 'Nhận' in the UI). Omit the pickup ('Lấy') field for TRUCK_RENTAL to match requirement.
+  const mt = inv.requestTicketId?.moveType || inv.moveType || '';
+  const isTruckRental = String(mt).toUpperCase() === 'TRUCK_RENTAL';
+  const pickupToReturn = isTruckRental ? null : (inv.pickup || null);
+
   return {
     company,
     invoice: {
@@ -332,7 +338,7 @@ const getEinvoiceData = async (id) => {
       scheduledTime: inv.scheduledTime || null
     },
     customer,
-    pickup: inv.pickup || null,
+    pickup: pickupToReturn,
     delivery: inv.delivery || null,
     serviceName,
     items,
