@@ -220,7 +220,21 @@ class SurveyService {
       userId,
       payload: { pricing: pricingData }
     });
-
+const io = getIo();
+    await NotificationService.createNotification(
+      {
+        userId: ticket.customerId,
+        ...T.QUOTE_READY({ ticketCode: ticket.code }),
+        ticketId: ticket._id
+      },
+      io
+    );
+    if (io) {
+      const socketId = global.onlineUsers?.get(ticket.customerId.toString());
+      if (socketId) {
+        io.to(socketId).emit("ticket_updated", { ticketId: ticket._id });
+      }
+    }
     return {
       survey: freshSurvey,
       pricing: pricingData

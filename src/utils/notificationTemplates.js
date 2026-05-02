@@ -224,6 +224,11 @@ exports.USER_UNBANNED = () => ({
   type: 'account',
 });
 
+exports.QUOTE_READY = ({ ticketCode }) => ({
+  title: 'Đã có báo giá mới',
+  message: `Đơn hàng #${ticketCode} của bạn đã được khảo sát và lên báo giá chi tiết. Vui lòng kiểm tra đơn hàng.`,
+  type: 'System',
+});
 /* ── Contracts & payments ────────────────────────────────── */
 
 /**
