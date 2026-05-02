@@ -419,38 +419,55 @@ class DispatchService {
 
   async notifyDriversOnAssignment(context) {
     const candidateIds = Array.isArray(context?.driverIds) ? context.driverIds : [];
-    if (candidateIds.length === 0) return;
+    console.log(`[BE] notifyDriversOnAssignment: candidateIds =`, candidateIds);
 
-    // Some dispatcher flows may place a driver account into staffIds.
-    // We notify by role=driver to ensure real drivers always receive assignment alerts.
-    const driverUsers = await User.find({
-      _id: { $in: candidateIds },
-      role: 'driver'
-    })
-      .select('_id')
-      .lean();
+    if (candidateIds.length === 0) {
+      console.warn('[BE] notifyDriversOnAssignment: Không có ID nào trong context, bỏ qua.');
+      return;
+    }
 
-    const driverIds = [...new Set(driverUsers.map((u) => u._id.toString()))];
-    if (driverIds.length === 0) return;
+    // Gửi trực tiếp cho tất cả IDs — không cần filter theo role DB
+    // driverIds đã được build chính xác từ assignmentRecords (leader + drivers + staff)
+    const notifyIds = [...new Set(
+      candidateIds
+        .map((id) => (id ? id.toString() : ''))
+        .filter(Boolean)
+    )];
 
-    const message = context?.requestCode
-      ? `Bạn vừa được phân công yêu cầu ${context.requestCode}. Vui lòng kiểm tra chi tiết để thực hiện.`
-      : 'Bạn vừa được phân công một yêu cầu mới. Vui lòng kiểm tra chi tiết để thực hiện.';
+    if (notifyIds.length === 0) {
+      console.warn('[BE] notifyDriversOnAssignment: notifyIds rỗng sau khi lọc, bỏ qua.');
+      return;
+    }
 
-    const jobs = driverIds.map((driverId) =>
-      NotificationService.createNotification({
-        userId: driverId,
-        ...T.DRIVER_NEW_ASSIGNMENT({ requestCode: context?.requestCode }),
-        ticketId: context?.ticketId || undefined
-      })
-    );
+    console.log(`[BE] notifyDriversOnAssignment: Gửi thông báo đến ${notifyIds.length} người (requestCode: ${context?.requestCode}, ticketId: ${context?.ticketId})`);
+
+    const mongoose = require('mongoose');
+    const jobs = notifyIds.map(async (userId) => {
+      try {
+        const result = await NotificationService.createNotification({
+          userId: new mongoose.Types.ObjectId(userId),
+          ...T.DRIVER_NEW_ASSIGNMENT({ requestCode: context?.requestCode }),
+          ticketId: context?.ticketId
+            ? new mongoose.Types.ObjectId(context.ticketId.toString())
+            : undefined
+        });
+        console.log(`[BE] notifyDriversOnAssignment: Đã tạo thông báo cho userId=${userId}, notificationId=${result?._id}`);
+        return result;
+      } catch (err) {
+        console.error(`[BE] notifyDriversOnAssignment: Lỗi khi gửi cho userId=${userId}:`, err.message);
+        throw err;
+      }
+    });
 
     const results = await Promise.allSettled(jobs);
+    const succeeded = results.filter((r) => r.status === 'fulfilled').length;
     const failed = results.filter((r) => r.status === 'rejected');
+    console.log(`[BE] notifyDriversOnAssignment: Thành công ${succeeded}/${notifyIds.length}.`);
     if (failed.length > 0) {
-      console.error(`[BE] notifyDriversOnAssignment: ${failed.length} notifications failed`);
+      console.error(`[BE] notifyDriversOnAssignment: ${failed.length} thất bại:`, failed.map(f => f.reason?.message));
     }
   }
+
 
   /**
    * Calculate required vehicles to fulfill load capacity
@@ -1109,60 +1126,8 @@ class DispatchService {
           }
         }
 
-        // Phase 3: Materialized View (Interim Cache) Update
-        for (const record of assignmentRecords) {
-          const targetDate = new Date(record.pickupTime);
-          targetDate.setHours(0, 0, 0, 0);
 
-          // Build a bulk operation for this record's users
-          const participants = [
-            ...record.driverIds.map(id => ({ id, type: 'USER' })),
-            ...record.staffIds.map(id => ({ id, type: 'USER' })),
-            { id: record.vehicleId, type: 'VEHICLE' }
-          ];
 
-          for (const participant of participants) {
-            if (!participant.id) continue;
-            await ResourceScheduleView.findOneAndUpdate(
-              { resourceId: participant.id, date: targetDate },
-              {
-                $set: { resourceType: participant.type },
-                $max: { nextAvailableTime: record.deliveryTime },
-                $inc: { workloadCount: 1 }
-              },
-              { upsert: true, session, new: true }
-            );
-          }
-        }
-
-        await assignment.save({ session });
-
-        // =========================
-        // STEP 4: Update Invoice
-        // =========================
-        invoice.dispatchAssignmentId = assignment._id;
-        if (dispatchData.forceProceed === true && totalStaff < idealStaffCount && !dispatchData.useExternalStaff) {
-          assignment.understaffed = true;
-
-          if (invoice.requestTicketId?.customerId) {
-            const ticket = invoice.requestTicketId;
-            try {
-              await NotificationService.createNotification({
-                userId: ticket.customerId,
-                ...T.DISPATCH_UNDERSTAFFED({
-                  actualStaff: totalStaff,
-                  requiredStaff: idealStaffCount,
-                  durationIncrease: invoice.understaffedDetails?.estimatedDurationIncrease
-                }),
-                ticketId: ticket._id
-              });
-            } catch (notifErr) {
-              console.error('[BE] Warning: Failed to send understaffed notification', notifErr);
-            }
-          }
-        }
-
-        // Phase 3: Materialized View (Interim Cache) Update
         for (const record of assignmentRecords) {
           const targetDate = new Date(record.pickupTime);
           targetDate.setHours(0, 0, 0, 0);
@@ -1281,6 +1246,14 @@ class DispatchService {
 
         resultAssignment = assignment;
       });
+
+      if (driverNotificationContext && resultAssignment?.status !== 'DRAFT') {
+        try {
+          await this.notifyDriversOnAssignment(driverNotificationContext);
+        } catch (notifErr) {
+          console.error('[BE] notifyDriversOnAssignment failed', notifErr);
+        }
+      }
 
       return resultAssignment;
 

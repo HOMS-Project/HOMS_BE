@@ -3,6 +3,7 @@ const Notification = require("../models/Notification");
 class NotificationService {
 
   static async createNotification({ userId, title, message, type, ticketId }, io) {
+    console.log(`[NotificationService] createNotification: userId=${userId}, type=${type}, title="${title}"`);
 
     const notification = await Notification.create({
       userId,
@@ -12,7 +13,9 @@ class NotificationService {
       ticketId
     });
 
-    const socketId = global.onlineUsers.get(userId.toString());
+    console.log(`[NotificationService] Notification created: _id=${notification._id}, userId=${userId}`);
+
+    const socketId = global.onlineUsers?.get(userId.toString());
 
     if (socketId && io) {
       io.to(socketId).emit("new_notification", notification);
@@ -59,13 +62,13 @@ class NotificationService {
         ? messageContent.substring(0, 47) + '...' 
         : messageContent;
 
-    return await this.createNotification(
-       userId,
-       ticketId,
-       `Tin nhắn mới từ ${senderName}`,
-       displayMsg || 'Bạn có tin nhắn mới hình ảnh/video',
-       'System'
-    );
+    return await this.createNotification({
+      userId,
+      title: `Tin nhắn mới từ ${senderName}`,
+      message: displayMsg || 'Bạn có tin nhắn mới hình ảnh/video',
+      type: 'System',
+      ticketId
+    });
   }
 }
 
