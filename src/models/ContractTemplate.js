@@ -12,7 +12,7 @@ const contractTemplateSchema = new mongoose.Schema({
         signedByName: String,
         signedAt: Date
     },
-    isActive: { type: Boolean, default: true },
+    isActive: { type: Boolean, default: false },
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
