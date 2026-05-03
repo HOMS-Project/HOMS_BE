@@ -14,6 +14,12 @@ router.post('/templates', verifyToken, authorize('admin'), adminContractControll
 router.get('/templates', adminContractController.getTemplates);
 // Update template
 router.put('/templates/:id', verifyToken, authorize('admin'), adminContractController.updateTemplate);
+// Activate / Deactivate template (only admin)
+router.patch('/templates/:id/activate', verifyToken, authorize('admin'), adminContractController.activateTemplate);
+router.patch('/templates/:id/deactivate', verifyToken, authorize('admin'), adminContractController.deactivateTemplate);
+// Fallback POST routes for environments where PATCH may not be routed correctly
+router.post('/templates/:id/activate', verifyToken, authorize('admin'), adminContractController.activateTemplate);
+router.post('/templates/:id/deactivate', verifyToken, authorize('admin'), adminContractController.deactivateTemplate);
 
 // Get single contract by id (public - used by Admin UI to view details)
 router.get('/:id', adminContractController.getContractById);
