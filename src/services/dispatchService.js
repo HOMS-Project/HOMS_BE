@@ -61,11 +61,17 @@ class DispatchService {
       adjustedMinutes
     );
 
+    /* 
+    CRITICAL: BLOCK
+      - forbid to proceed (staff shortages, safety violations, scheduled dispatchment conflicts)
+    WARNING: CONFIRM
+      - allow but required dispatcher confirmation & notify customer
+    SAFE: ALLOW
+      - allow automatically
+    */
     let decision = 'ALLOW';
-    if (safety.durationExceeded || safety.isSafetyBlock) {
+    if (safety.durationExceeded || safety.isSafetyBlock || staffing.level === 'CRITICAL') {
       decision = 'BLOCK';
-    } else if (staffing.level === 'CRITICAL') {
-      decision = 'REQUIRE_CUSTOMER';
     } else if (staffing.level === 'WARNING' || conflictInfo.hasConflict) {
       decision = 'CONFIRM';
     } else {
@@ -756,7 +762,7 @@ class DispatchService {
    */
   async allocatePersonnel(fleetAssignments, dispatchData, session) {
     try {
-      console.log(`[BE] allocatePersonnel: Assigning personnel for ${fleetAssignments.length} vehicles (Leader: ${dispatchData.leaderId}, Drivers: ${dispatchData.driverIds?.length || 0}, Helpers: ${dispatchData.staffIds?.length || 0})`);
+      // console.log(`[BE] allocatePersonnel: Assigning personnel for ${fleetAssignments.length} vehicles (Leader: ${dispatchData.leaderId}, Drivers: ${dispatchData.driverIds?.length || 0}, Helpers: ${dispatchData.staffIds?.length || 0})`);
       const assignmentRecords = [];
       let totalStaff = 0;
 
@@ -868,7 +874,7 @@ class DispatchService {
           totalStaff += staffAssignment.staffCount;
         } else {
           // Empty vehicle, no staff capacity available, throw error or log warning
-          console.warn(`[BE] allocatePersonnel: Vehicle ${vehicle._id} has no staff assigned due to lack of personnel.`);
+          // console.warn(`[BE] allocatePersonnel: Vehicle ${vehicle._id} has no staff assigned due to lack of personnel.`);
         }
       }
 
@@ -879,7 +885,7 @@ class DispatchService {
         throw new AppError(`Not enough seats in dispatched vehicles. ${overflowCount} staff members are left without seats. Please assign a passenger vehicle or remove staff.`, 400);
       }
 
-      console.log(`[BE] allocatePersonnel: Assigned total of ${totalStaff} staff members.`);
+      // console.log(`[BE] allocatePersonnel: Assigned total of ${totalStaff} staff members.`);
       return { assignmentRecords, totalStaff };
     } catch (error) {
       throw error;
@@ -891,7 +897,7 @@ class DispatchService {
    * Orchestrates fleet and personnel allocation
    */
   async createDispatchAssignment(invoiceId, dispatchData) {
-    console.log(`[BE] createDispatchAssignment initiated for invoice: ${invoiceId}`, dispatchData);
+    // console.log(`[BE] createDispatchAssignment initiated for invoice: ${invoiceId}`, dispatchData);
     const startTime = Date.now();
 
 
@@ -960,12 +966,13 @@ class DispatchService {
 
         // Decision: REQUIRE_CUSTOMER -> Block unless dispatcher forces it (which might later require customer approval on FE)
         // For simplicity now, let's treat it as a block that needs forceProceed or customerApproved
-        const isResolutionNeeded = (feasibility.decision === 'CONFIRM' || feasibility.decision === 'REQUIRE_CUSTOMER');
+        // const isResolutionNeeded = (feasibility.decision === 'CONFIRM' || feasibility.decision === 'REQUIRE_CUSTOMER');
+        const isResolutionNeeded = (feasibility.decision === 'CONFIRM');
 
         let fleetAssignments, totalCapacity, idealVehicles, isResourceSubstitution, assignmentRecords, totalStaff;
         try {
           // Step 1: Allocate fleet (vehicles)
-          console.log(`[BE] createDispatchAssignment: Step 1 - Allocating Fleet...`);
+          // console.log(`[BE] createDispatchAssignment: Step 1 - Allocating Fleet...`);
           const fleetAlloc = await this.allocateFleet(invoice, dispatchData, session);
           fleetAssignments = fleetAlloc.fleetAssignments;
           totalCapacity = fleetAlloc.totalCapacity;
@@ -977,7 +984,7 @@ class DispatchService {
               JSON.stringify(dispatchData.vehicles) !== JSON.stringify(idealVehicles));
 
           // Step 2: Allocate personnel (drivers and helpers)
-          console.log(`[BE] createDispatchAssignment: Step 2 - Allocating Personnel...`);
+          // console.log(`[BE] createDispatchAssignment: Step 2 - Allocating Personnel...`);
           const allocResult = await this.allocatePersonnel(fleetAssignments, dispatchData, session);
           assignmentRecords = allocResult.assignmentRecords;
           totalStaff = allocResult.totalStaff;
@@ -1021,7 +1028,7 @@ class DispatchService {
         }
 
         // Step 3: Update assignment document
-        console.log(`[BE] createDispatchAssignment: Step 3 - Saving assignment state...`);
+        // console.log(`[BE] createDispatchAssignment: Step 3 - Saving assignment state...`);
         assignment.assignments = assignmentRecords;
         assignment.totalVehicles = assignmentRecords.length;
         assignment.totalStaff = totalStaff;
