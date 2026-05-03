@@ -912,6 +912,39 @@ async function handleCreateOrder(aiAction, session, facebookId) {
     await newPricing.save({ session: dbSession });
 
     await dbSession.commitTransaction();
+
+    // Notify Head Dispatchers
+    try {
+      const User = require('../models/User');
+      const headDispatchers = await User.find({
+        role: 'dispatcher',
+        'dispatcherProfile.isGeneral': true
+      }).select('_id');
+      const { getIo } = require('../utils/socket');
+      const io = getIo();
+      const T = require('../utils/notificationTemplates');
+      const NotificationService = require('./notificationService');
+
+      for (const hd of headDispatchers) {
+        await NotificationService.createNotification({
+          userId: hd._id,
+          ...T.NEW_TICKET_CREATED({ ticketCode: newTicket.code }),
+          ticketId: newTicket._id
+        }, io);
+      }
+
+      // Also notify assigned dispatcher if any
+      if (newTicket.dispatcherId) {
+        await NotificationService.createNotification({
+          userId: newTicket.dispatcherId,
+          ...T.TICKET_ASSIGNED_TO_DISPATCHER({ ticketCode: newTicket.code }),
+          ticketId: newTicket._id
+        }, io);
+      }
+    } catch (err) {
+      console.error('[CreateOrder] Notification failed:', err.message);
+    }
+
   } catch (error) {
     await dbSession.abortTransaction();
     console.error("[CreateOrder] Transaction Error:", error);
