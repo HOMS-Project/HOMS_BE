@@ -1,5 +1,6 @@
 const adminContractService = require('../../services/admin/contractService');
 
+// Admin creates a new contract template. Only allowed for admin users.
 exports.createTemplate = async (req, res, next) => {
   try {
     const template = await adminContractService.createTemplate(req.body, req.user.userId);
@@ -9,6 +10,7 @@ exports.createTemplate = async (req, res, next) => {
   }
 };
 
+// Admin gets list of contract templates, with optional filters (e.g. active only). Public endpoint.
 exports.getTemplates = async (req, res, next) => {
   try {
     const templates = await adminContractService.getTemplates(req.query);
@@ -19,6 +21,7 @@ exports.getTemplates = async (req, res, next) => {
   }
 };
 
+// Admin generates a contract based on a template and request ticket. Only allowed for admin users.
 exports.generateContract = async (req, res, next) => {
   try {
     const contract = await adminContractService.generateContract(req.body, req.user.userId);
@@ -31,6 +34,8 @@ exports.generateContract = async (req, res, next) => {
   }
 };
 
+
+// Admin updates template content or metadata. Only allowed for admin users.
 exports.updateTemplate = async (req, res, next) => {
   try {
     const id = req.params.id;
