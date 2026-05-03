@@ -22,6 +22,9 @@ router.use(authenticate);
 // Staff list their assigned orders
 router.get("/orders", staffController.getAssignedOrders);
 
+// Staff dashboard statistics
+router.get("/dashboard/stats", staffController.getStaffStatistics);
+
 // Get detail of a specific order
 router.get("/orders/:invoiceId", staffController.getOrderDetails);
 

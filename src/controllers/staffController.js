@@ -3,6 +3,7 @@ const axios = require("axios"); // Added for proxying
 const Invoice = require("../models/Invoice");
 const User = require("../models/User");
 const Route = require("../models/Route");
+const Incident = require("../models/Incident");
 const SurveyData = require("../models/SurveyData");
 const AppError = require("../utils/appErrors");
 const staffEvidenceService = require("../services/staffEvidenceService");
@@ -619,5 +620,84 @@ exports.getProxyRoute = async (req, res, next) => {
       message: "Lỗi khi lấy thông tin lộ trình từ server điều phối.",
       error: error.message,
     });
+  }
+};
+
+/**
+ * GET /api/staff/dashboard/stats
+ * Lấy thống kê cho nhân viên hiện tại
+ */
+exports.getStaffStatistics = async (req, res, next) => {
+  try {
+    const staffId = req.user.userId || req.user._id || req.user.id;
+
+    // Lấy các phân công của nhân viên này
+    const assignments = await DispatchAssignment.find({
+      $or: [
+        { "assignments.driverIds": staffId },
+        { "assignments.staffIds": staffId },
+      ],
+    })
+      .populate({
+        path: "invoiceId",
+        populate: {
+          path: "requestTicketId",
+          select: "moveType",
+        },
+      })
+      .lean();
+
+    const stats = {
+      total: 0,
+      assigned: 0,
+      accepted: 0,
+      inProgress: 0,
+      completed: 0,
+      cancelled: 0,
+      incidents: 0,
+      byType: {
+        FULL_HOUSE: 0,
+        TRUCK_RENTAL: 0,
+        SPECIFIC_ITEMS: 0,
+      },
+      weekly: [0, 0, 0, 0, 0, 0, 0], // Sun-Sat
+    };
+
+    assignments.forEach((da) => {
+      const personalAssignment = da.assignments.find((a) =>
+        isPersonalAssignment(a, staffId),
+      );
+      if (!personalAssignment) return;
+
+      const status = personalAssignment.status || da.status;
+      const moveType = da.invoiceId?.requestTicketId?.moveType;
+      const createdAt = da.createdAt;
+
+      stats.total++;
+      if (["ASSIGNED", "PENDING", "CONFIRMED"].includes(status)) stats.assigned++;
+      else if (status === "ACCEPTED") stats.accepted++;
+      else if (status === "IN_PROGRESS") stats.inProgress++;
+      else if (status === "COMPLETED") stats.completed++;
+      else if (status === "CANCELLED") stats.cancelled++;
+
+      if (moveType && stats.byType[moveType] !== undefined) {
+        stats.byType[moveType]++;
+      }
+
+      if (createdAt) {
+        const day = new Date(createdAt).getDay();
+        stats.weekly[day]++;
+      }
+    });
+
+    // Thống kê số lượng sự cố mà nhân viên này đã báo cáo
+    stats.incidents = await Incident.countDocuments({ reporterId: staffId });
+
+    res.status(200).json({
+      success: true,
+      data: stats,
+    });
+  } catch (error) {
+    next(error);
   }
 };
