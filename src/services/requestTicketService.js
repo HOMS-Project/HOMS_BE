@@ -93,11 +93,13 @@ class RequestTicketService {
       // 4. Notify customer (since they are receiving automated messages)
       await NotificationService.createNotification({
         userId: ticket.customerId,
-        title: "Tin nhắn mới từ Điều phối viên",
-        message: "Vui lòng cung cấp hình ảnh/video khảo sát.",
-        type: "System",
+        ...T.NEW_MESSAGE_RECEIVED({
+          senderName: 'Điều phối viên',
+          messagePreview: 'Vui lòng cung cấp hình ảnh/video khảo sát.'
+        }),
         ticketId: ticket._id
       }, io);
+
 
     } catch (err) {
       await session.abortTransaction();
@@ -139,7 +141,27 @@ class RequestTicketService {
 
     await ticket.save();
 
+    // Notify Head Dispatchers
+    try {
+      const User = require('../models/User');
+      const headDispatchers = await User.find({
+        role: 'dispatcher',
+        'dispatcherProfile.isGeneral': true
+      }).select('_id');
+      const io = getIo();
+      for (const hd of headDispatchers) {
+        await NotificationService.createNotification({
+          userId: hd._id,
+          ...T.NEW_TICKET_CREATED({ ticketCode: ticket.code }),
+          ticketId: ticket._id
+        }, io);
+      }
+    } catch (err) {
+      console.error('[createTicket] Failed to notify head dispatchers:', err.message);
+    }
+
     // Delegate to strategy for post-creation operations (like creating SurveyData)
+
     await strategy.handlePostCreation(ticket, data);
 
     // Enrich with districts via Goong reverse geocoding (non-blocking)

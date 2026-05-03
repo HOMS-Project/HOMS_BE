@@ -1,4 +1,6 @@
 const Notification = require("../models/Notification");
+const T = require("../utils/notificationTemplates");
+
 
 class NotificationService {
 
@@ -68,11 +70,13 @@ static async notifyCustomer(userId, eventName, payload, io) {
 
     return await this.createNotification({
       userId,
-      title: `Tin nhắn mới từ ${senderName}`,
-      message: displayMsg || 'Bạn có tin nhắn mới hình ảnh/video',
-      type: 'System',
+      ...T.NEW_MESSAGE_RECEIVED({
+        senderName,
+        messagePreview: displayMsg || 'Bạn có tin nhắn mới hình ảnh/video'
+      }),
       ticketId
     });
+
   }
 }
 

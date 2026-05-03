@@ -60,12 +60,22 @@ class FullHouseStrategy extends BaseStrategy {
 
       await NotificationService.createNotification(
         {
+          userId: assignedDispatcherId,
+          ...T.TICKET_ASSIGNED_TO_DISPATCHER({ ticketCode: ticket.code }),
+          ticketId: ticket._id
+        },
+        io
+      );
+
+      await NotificationService.createNotification(
+        {
           userId: ticket.customerId,
           ...T.ORDER_CONFIRMED_SURVEY_PENDING(),
           ticketId: ticket._id
         },
         io
       );
+
     } else {
       await TicketStateMachine.transition(ticket, 'ASSIGNMENT_FAILED', {
         comment: 'Auto assignment failed for surveyor.'

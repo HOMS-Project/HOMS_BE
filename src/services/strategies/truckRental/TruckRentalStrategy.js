@@ -132,6 +132,15 @@ class TruckRentalStrategy extends BaseStrategy {
       ticket.dispatcherId = assignedDispatcherId;
       await ticket.save();
       console.log(`[TruckRentalStrategy] Assigned dispatcher ${assignedDispatcherId} via ${assignmentMethod}`);
+
+      await NotificationService.createNotification(
+        {
+          userId: assignedDispatcherId,
+          ...T.TICKET_ASSIGNED_TO_DISPATCHER({ ticketCode: ticket.code }),
+          ticketId: ticket._id
+        },
+        io
+      );
     }
 
     await NotificationService.createNotification(
@@ -142,6 +151,7 @@ class TruckRentalStrategy extends BaseStrategy {
       },
       io
     );
+
     return ticket;
   }
 }

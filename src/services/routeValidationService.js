@@ -24,15 +24,18 @@ class RouteValidationService {
     deliveryTime,
     pickupAddress,
     deliveryAddress,
-    polyline: polylineEncoded
+    polyline: polylineEncoded,
+    skipCapacity = false
   }) {
     try {
       const violations = [];
       const warnings = [];
 
       // ===== 3. Kiểm tra khả năng chở (weight/volume) =====
-      const capacityIssue = await this.checkCapacity(vehicleType, totalWeight, totalVolume);
-      if (capacityIssue) violations.push(capacityIssue);
+      if (!skipCapacity) {
+        const capacityIssue = await this.checkCapacity(vehicleType, totalWeight, totalVolume);
+        if (capacityIssue) violations.push(capacityIssue);
+      }
 
       // ===== Try to load a pre-configured route for extra rule checks =====
       // For a moving company, routes are customer-defined (dynamic) so routeId is
@@ -51,8 +54,10 @@ class RouteValidationService {
           warnings.push(...trafficIssues.warnings);
 
           // ===== 3. Kiểm tra khả năng chở (weight/volume) =====
-          const capacityIssue = await this.checkCapacity(vehicleType, totalWeight, totalVolume);
-          if (capacityIssue) violations.push(capacityIssue);
+          if (!skipCapacity) {
+            const capacityIssue = await this.checkCapacity(vehicleType, totalWeight, totalVolume);
+            if (capacityIssue) violations.push(capacityIssue);
+          }
 
           // ===== 4. Kiểm tra khoảng cách hợp lý =====
           // TODO: Tích hợp với Google Maps API hoặc service tính distance
