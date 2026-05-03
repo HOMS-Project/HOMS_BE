@@ -155,8 +155,9 @@ exports.forgotPassword = async (req, res, next) => {
   console.log("req.body:", req.body);
   try {
     const { email } = req.body;
-    await authService.forgotPassword(email);
-    res.json({ message: "OTP đã được gửi về email" });
+    const isMobile = (req.get("x-client") || "").toLowerCase() === "mobile-driver";
+    await authService.forgotPassword(email, { isMobile });
+    res.json({ success: true, message: "OTP đã được gửi về email" });
   } catch (err) {
     next(err);
   }

@@ -262,13 +262,20 @@ exports.googleLogin = async ({ token }) => {
   };
 };
 
-exports.forgotPassword = async (email) => {
+exports.forgotPassword = async (email, { isMobile = false } = {}) => {
   const user = await User.findOne({ email });
 
   if (!user) {
     throw new AppError("Không tìm thấy tài khoản với email này", 404);
   }
-  
+
+  // Khi gọi từ mobile app, chỉ cho phép driver hoặc staff đổi mật khẩu
+  if (isMobile && user.role !== 'driver' && user.role !== 'staff') {
+    throw new AppError(
+      "Chỉ tài xế (driver) hoặc nhân viên (staff) mới được phép đặt lại mật khẩu qua ứng dụng di động",
+      403,
+    );
+  }
 
   await sendOtp("FORGOT_PASSWORD", email, email, user.fullName);
   return true;
