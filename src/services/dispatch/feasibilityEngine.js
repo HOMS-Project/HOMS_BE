@@ -12,12 +12,12 @@ class FeasibilityEngine {
     };
   }
 
-  static evaluateStaffing(actualStaff, idealStaff) {
+  static evaluateStaffing(actualStaff, idealStaff, criticalThreshold = 0.75) {
     const ratio = actualStaff / idealStaff;
 
-    // CRITICAL if staff < 75% of ideal
-    if (ratio < 0.75) return { level: 'CRITICAL', ratio };
-    // WARNING if 75% < staff < 100% of ideal
+    // CRITICAL if staff < threshold of ideal
+    if (ratio < criticalThreshold) return { level: 'CRITICAL', ratio };
+    // WARNING if threshold < staff < 100% of ideal
     if (ratio < 1.0) return { level: 'WARNING', ratio };
     // SAFE if staff >= 100% of ideal
     return { level: 'SAFE', ratio };

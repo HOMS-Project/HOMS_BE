@@ -138,8 +138,8 @@ exports.DRIVER_NEW_ASSIGNMENT = ({ requestCode } = {}) => ({
  * @param {{ actualStaff?: number, requiredStaff?: number, durationIncrease?: number }} params
  */
 exports.DISPATCH_UNDERSTAFFED = ({ actualStaff, requiredStaff, durationIncrease } = {}) => ({
-  title: '⚠️ Thông báo: Đơn hàng thiếu hụt nhân sự',
-  message: actualStaff && requiredStaff 
+  title: 'Thông báo: Đơn hàng thiếu hụt nhân sự',
+  message: actualStaff && requiredStaff
     ? `Đơn hàng của bạn sẽ được vận chuyển với ${actualStaff}/${requiredStaff} nhân sự. Thời gian thực hiện dự kiến tăng thêm khoảng ${durationIncrease}%.`
     : 'Đơn hàng của bạn đã được điều phối nhưng có thể thiếu nhân sự so với dự kiến. Vui lòng thông cảm hoặc liên hệ tổng đài.',
   type: 'WARNING',
@@ -201,6 +201,26 @@ exports.DISPATCH_RESCHEDULE_ACCEPTED_BY_CUSTOMER = ({ ticketCode, confirmedTime 
   type: 'System',
 });
 
+/**
+ * Customer notified when their order utilizes external third-party staff.
+ * @param {{ ticketCode: string }} params
+ */
+exports.DISPATCH_EXTERNAL_STAFF_USED = ({ ticketCode }) => ({
+  title: 'Thông báo: Sử dụng nhân viên thuê ngoài',
+  message: `Đơn hàng #${ticketCode} sẽ có sự tham gia của nhân viên đối tác (thuê ngoài) để đảm bảo tiến độ vận chuyển.`,
+  type: 'System',
+});
+
+/**
+ * Customer notified that their dispatched vehicles differ from the original plan.
+ * @param {{ ticketCode: string }} params
+ */
+exports.DISPATCH_RESOURCE_SUBSTITUTED = ({ ticketCode }) => ({
+  title: 'Thông báo: Thay đổi phương tiện vận chuyển',
+  message: `Đơn hàng #${ticketCode} đã được điều chỉnh loại xe tải so với dự kiến ban đầu nhằm tối ưu việc vận chuyển.`,
+  type: 'System',
+});
+
 /* ── User account management ─────────────────────────────── */
 
 /**
@@ -240,3 +260,45 @@ exports.CONTRACT_AUTO_CANCELLED = ({ contractNumber, depositDeadlineHours }) => 
   message: `Hợp đồng ${contractNumber} đã bị hủy do bạn không đặt cọc trong ${depositDeadlineHours || 48} giờ sau khi ký.`,
   type: 'System',
 });
+
+/* ── Dispatcher & Admin Notifications ─────────────────────── */
+
+/**
+ * District dispatcher notified when assigned to a new ticket.
+ */
+exports.TICKET_ASSIGNED_TO_DISPATCHER = ({ ticketCode }) => ({
+  title: 'Bạn có đơn hàng mới cần xử lý',
+  message: `Bạn đã được phân công xử lý đơn hàng #${ticketCode}. Vui lòng kiểm tra và thực hiện khảo sát/báo giá.`,
+  type: 'System',
+});
+
+/**
+ * Head dispatcher notified when a new ticket needs assignment.
+ */
+exports.TICKET_PENDING_ASSIGNMENT = ({ ticketCode }) => ({
+  title: 'Đơn hàng mới chờ phân công',
+  message: `Đơn hàng #${ticketCode} đang chờ được phân công cho nhân viên điều phối khu vực.`,
+  type: 'System',
+});
+
+/* ── Messaging ─────────────────────────────────────────────── */
+
+/**
+ * Notification for new messages.
+ */
+exports.NEW_MESSAGE_RECEIVED = ({ senderName, messagePreview }) => ({
+  title: `Tin nhắn mới từ ${senderName}`,
+  message: messagePreview || 'Bạn có tin nhắn mới liên quan đến đơn hàng.',
+  type: 'System',
+});
+
+/**
+ * Head dispatcher notified when a new ticket is created by a customer.
+ */
+exports.NEW_TICKET_CREATED = ({ ticketCode }) => ({
+  title: 'Có đơn hàng mới chờ duyệt',
+  message: `Một đơn hàng mới #${ticketCode} vừa được tạo. Vui lòng kiểm tra và duyệt đơn.`,
+  type: 'System',
+});
+
+
