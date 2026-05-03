@@ -26,7 +26,7 @@ class DispatchService {
   /**
    * Core Decision Engine for Force Dispatch
    */
-  async evaluateFeasibility(dispatchData, idealStaffCount, baseHours) {
+  async evaluateFeasibility(dispatchData, idealStaffCount, baseHours, moveType = null) {
     const inputStaffCount = (dispatchData.leaderId ? 1 : 0) +
       (dispatchData.driverIds?.length || 0) +
       (dispatchData.staffIds?.length || 0);
@@ -34,7 +34,8 @@ class DispatchService {
     const adjustedMinutes = FeasibilityEngine.estimateDuration(baseHours, idealStaffCount, inputStaffCount);
 
     const safety = FeasibilityEngine.checkSafety(inputStaffCount, idealStaffCount, adjustedMinutes);
-    const staffing = FeasibilityEngine.evaluateStaffing(inputStaffCount, idealStaffCount);
+    const staffingThreshold = moveType === 'TRUCK_RENTAL' ? 0.5 : 0.75;
+    const staffing = FeasibilityEngine.evaluateStaffing(inputStaffCount, idealStaffCount, staffingThreshold);
 
     if (dispatchData.useExternalStaff) {
       staffing.level = 'SAFE';
@@ -70,12 +71,27 @@ class DispatchService {
       - allow automatically
     */
     let decision = 'ALLOW';
-    if (safety.durationExceeded || safety.isSafetyBlock || staffing.level === 'CRITICAL') {
-      decision = 'BLOCK';
-    } else if (staffing.level === 'WARNING' || conflictInfo.hasConflict) {
-      decision = 'CONFIRM';
+    if (moveType === 'TRUCK_RENTAL') {
+      // For truck rental, skip safety engine (min 2 staff) and duration checks.
+      // Only block if staffing is CRITICAL (no driver) or there's a hard conflict.
+      if (staffing.level === 'CRITICAL') {
+        decision = 'BLOCK';
+      } else if (staffing.level === 'WARNING' || conflictInfo.hasConflict) {
+        decision = 'CONFIRM';
+      } else {
+        decision = 'ALLOW';
+      }
+      // Reset blocks for rental
+      safety.isSafetyBlock = false;
+      safety.durationExceeded = false;
     } else {
-      decision = 'ALLOW';
+      if (safety.durationExceeded || safety.isSafetyBlock || staffing.level === 'CRITICAL') {
+        decision = 'BLOCK';
+      } else if (staffing.level === 'WARNING' || conflictInfo.hasConflict) {
+        decision = 'CONFIRM';
+      } else {
+        decision = 'ALLOW';
+      }
     }
 
     return {
@@ -663,6 +679,7 @@ class DispatchService {
     try {
       console.log(`[BE] allocateFleet: Calculating vehicle needs for weight: ${dispatchData.totalWeight}, volume: ${dispatchData.totalVolume}`);
       const ticket = invoice.requestTicketId;
+      const moveType = ticket?.moveType;
 
       // Determine necessary vehicles OR use manual override
       let vehicleNeeds;
@@ -724,7 +741,8 @@ class DispatchService {
               pickupTime: assignedPickupTime,
               deliveryTime: assignedDeliveryTime,
               pickupAddress: ticket?.pickup?.address || '',
-              deliveryAddress: ticket?.delivery?.address || ''
+              deliveryAddress: ticket?.delivery?.address || '',
+              skipCapacity: moveType === 'TRUCK_RENTAL'
             }
           );
 
@@ -911,7 +929,7 @@ class DispatchService {
         const invoice = await Invoice.findById(invoiceId)
           .populate({
             path: 'requestTicketId',
-            select: 'code pickup delivery scheduledTime customerId dispatcherId surveyDataId items',
+            select: 'code pickup delivery scheduledTime customerId dispatcherId surveyDataId items moveType',
             populate: { path: 'surveyDataId' }
           })
           .session(session);
@@ -931,9 +949,10 @@ class DispatchService {
         const surveyData = invoice.requestTicketId?.surveyDataId || {};
         const idealStaffCount = surveyData.suggestedStaffCount || 2;
         const baseHours = surveyData.estimatedHours || 8;
+        const moveType = invoice.requestTicketId?.moveType;
 
         // ── Feasibility & Safety Engine ──
-        const feasibility = await this.evaluateFeasibility(dispatchData, idealStaffCount, baseHours);
+        const feasibility = await this.evaluateFeasibility(dispatchData, idealStaffCount, baseHours, moveType);
         dispatchData.estimatedDuration = feasibility.estimatedDuration;
         assignment.feasibility = feasibility; // Cache assessment for this assignment record
 
@@ -1083,10 +1102,11 @@ class DispatchService {
         };
 
         // Handle Understaffed Logic
+        let durationAdjustment = 0;
         if (totalStaff < idealStaffCount) {
           const originalDuration = dispatchData.estimatedDuration || 480;
           const adjustedDuration = this.calculateAdjustedDuration(originalDuration, idealStaffCount, totalStaff);
-          const durationAdjustment = Math.round(((adjustedDuration / originalDuration) - 1) * 100);
+          durationAdjustment = Math.round(((adjustedDuration / originalDuration) - 1) * 100);
 
           assignment.understaffed = true;
           assignment.originalDuration = originalDuration;
@@ -1123,7 +1143,7 @@ class DispatchService {
                 ...T.DISPATCH_UNDERSTAFFED({
                   actualStaff: totalStaff,
                   requiredStaff: idealStaffCount,
-                  durationIncrease: invoice.understaffedDetails?.estimatedDurationIncrease
+                  durationIncrease: durationAdjustment
                 }),
                 ticketId: ticket._id
               });
@@ -1209,7 +1229,46 @@ class DispatchService {
               ticketId: ticket._id
             }, ioInstance);
           } catch (notifErr) {
-            console.error('[BE] Warning: Failed to send reschedule proposal notification', notifErr);
+            console.error(' [DEBUG] Warning: Failed to send reschedule proposal notification', notifErr);
+          }
+        }
+
+        // ── Scenario C: Notify customer of external staff usage ─────────────
+        if (dispatchData.useExternalStaff) {
+          try {
+            const ticket = invoice.requestTicketId;
+            let ioInstance = null;
+            try { const { getIo } = require('../utils/socket'); ioInstance = getIo(); } catch (_) { /* no-op */ }
+
+            await NotificationService.createNotification({
+              userId: ticket.customerId,
+              ...T.DISPATCH_EXTERNAL_STAFF_USED({
+                ticketCode: ticket?.code || 'Không xác định'
+              }),
+              ticketId: ticket._id
+            }, ioInstance);
+          } catch (notifErr) {
+            console.error(' [DEBUG] Warning: Failed to send external staff notification', notifErr);
+          }
+        }
+
+        // ── Scenario D: Notify customer of vehicle substitution ─────────────
+        // trigger this if a substitution occurred and we aren't already pausing for a time reschedule approval
+        if (isResourceSubstitution && invoice.rescheduleStatus !== 'PENDING_APPROVAL') {
+          try {
+            const ticket = invoice.requestTicketId;
+            let ioInstance = null;
+            try { const { getIo } = require('../utils/socket'); ioInstance = getIo(); } catch (_) { /* no-op */ }
+
+            await NotificationService.createNotification({
+              userId: ticket.customerId,
+              ...T.DISPATCH_RESOURCE_SUBSTITUTED({
+                ticketCode: ticket?.code || 'Không xác định'
+              }),
+              ticketId: ticket._id
+            }, ioInstance);
+          } catch (notifErr) {
+            console.error(' [DEBUG] Warning: Failed to send resource substitution notification', notifErr);
           }
         }
 
@@ -1554,7 +1613,8 @@ class DispatchService {
     const feasibility = await this.evaluateFeasibility(
       squadDispatchData,
       neededCapacity,
-      duration / 60
+      duration / 60,
+      ticket?.moveType
     );
 
     // =========================
