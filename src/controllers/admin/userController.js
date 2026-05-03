@@ -56,7 +56,6 @@ exports.updateUser = async (req, res, next) => {
             delete payload.workingAreas;
         }
         if (payload.role) payload.role = String(payload.role).toLowerCase();
-
         const updatedUser = await adminUserService.updateUser(req.params.id, payload);
         res.status(200).json({
             success: true,
@@ -66,6 +65,9 @@ exports.updateUser = async (req, res, next) => {
     } catch (error) {
         if (error.message === 'User not found') {
             return res.status(404).json({ success: false, message: error.message });
+        }
+        if (error.message === 'Cannot edit customer users') {
+            return res.status(403).json({ success: false, message: 'Admins are not allowed to edit customer accounts' });
         }
         next(error);
     }

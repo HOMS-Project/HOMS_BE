@@ -111,6 +111,16 @@ exports.createUser = async (userData) => {
  * Admin cập nhật thông tin User
  */
 exports.updateUser = async (id, updateData) => {
+    // Don't allow admin API to edit customer accounts
+    const existingUser = await User.findById(id);
+    if (!existingUser) {
+        throw new Error('User not found');
+    }
+    if ((existingUser.role || '').toString().toLowerCase() === 'customer') {
+        // Forbidden: admins should not be able to modify customer accounts via this endpoint
+        throw new Error('Cannot edit customer users');
+    }
+
     // Nếu có update password từ admin
     if (updateData.password) {
         const salt = await bcrypt.genSalt(10);
