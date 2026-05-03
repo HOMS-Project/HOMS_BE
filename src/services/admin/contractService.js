@@ -819,3 +819,40 @@ exports.signContracts = async (contractId, data) => {
     depositDeadline
   };
 };
+
+/**
+ * Activate a template by id. Ensures only one template is active at a time.
+ */
+exports.activateTemplate = async (templateId) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    // set all templates to inactive first
+    await ContractTemplate.updateMany({}, { isActive: false }).session(session);
+    const tpl = await ContractTemplate.findByIdAndUpdate(templateId, { isActive: true }, { new: true, session });
+    if (!tpl) {
+      await session.abortTransaction();
+      session.endSession();
+      throw new Error('Template not found');
+    }
+    await session.commitTransaction();
+    session.endSession();
+    return tpl;
+  } catch (err) {
+    try { await session.abortTransaction(); } catch (e) {}
+    session.endSession();
+    throw err;
+  }
+};
+
+/**
+ * Deactivate a template by id. If the template is currently active, deactivate it.
+ * After deactivation there will be no active template unless another is activated.
+ */
+exports.deactivateTemplate = async (templateId) => {
+  const tpl = await ContractTemplate.findById(templateId);
+  if (!tpl) throw new Error('Template not found');
+  if (!tpl.isActive) return tpl; // already inactive
+  tpl.isActive = false;
+  return await tpl.save();
+};

@@ -45,6 +45,30 @@ exports.updateTemplate = async (req, res, next) => {
   }
 };
 
+exports.activateTemplate = async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    console.log('ADMIN activate template request for id=', id);
+    const tpl = await adminContractService.activateTemplate(id);
+    return res.status(200).json({ success: true, data: tpl });
+  } catch (error) {
+    if (error.message === 'Template not found') return res.status(404).json({ success: false, message: error.message });
+    next(error);
+  }
+};
+
+exports.deactivateTemplate = async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    console.log('ADMIN deactivate template request for id=', id);
+    const tpl = await adminContractService.deactivateTemplate(id);
+    return res.status(200).json({ success: true, data: tpl });
+  } catch (error) {
+    if (error.message === 'Template not found') return res.status(404).json({ success: false, message: error.message });
+    next(error);
+  }
+};
+
 exports.getContracts = async (req, res, next) => {
   try {
     const contracts = await adminContractService.getContracts(req.query);
