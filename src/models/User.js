@@ -13,7 +13,13 @@ const userSchema = new mongoose.Schema({
   fullName: {
     type: String,
     required: function () {
-  return this.provider.includes('local');
+      // provider can be an array (default) or a string, and may be undefined during
+      // partial updates. Guard against calling includes on undefined.
+      const p = this.provider;
+      if (!p) return false;
+      if (Array.isArray(p)) return p.includes('local');
+      if (typeof p === 'string') return p === 'local';
+      return false;
 }
   },
 
@@ -27,7 +33,11 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     required: function () {
-  return this.provider.includes('local');
+      const p = this.provider;
+      if (!p) return false;
+      if (Array.isArray(p)) return p.includes('local');
+      if (typeof p === 'string') return p === 'local';
+      return false;
 }
   },
 
