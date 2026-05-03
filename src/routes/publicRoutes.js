@@ -24,4 +24,35 @@ router.get('/recent-orders', async (req, res) => {
   }
 });
 
+const emailService = require('../services/emailService');
+
+// POST /api/public/contact
+router.post('/contact', async (req, res) => {
+  try {
+    const { fullName, phone, email, source } = req.body;
+    
+    const subject = `Liên hệ mới từ khách hàng: ${fullName}`;
+    const html = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+        <h3 style="color: #2D4F36;">Yêu cầu liên hệ mới từ website HOMS</h3>
+        <p><strong>Họ tên:</strong> ${fullName}</p>
+        <p><strong>Số điện thoại:</strong> ${phone}</p>
+        <p><strong>Email:</strong> ${email || 'Không cung cấp'}</p>
+        <p><strong>Nguồn biết đến HOMS:</strong> ${source || 'Không rõ'}</p>
+      </div>
+    `;
+    
+    await emailService.sendMail({
+      to: 'homsmovinghouse@gmail.com',
+      subject,
+      html
+    });
+
+    res.json({ success: true, message: 'Đã gửi liên hệ thành công' });
+  } catch (error) {
+    console.error('Lỗi gửi form liên hệ:', error);
+    res.status(500).json({ success: false, message: 'Lỗi server khi gửi liên hệ' });
+  }
+});
+
 module.exports = router;
