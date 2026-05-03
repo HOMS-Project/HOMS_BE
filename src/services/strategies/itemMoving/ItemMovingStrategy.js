@@ -121,12 +121,22 @@ class ItemMovingStrategy extends BaseStrategy {
 
       await NotificationService.createNotification(
         {
+          userId: assignedDispatcherId,
+          ...T.TICKET_ASSIGNED_TO_DISPATCHER({ ticketCode: ticket.code }),
+          ticketId: ticket._id
+        },
+        io
+      );
+
+      await NotificationService.createNotification(
+        {
           userId: ticket.customerId,
           ...T.ORDER_ACCEPTED_ITEM_MOVING(),
           ticketId: ticket._id
         },
         io
       );
+
     } else {
       // Auto-assignment failed — escalate to Head Dispatcher
       await TicketStateMachine.transition(ticket, 'ASSIGNMENT_FAILED', {
